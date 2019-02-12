@@ -1,9 +1,19 @@
+import itertools
 import json
+import sys
+
 import networkx as nx
 import pandas as pd
 from collections import defaultdict
 
-with open('./uniprot_to_hgnc.json') as f:
+
+DEGRADATION = 'Degradation'
+DEPHOSPHORYLATION = 'Dephosphorylation'
+PHOSPHORYLATION = 'Phosphorylation'
+BINDING = 'Binding'
+DISSOCIATION = 'Dissociation'
+
+with open('data/uniprot_to_hgnc.json') as f:
     uniprot_to_hgnc = json.load(f)
 
 
@@ -40,8 +50,25 @@ class Tabularizer:
         else:
             return None
 
+    def get_reaction_type(self, r):
+        left_phosphos = ['phospho' in l for l in r['lefts']]
+        right_phosphos = ['phospho' in l for l in r['rights']]
+        if len(r['lefts']) > 0 and len(r['rights']) == 0:
+            return DEGRADATION
+        elif sum(left_phosphos) > sum(right_phosphos):
+            return DEPHOSPHORYLATION
+        elif sum(left_phosphos) < sum(right_phosphos):
+            return PHOSPHORYLATION
+        elif 'complex' in r['id'].lower() or len(r['lefts']) > len(r['rights']):
+            return BINDING
+        elif len(r['lefts']) < len(r['rights']):
+            return DISSOCIATION
+        else:
+            return r['id']
 
-    def get_participants(self, reaction):
+
+    def get_reaction(self, reaction, query_proteins=None):
+        query_proteins = query_proteins or set()
         lefts = []
         rights = []
         all_participants = []
@@ -69,8 +96,16 @@ class Tabularizer:
                 activators.append(self.flatten_complex(n))
             else:
                 print(data['label'])
+        n_hits = len(set(all_participants) & set(query_proteins))
+        lefts = list(filter(None, lefts))
+        rights = list(filter(None, rights))
+        inhibitors = list(filter(None, inhibitors))
+        regulators = list(filter(None, regulators))
+        activators = list(filter(None, activators))
+
         return {'lefts': lefts, 'rights': rights, 'participants': all_participants, 'id': reaction,
-                'inhibitors': inhibitors, 'regulators': regulators, 'activators': activators, 'references': references}
+                'inhibitors': inhibitors, 'regulators': regulators, 'activators': activators, 'references': references,
+                'n_hits': n_hits}
 
     def flatten_complex(self, c):
         #     location = get_location(c)
@@ -80,7 +115,7 @@ class Tabularizer:
         else:
             members = list(self.g.neighbors(c))
             members = [self.flatten_complex(m) for m in members if m]
-            members = [m for m in members if m]
+            members = sorted([m for m in members if m])
             out = ':'.join(members)
         #     if location:
         #         out = out + f"({location})"
@@ -91,29 +126,48 @@ class Tabularizer:
     def reactions_to_df(self, reactions):
         df = defaultdict(list)
         for r in reactions:
-            df['type'].append(r['id'].split('/')[-1])
-            df['lhs'].append(','.join(r['lefts']))
-            df['rhs'].append(','.join(r['rights']))
-            df['activators'].append(','.join(r['activators']))
-            df['inhibitors'].append(','.join(r['inhibitors']))
-            df['regulators'].append(','.join(r['regulators']))
-            df['references'].append(','.join(r['references']))
-        return pd.DataFrame(df)
+            df['type'].append(self.get_reaction_type(r))
+            df['lhs'].append('|'.join(r['lefts']))
+            df['rhs'].append('|'.join(r['rights']))
+            df['activators'].append('|'.join(r['activators']))
+            df['inhibitors'].append('|'.join(r['inhibitors']))
+            df['regulators'].append('|'.join(r['regulators']))
+            df['references'].append('|'.join(r['references']))
+            df['n_hits'].append(r['n_hits'])
+        df = pd.DataFrame(df).sort_values('n_hits', ascending=False)
 
-    def get_reactions(self):
-        reactions = [self.get_participants(n) for n in self.g if "R-HSA" in n or "Transport" in n or "ComplexAssembly" in n or "Reaction" in n]
+        return df
+
+    def get_reactions(self, query_proteins=None):
+        reactions = [self.get_reaction(n, query_proteins) for n in self.g if "R-HSA" in n or "Transport" in n or "ComplexAssembly" in n or "Reaction" in n]
+        if query_proteins:
+            reactions = [r for r in reactions if r['n_hits'] > 0]
         return reactions
 
 
 if __name__ == '__main__':
     g = nx.MultiDiGraph()
-    with open('data/reactome.cif') as f:
+    #fname = sys.argv[1]
+    fname = 'data/reactome'
+    graph = fname + '.cif'
+    references = fname + '_references.json'
+    query_graph = pd.read_csv('data/nfkappab.tsv', sep='\t')
+
+    proteins = set()
+    for complx in itertools.chain(query_graph['Protein A'], query_graph['Protein B']):
+        proteins.update(complx.split(':'))
+
+    with open(graph) as f:
         for line in f:
             e1, e2, r = line.strip().split('\t')
             g.add_edge(e1, e2, label=r)
 
-    tab = Tabularizer(g)
-    reactions = tab.get_reactions()
+    with open(references) as f:
+        references = json.load(f)
+
+    tab = Tabularizer(g, references)
+    reactions = tab.get_reactions(query_proteins=proteins)
+    df = tab.reactions_to_df(reactions).to_csv('test.csv', index=False)
 
 
 
