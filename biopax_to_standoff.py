@@ -181,7 +181,7 @@ SELECT ?reaction_id ?entity_id ?ref_id ?name ?location_name ?mod_type WHERE {
 """
 
 GET_COMPLEX_CONSTITUENTS = """
-SELECT ?complex_id ?entity_id ?ref_id ?name ?mod_type WHERE {
+SELECT ?complex_id ?entity_id ?ref_id ?name WHERE {
   ?complex_id a biopax3:Complex ;
   biopax3:component ?entity_id .
   OPTIONAL {
@@ -189,16 +189,11 @@ SELECT ?complex_id ?entity_id ?ref_id ?name ?mod_type WHERE {
   }
   OPTIONAL {
   ?entity_id biopax3:displayName ?name . }
-  OPTIONAL {
-  ?entity_id biopax3:feature ?mod_id .
-  ?mod_id biopax3:modificationType ?vocab_id .
-  ?vocab_id biopax3:term ?mod_type .
-  } 
 }
 """
 
 GET_CONTROLS = """
-SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type ?mod_type WHERE {
+SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type WHERE {
   ?control_id a biopax3:Control ;
   biopax3:controller ?controller_id .
   ?control_id  biopax3:controlled ?reaction_id .
@@ -210,16 +205,11 @@ SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type ?mod_type WHERE {
   OPTIONAL {
   ?control_id biopax3:controlType ?control_type .
   }
-  OPTIONAL {
-  ?controller_id biopax3:feature ?mod_id .
-  ?mod_id biopax3:modificationType ?vocab_id .
-  ?vocab_id biopax3:term ?mod_type .
-  } 
 }
 """
 
 GET_CATALYSIS = """
-SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type ?mod_type WHERE {
+SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type WHERE {
   ?control_id a biopax3:Catalysis ;
   biopax3:controller ?controller_id .
   ?control_id  biopax3:controlled ?reaction_id .
@@ -231,11 +221,6 @@ SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type ?mod_type WHERE {
   OPTIONAL {
   ?control_id biopax3:controlType ?control_type .
   }
-  OPTIONAL {
-  ?controller_id biopax3:feature ?mod_id .
-  ?mod_id biopax3:modificationType ?vocab_id .
-  ?vocab_id biopax3:term ?mod_type .
-  } 
 }
 """
 
@@ -262,7 +247,7 @@ def main(input, output):
     rights = itertools.chain(rights1, rights2, rights3, rights4)
 
     complexes = graph.query(GET_COMPLEX_CONSTITUENTS, initNs=rdf_sparql.PREFIXES)
-    controls = graph.query(GET_CONTROLS, initNs=rdf_sparql.PREFIXES)
+    controls = graph.query(GET_CONTROLS, initNs=rdf_sparql.PREFIXES)  
     catalyses = graph.query(GET_CATALYSIS, initNs=rdf_sparql.PREFIXES)
 
     xrefs = graph.query(GET_XREFS, initNs=rdf_sparql.PREFIXES)
@@ -273,7 +258,7 @@ def main(input, output):
 
     for reaction_id, entity_id, ref_id, name, location_name, modification in lefts:
         # if ref_id and 'uniprot' in ref_id:
-        if ref_id and "Reference" not in ref_id:
+        if ref_id:
             tuples.add((str(entity_id), str(ref_id), "has_id"))
         elif name:
             tuples.add((str(entity_id), str(name), "has_id"))
@@ -284,12 +269,12 @@ def main(input, output):
 
         if modification:
             tuples.add((str(entity_id), str(modification), "has_modification"))
-
+            
         tuples.add((str(reaction_id), str(entity_id), "has_left"))
 
     for reaction_id, entity_id, ref_id, name, location_name, modification in rights:
         # if ref_id and 'uniprot' in ref_id:
-        if ref_id and "Reference" not in ref_id:
+        if ref_id:
             tuples.add((str(entity_id), str(ref_id), "has_id"))
         elif name:
             tuples.add((str(entity_id), str(name), "has_id"))
@@ -302,26 +287,25 @@ def main(input, output):
 
         tuples.add((str(reaction_id), str(entity_id), "has_right"))
 
-    for complex_id, entity_id, ref_id, name, modification in complexes:
+    for complex_id, entity_id, ref_id, name in complexes:
         # if ref_id and 'uniprot' in ref_id:
-        if ref_id and "Reference" not in ref_id:
+        if ref_id:
             tuples.add((str(entity_id), str(ref_id), "has_id"))
         elif name:
             tuples.add((str(entity_id), str(name), "has_id"))
-
-        if modification:
-            tuples.add((str(entity_id), str(modification), "has_modification"))
         tuples.add((str(complex_id), str(entity_id), "has_component"))
 
-    for reaction_id, entity_id, ref_id, name, control_type, modification in itertools.chain(controls, catalyses):
+    for reaction_id, entity_id, ref_id, name, control_type in itertools.chain(controls, catalyses):
         # if "BiochemicalReaction" not in reaction_id:
-        # continue
+            # continue
 
-        if 'SmallMolecule' in entity_id or 'Pathway' in entity_id:
+        # if 'SmallMolecule' in entity_id or 'Rna' in entity_id or 'Pathway' in entity_id:
+        #     continue
+        if 'Pathway' in entity_id:
             continue
 
-        if ref_id and "Reference" not in ref_id:
-            tuples.add((str(entity_id), str(ref_id), "has_id"))
+        if ref_id:
+            entity_id = ref_id.split('/')[-1]
         elif name:
             tuples.add((str(entity_id), str(name), "has_id"))
 
@@ -329,9 +313,6 @@ def main(input, output):
             control_type = "regulation"
         else:
             control_type = control_type.lower()
-
-        if modification:
-            tuples.add((str(entity_id), str(modification), "has_modification"))
         tuples.add((str(reaction_id), str(entity_id), control_type))
 
     with open(output + '.cif', 'w') as f:

@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-from pypathway.utils import IdMapping
 from collections import defaultdict
 import networkx as nx
 

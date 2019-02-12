@@ -10,8 +10,17 @@ from collections import defaultdict
 DEGRADATION = 'Degradation'
 DEPHOSPHORYLATION = 'Dephosphorylation'
 PHOSPHORYLATION = 'Phosphorylation'
+UBIQUITINYLATION = 'Ubiquitinylation'
+DEUBIQUITINYLATION = 'Deubiquitinylation'
+METHYLATION = 'Methylation'
+DEMETHYLATION = 'Demethylation'
+ACETYLATION = 'Acetylation'
+DEACETYLATION = 'Deacetylation'
 BINDING = 'Binding'
 DISSOCIATION = 'Dissociation'
+TRANSCRIPTION = 'Transcription'
+GENE_EXPRESSION = 'Gene Expression'
+CONVERSION = 'Conversion'
 
 with open('data/uniprot_to_hgnc.json') as f:
     uniprot_to_hgnc = json.load(f)
@@ -31,8 +40,20 @@ class Tabularizer:
                 if uniprot in uniprot_to_hgnc:
                     return uniprot_to_hgnc[uniprot][0]
                 else:
-                    return protein
+                    return id_
         return protein
+
+    def denormalize_dna(self, dna):
+        for _, id_, data in self.g.edges(dna, data=True):
+            if data['label'] == 'has_id':
+                return 'dna_' + id_
+        return dna
+
+    def denormalize_rna(self, rna):
+        for _, id_, data in self.g.edges(rna, data=True):
+            if data['label'] == 'has_id':
+                    return 'rna_' + id_
+        return rna
 
 
     def get_location(self, n):
@@ -51,20 +72,53 @@ class Tabularizer:
             return None
 
     def get_reaction_type(self, r):
-        left_phosphos = ['phospho' in l for l in r['lefts']]
-        right_phosphos = ['phospho' in l for l in r['rights']]
+        left_phosphos = [l.count('phospho') for l in r['lefts']]
+        right_phosphos = [l.count('phospho') for l in r['rights']]
+
+        left_ubiquis = [l.count('ubiqui') for l in r['lefts']]
+        right_ubiquis = [l.count('ubiqui') for l in r['rights']]
+
+        left_methyls = [l.count('methyl') for l in r['lefts']]
+        right_methyls = [l.count('methyl') for l in r['rights']]
+
+        left_acetyl = [l.count('acetyl') for l in r['lefts']]
+        right_acetyl = [l.count('acetyl') for l in r['rights']]
+
         if len(r['lefts']) > 0 and len(r['rights']) == 0:
             return DEGRADATION
+
+        elif any(['dna' in l for l in r['lefts']]):
+            if any(['rna' in l for l in r['rights']]):
+                return TRANSCRIPTION
+            else:
+                return GENE_EXPRESSION
+
         elif sum(left_phosphos) > sum(right_phosphos):
             return DEPHOSPHORYLATION
         elif sum(left_phosphos) < sum(right_phosphos):
             return PHOSPHORYLATION
+
+        elif sum(left_ubiquis) > sum(right_ubiquis):
+            return DEUBIQUITINYLATION
+        elif sum(left_ubiquis) < sum(right_ubiquis):
+            return UBIQUITINYLATION
+
+        elif sum(left_methyls) > sum(right_methyls):
+            return DEMETHYLATION
+        elif sum(left_methyls) < sum(right_methyls):
+            return METHYLATION
+
+        elif sum(left_acetyl) > sum(right_acetyl):
+            return DEACETYLATION
+        elif sum(left_acetyl) < sum(right_acetyl):
+            return ACETYLATION
+
         elif 'complex' in r['id'].lower() or len(r['lefts']) > len(r['rights']):
             return BINDING
         elif len(r['lefts']) < len(r['rights']):
             return DISSOCIATION
         else:
-            return r['id']
+            return CONVERSION
 
 
     def get_reaction(self, reaction, query_proteins=None):
@@ -112,6 +166,10 @@ class Tabularizer:
         modification = self.get_modification(c)
         if 'Protein' in c:
             out = self.denormalize_protein(c)
+        elif 'Dna' in c:
+            out = self.denormalize_dna(c)
+        elif 'Rna' in c:
+            out = self.denormalize_rna(c)
         else:
             members = list(self.g.neighbors(c))
             members = [self.flatten_complex(m) for m in members if m]
@@ -133,6 +191,7 @@ class Tabularizer:
             df['inhibitors'].append('|'.join(r['inhibitors']))
             df['regulators'].append('|'.join(r['regulators']))
             df['references'].append('|'.join(r['references']))
+            df['id'].append(r['id'])
             df['n_hits'].append(r['n_hits'])
         df = pd.DataFrame(df).sort_values('n_hits', ascending=False)
 
@@ -143,6 +202,7 @@ class Tabularizer:
         if query_proteins:
             reactions = [r for r in reactions if r['n_hits'] > 0]
         return reactions
+
 
 
 if __name__ == '__main__':
@@ -167,7 +227,7 @@ if __name__ == '__main__':
 
     tab = Tabularizer(g, references)
     reactions = tab.get_reactions(query_proteins=proteins)
-    df = tab.reactions_to_df(reactions).to_csv('test.csv', index=False)
+    df = tab.reactions_to_df(reactions).to_csv('test.tsv', index=False, sep='\t')
 
 
 
