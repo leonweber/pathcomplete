@@ -1,0 +1,6 @@
+GENE_OR_GENE_PRODUCT = 'Gene_or_gene_product'
+CHEMICAL = 'Simple_chemical'
+COMPLEX = 'Complex'
+ENTITY = 'Entity'
+LOCATION = 'Cellular_component'
+TRANSPORT = 'Transport'
