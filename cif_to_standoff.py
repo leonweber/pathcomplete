@@ -1,4 +1,5 @@
 from collections import defaultdict
+import re
 from typing import List, Dict, Optional
 
 import networkx as nx
@@ -8,6 +9,9 @@ from tqdm import tqdm
 
 import constants
 import json
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 PREFERED_IDS = ['uniprot', 'chebi']
 
@@ -21,6 +25,10 @@ def get_entity_type(node: str) -> Optional[str]:
         return constants.COMPLEX
     elif '#SmallMolecule' in node:
         return constants.CHEMICAL
+    elif '#Dna' in node:
+        return constants.GENE_OR_GENE_PRODUCT
+    elif '#Rna' in node:
+        return constants.GENE_OR_GENE_PRODUCT
     else:
         return None
 
@@ -55,11 +63,12 @@ def get_entity_name(entity: str, g: nx.MultiDiGraph) -> str:
                 return ':'.join(members)
 
 
-def get_locations(g: nx.MultiDiGraph) -> List[str]:
+def get_locations(entities: List[str], g: nx.MultiDiGraph) -> List[str]:
     locations = set()
-    for _, node, data in g.edges(data=True):
-        if data['label'] == 'has_location':
-            locations.add(node)
+    for entity in entities:
+        for _, node, data in g.edges(data=True):
+            if data['label'] == 'has_location':
+                locations.add(node)
 
     return list(locations)
 
@@ -100,6 +109,100 @@ def get_location(entity: str, g: nx.MultiDiGraph):
     else:
         return None
 
+def get_modification(entity:str, g: nx.MultiDiGraph):
+    for _, node, data in g.edges(entity, data=True):
+        if data['label'] == 'has_modification':
+            return node
+    else:
+        return None
+
+def ensure_in_text_expressions(key: str, text_expressions: Dict[str, dict], type: str) -> str:
+    if key not in text_expressions:
+        text_expressions[key]['id'] = f'T{len(text_expressions)}'
+        text_expressions[key]['type'] = type
+    return text_expressions[key]['id']
+
+
+def add_event(events: List, text_expressions: Dict[str, dict], type: str) -> Dict:
+    event_id = f'E{len(events)}'
+    text_id = ensure_in_text_expressions(event_id, text_expressions, type)
+
+    event = {'id': event_id, 'type': type, 'text_id': text_id}
+    events.append(event)
+
+    return event
+
+def count_molucule_in_chemical(molecule: str, chemical: str):
+    count = 0
+    count += len(re.findall(f"(?:mono[-]?)?{molecule}", chemical))
+    count += len(re.findall(f"di[-]?[s]?{molecule}", chemical)) * 2
+    count += len(re.findall(f"tr[-]?i[s]?{molecule}", chemical)) * 3
+
+    return count
+
+
+
+def get_modification_type(left_mod: str, right_mod: str):
+    if 'inactive' in left_mod and 'active' in right_mod and 'inactive' not in right_mod:
+       return constants.ACTIVATION
+    elif 'active' in left_mod and 'inactive' in right_mod and 'inactive' not in left_mod:
+        return constants.INACTIVATION
+    elif 'sumoylated' not in left_mod and 'sumoylated' in right_mod:
+        return constants.SUMOYLATION
+    elif 'sumoylated' in left_mod and 'sumoylated' not in right_mod:
+        return constants.DESUMOYLATION
+    elif count_molucule_in_chemical('phosph', left_mod) < count_molucule_in_chemical('phosph', right_mod):
+        return constants.PHOSPHORYLATION
+    elif count_molucule_in_chemical('phosph', left_mod) > count_molucule_in_chemical('phosph', right_mod):
+        return constants.DEPHOSPHORYLATION
+    elif 'ubiquitin' not in left_mod and 'ubiquitin' in right_mod:
+        return constants.UBIQUITINYLATION
+    elif 'ubiquitin' in left_mod and 'ubiquitin' not in right_mod:
+        return constants.DEUBIQUITINYLATION
+    elif count_molucule_in_chemical('acetyl', left_mod) < count_molucule_in_chemical('acetyl', right_mod):
+        return constants.ACETYLATION
+    elif count_molucule_in_chemical('acetyl', left_mod) > count_molucule_in_chemical('acetyl', right_mod):
+        return constants.DEACETYLATION
+    elif count_molucule_in_chemical('methyl', left_mod) < count_molucule_in_chemical('methyl', right_mod):
+        return constants.METHYLATION
+    elif count_molucule_in_chemical('methyl', left_mod) > count_molucule_in_chemical('methyl', right_mod):
+        return constants.DEMETHYLATION
+    else:
+        logging.warning(f"Could not determine modification: {left_mod} -> {right_mod}")
+        return None
+
+
+
+
+def add_modifications(reaction: str, text_expressions: Dict[str, Dict],
+                      entities: Dict[str, str], events: List[Dict], g: nx.MultiDiGraph):
+    lefts = get_lefts(reaction, g)
+    rights = get_rights(reaction, g)
+    common_ents = set(entities[e] for e in lefts) & set(entities[e] for e in rights)
+    left_modifications = {}
+    for left in lefts:
+        name = entities[left]
+        left_modifications[name] = get_modification(left, g)
+
+    right_modifications = {}
+    for right in rights:
+        name = entities[right]
+        right_modifications[name] = get_modification(right, g)
+
+    for ent in common_ents:
+        left_mod = left_modifications[ent] or ''
+        right_mod = right_modifications[ent] or ''
+        if left_mod != right_mod:
+            mod_type = get_modification_type(left_mod, right_mod)
+            if not mod_type:
+                continue
+
+            theme_id = text_expressions[ent]['id']
+            event = add_event(events, text_expressions, mod_type)
+            event['text'] = f"{event['id']}\t{mod_type}:{event['text_id']} Theme:{theme_id}"
+            logging.debug(f"Added event {event}")
+
+
 
 def add_transports(reaction: str, text_expressions: Dict[str, Dict],
                    entities: Dict[str, str], events: List[Dict], g: nx.MultiDiGraph):
@@ -110,26 +213,23 @@ def add_transports(reaction: str, text_expressions: Dict[str, Dict],
     left_locations = {}
     for left in lefts:
         name = entities[left]
-        left_locations[name] = get_location(left)
+        left_locations[name] = get_location(left, g)
 
     right_locations = {}
     for right in rights:
         name = entities[right]
-        right_locations[name] = get_location(right)
+        right_locations[name] = get_location(right, g)
 
     for ent in common_ents:
         left_loc = left_locations[ent]
         right_loc = right_locations[ent]
         if left_loc != right_loc:
-            event_id = f'E{len(events)}'
+            left_loc_text_id = ensure_in_text_expressions(left_loc, text_expressions, constants.LOCATION)
+            right_loc_text_id = ensure_in_text_expressions(right_loc, text_expressions, constants.LOCATION)
 
-            left_loc_text_id = text_expressions[left_loc]['id']
-            right_loc_text_id = text_expressions[right_loc]['id']
-            text_id = f'T{len(text_expressions)}'
-            text_expressions[event_id]['id'] = text_id
-            text_expressions[event_id]['type'] = f'{constants.TRANSPORT}'
-            event = f'{event_id}\t{constants.TRANSPORT}:{text_id} ToLoc:{right_loc_text_id} FromLoc:{left_loc_text_id}'
-            events.append({'id': event_id, 'text': event})
+            event = add_event(events, text_expressions, constants.TRANSPORT)
+            event['text'] = f"{event['id']}\t{constants.TRANSPORT}:{event['text_id']} ToLoc:{right_loc_text_id} FromLoc:{left_loc_text_id}"
+            logging.debug(f"Added event {event}")
 
 
 def reactions_to_standoff(reactions, g):
@@ -140,21 +240,15 @@ def reactions_to_standoff(reactions, g):
     for ent_id, ent_name in id_to_entity.items():
         text_expressions[ent_name]['id'] = f'T{len(text_expressions)}'
         text_expressions[ent_name]['type'] = get_entity_type(ent_id)
-    locations = get_locations(g)
-
-    for loc in locations:
-        text_expressions[loc]['id'] = f'T{len(text_expressions)}'
-        text_expressions[loc]['type'] = constants.LOCATION
 
     for reaction in reactions:
-        if 'Transport' in reaction:
-            add_transports(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
-            pass
+        add_transports(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_modifications(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
 
 
 if __name__ == '__main__':
     g = nx.MultiDiGraph()
-    fname = 'data/ncbi'
+    fname = 'data/reactome'
     graph = fname + '.cif'
     references = fname + '_references.json'
 
