@@ -242,8 +242,19 @@ def reactions_to_standoff(reactions, g):
         text_expressions[ent_name]['type'] = get_entity_type(ent_id)
 
     for reaction in reactions:
+        n_events_before = len(events)
         add_transports(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
         add_modifications(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_degradations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_bindings(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_dissociations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_gene_expressions(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_transcriptions(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        add_translations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        n_events_after = len(events)
+
+        if n_events_before == n_events_after:
+            logging.warning(f"Did not add any events during processing of {reaction}")
 
 
 if __name__ == '__main__':
