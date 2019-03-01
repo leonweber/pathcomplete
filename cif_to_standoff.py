@@ -11,9 +11,44 @@ import constants
 import json
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.ERROR)
 
 PREFERED_IDS = ['uniprot', 'chebi']
+
+
+class Event:
+    def __init__(self, id_, type_, text_id):
+        self.themes = []
+        self.products = []
+        self.cause = None
+        self.from_loc = None
+        self.to_loc = None
+        self.id = id_
+        self.type = type_
+        self.text_id = text_id
+
+    def to_text(self):
+        text = f"E{self.id}\t{self.type}:{self.text_id}"
+        for i, theme in enumerate(self.themes, start=1):
+            text += f" Theme{i}:{theme}" if i > 0 else f" Theme:{theme}"
+        for i, product in enumerate(self.products, start=1):
+            text += f" Product{i}:{product}" if i > 0 else f" Product:{product}"
+
+        if self.cause:
+            text += f" Cause: {self.cause}"
+
+        if self.from_loc:
+            text += f" FromLoc: {self.from_loc}"
+
+        if self.to_loc:
+            text += f" ToLoc: {self.to_loc}"
+
+        return text
+
+    def __str__(self):
+        return self.to_text()
+
+
 
 
 def get_entity_type(node: str) -> Optional[str]:
@@ -61,16 +96,6 @@ def get_entity_name(entity: str, g: nx.MultiDiGraph) -> str:
                     member_name = get_entity_name(member, g)
                     members.append(member_name)
                 return ':'.join(members)
-
-
-def get_locations(entities: List[str], g: nx.MultiDiGraph) -> List[str]:
-    locations = set()
-    for entity in entities:
-        for _, node, data in g.edges(data=True):
-            if data['label'] == 'has_location':
-                locations.add(node)
-
-    return list(locations)
 
 
 def get_entities(reactions: List[str], g: nx.MultiDiGraph) -> Dict[str, str]:
@@ -123,14 +148,23 @@ def ensure_in_text_expressions(key: str, text_expressions: Dict[str, dict], type
     return text_expressions[key]['id']
 
 
-def add_event(events: List, text_expressions: Dict[str, dict], type: str) -> Dict:
+def add_event(events: List, text_expressions: Dict[str, dict], type: str) -> Event:
+    """
+    Add new event to events. Returns the dict comprising the new event
+
+    :param events:
+    :param text_expressions:
+    :param type:
+    :return:
+    """
     event_id = f'E{len(events)}'
     text_id = ensure_in_text_expressions(event_id, text_expressions, type)
 
-    event = {'id': event_id, 'type': type, 'text_id': text_id}
+    event = Event(id_=event_id, type_= type, text_id=text_id)
     events.append(event)
 
     return event
+
 
 def count_molucule_in_chemical(molecule: str, chemical: str):
     count = 0
@@ -139,7 +173,6 @@ def count_molucule_in_chemical(molecule: str, chemical: str):
     count += len(re.findall(f"tr[-]?i[s]?{molecule}", chemical)) * 3
 
     return count
-
 
 
 def get_modification_type(left_mod: str, right_mod: str):
@@ -172,6 +205,27 @@ def get_modification_type(left_mod: str, right_mod: str):
         return None
 
 
+def add_regulations(reaction: str, event_id: str, text_expressions: Dict[str, Dict],
+                    entities: Dict[str, str], events: List[Dict], g: nx.MultiDiGraph):
+
+    for _, node, data in g.edges(reaction, data=True):
+        if data['label'] in {'activation', 'inhibition', 'regulation'}:
+            regulator = entities[node]
+            if data['label'] == 'activation':
+                event_type = constants.POSITIVE_REGULATION
+            elif data['label'] == 'inhibition':
+                event_type = constants.NEGATIVE_REGULATION
+            elif data['label'] == 'regulation':
+                event_type = constants.REGULATION
+            else:
+                raise ValueError
+
+            theme_id = text_expressions[event_id]['id']
+            cause_id = text_expressions[regulator]['id']
+
+            event = add_event(events, text_expressions, event_type)
+            event.cause = cause_id
+            event.themes.append(theme_id)
 
 
 def add_modifications(reaction: str, text_expressions: Dict[str, Dict],
@@ -199,8 +253,9 @@ def add_modifications(reaction: str, text_expressions: Dict[str, Dict],
 
             theme_id = text_expressions[ent]['id']
             event = add_event(events, text_expressions, mod_type)
-            event['text'] = f"{event['id']}\t{mod_type}:{event['text_id']} Theme:{theme_id}"
+            event.themes.append(theme_id)
             logging.debug(f"Added event {event}")
+            add_regulations(reaction, event.id, text_expressions=text_expressions, entities=entities, events=events, g=g)
 
 
 
@@ -228,9 +283,53 @@ def add_transports(reaction: str, text_expressions: Dict[str, Dict],
             right_loc_text_id = ensure_in_text_expressions(right_loc, text_expressions, constants.LOCATION)
 
             event = add_event(events, text_expressions, constants.TRANSPORT)
-            event['text'] = f"{event['id']}\t{constants.TRANSPORT}:{event['text_id']} ToLoc:{right_loc_text_id} FromLoc:{left_loc_text_id}"
+            event.from_loc = left_loc_text_id
+            event.to_loc = right_loc_text_id
             logging.debug(f"Added event {event}")
+            add_regulations(reaction, event.id, text_expressions=text_expressions, entities=entities, events=events, g=g)
 
+
+def add_degradations(reaction: str, text_expressions: Dict[str, Dict],
+                     entities: Dict[str, str], events: List[Dict], g: nx.MultiDiGraph):
+    lefts = get_lefts(reaction, g)
+    rights = get_rights(reaction, g)
+
+    if len(rights) == 0:
+        for left in lefts:
+            name = entities[left]
+            event = add_event(events, text_expressions, constants.DEGRADATION)
+            event.themes.append(text_expressions[name])
+
+            logging.debug(f"Added event {event}")
+            add_regulations(reaction, event.id, text_expressions=text_expressions, entities=entities, events=events, g=g)
+
+
+def add_bindings(reaction: str, text_expressions: Dict[str, Dict],
+                 entities: Dict[str, str], events: List[Dict], g: nx.MultiDiGraph):
+    lefts = get_lefts(reaction, g)
+    rights = get_rights(reaction, g)
+    if len(lefts) > len(rights) and len(rights) == 1 and 'Complex' in rights[0]:
+        product_name = entities[rights[0]]
+        event = add_event(events, text_expressions, constants.BINDING)
+        event.products.append(text_expressions[product_name]['id'])
+        event.themes = [text_expressions[entities[left]]['id'] for left in lefts]
+
+        logging.debug(f"Added event {event}")
+        add_regulations(reaction, event.id, text_expressions=text_expressions, entities=entities, events=events, g=g)
+
+
+def add_dissociations(reaction: str, text_expressions: Dict[str, Dict],
+                     entities: Dict[str, str], events: List[Dict], g: nx.MultiDiGraph):
+    lefts = get_lefts(reaction, g)
+    rights = get_rights(reaction, g)
+    if len(lefts) < len(rights) and len(lefts) == 1 and 'Complex' in lefts[0]:
+        event = add_event(events, text_expressions, constants.DISSOCIATION)
+        theme_id = text_expressions[entities[lefts[0]]]['id']
+        event.themes.append(theme_id)
+        event.products = [text_expressions[entities[right]]['id'] for right in rights]
+
+        logging.debug(f"Added event {event}")
+        add_regulations(reaction, event.id, text_expressions, entities, events, g)
 
 def reactions_to_standoff(reactions, g):
     text_expressions = defaultdict(dict)
@@ -248,13 +347,15 @@ def reactions_to_standoff(reactions, g):
         add_degradations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
         add_bindings(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
         add_dissociations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
-        add_gene_expressions(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
-        add_transcriptions(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
-        add_translations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        # add_gene_expressions(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        # add_transcriptions(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
+        # add_translations(reaction, entities=id_to_entity, text_expressions=text_expressions, events=events, g=g)
         n_events_after = len(events)
 
         if n_events_before == n_events_after:
             logging.warning(f"Did not add any events during processing of {reaction}")
+
+    return events, text_expressions
 
 
 if __name__ == '__main__':
@@ -275,6 +376,14 @@ if __name__ == '__main__':
     for reaction, pm_ids in reactions_to_pm_ids.items():
         for pm_id in pm_ids:
             pm_id_to_reactions[pm_id].append(reaction)
-    all_reactions = list(pm_id_to_reactions.values())
-    for reactions in tqdm(all_reactions):
-        reactions_to_standoff(reactions, g)
+
+    pm_id_to_events = {}
+    for pm_id, reactions in tqdm(pm_id_to_reactions.items()):
+        events, text_mentions = reactions_to_standoff(reactions, g)
+        if len(events) > 0:
+            pm_id_to_events[pm_id] = (events, text_mentions)
+
+    n_events = 0
+    for events in pm_id_to_events.values():
+        n_events += len(events)
+    print(f"Collected {n_events} events spread across {len(pm_id_to_events)} articles.")
