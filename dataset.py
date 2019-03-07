@@ -7,7 +7,8 @@ from typing import Dict, List, Tuple, Set
 import spacy
 
 from allennlp.common.file_utils import cached_path
-from allennlp.data import DatasetReader, TokenIndexer, Tokenizer, Instance, Field
+from allennlp.data import DatasetReader, TokenIndexer, Tokenizer, Instance, Field, Token
+from allennlp.data.fields import TextField, LabelField
 from allennlp.data.token_indexers import SingleIdTokenIndexer
 from allennlp.data.tokenizers import WordTokenizer
 from allennlp.data.tokenizers.word_splitter import JustSpacesWordSplitter
@@ -18,8 +19,8 @@ import constants
 logger = logging.getLogger(__name__)
 
 
-@DatasetReader.register('myreader')
-class MyReader(DatasetReader):
+@DatasetReader.register('streader')
+class STReader(DatasetReader):
 
     def __init__(self, lazy: bool = False,
                  tokenizer: Tokenizer = None,
@@ -49,7 +50,7 @@ class MyReader(DatasetReader):
             ann = ann.split('\t')
             type_ = ann[1].split()[0].split(':')[0]
 
-            if type_ in constants.MODIFICATIONS:
+            if type_ in constants.SIMPLE_EVENTS:
                 theme_ids = [i.split(':')[1] for i in ann[1].split() if i.startswith('Theme')]
                 assert len(theme_ids) == 1
                 theme_id = theme_ids[0]
@@ -63,7 +64,7 @@ class MyReader(DatasetReader):
         logger.info(f"Reading data from {file_path}")
         with tarfile.open(cached_path(file_path), 'r') as data_file:
             file_ids = set(os.path.splitext(n)[0] for n in data_file.getnames() if 'PMID' in n)
-            for file_id in file_ids:
+            for file_id in list(file_ids)[:2]:
                 with data_file.extractfile(file_id + '.txt') as f:
                     text = f.read().decode()
                 with data_file.extractfile(file_id + '.a1') as f:
@@ -79,20 +80,19 @@ class MyReader(DatasetReader):
                     for id_ in ids:
                         true_mods.update(mods[id_])
 
-                    false_mods = set(constants.MODIFICATIONS) - true_mods
+                    false_mods = set(constants.SIMPLE_EVENTS) - true_mods
 
                     for mod in true_mods:
-                        yield self.text_to_instance(text, gogp, mod, True)
+                        yield self.text_to_instance(text, gogp, mod, 1)
                     for mod in false_mods:
-                        yield self.text_to_instance(text, gogp, mod, False)
+                        yield self.text_to_instance(text, gogp, mod, 0)
 
     @overrides
-    def text_to_instance(self, text: str, gene: str, mod: str, label: bool) -> Instance:
+    def text_to_instance(self, text: str, gene: str, mod: str, label: int) -> Instance:
         fields: Dict[str, Field] = {}
-        fields['text'] = text
-        fields['gene'] = gene
-        fields['mod'] = mod
-        fields['label'] = label
+        tokenized_text = self._tokenizer.tokenize(text)[:250] + [Token('[SEP]')] + self._tokenizer.tokenize(mod + ' ' + gene)
+        fields['text'] = TextField(tokenized_text, token_indexers=self._token_indexers)
+        fields['label'] = LabelField(label, skip_indexing=True)
 
         return Instance(fields)
 
