@@ -239,6 +239,15 @@ SELECT ?reaction_id ?controller_id ?ref_id ?name ?control_type ?mod_type WHERE {
 }
 """
 
+GET_PATHWAYS = """
+SELECT ?pw_name ?reac_id WHERE {
+    ?pw_id a biopax3:Pathway ;
+    biopax3:pathwayComponent ?reac_id .
+    ?pw_id biopax3:name ?pw_name .
+}
+"""
+
+
 GET_XREFS = """
 SELECT ?id ?xref WHERE {
     ?id biopax3:xref ?xref .
@@ -264,6 +273,7 @@ def main(input, output):
     complexes = graph.query(GET_COMPLEX_CONSTITUENTS, initNs=rdf_sparql.PREFIXES)
     controls = graph.query(GET_CONTROLS, initNs=rdf_sparql.PREFIXES)
     catalyses = graph.query(GET_CATALYSIS, initNs=rdf_sparql.PREFIXES)
+    pathways = graph.query(GET_PATHWAYS, initNs=rdf_sparql.PREFIXES)
 
     xrefs = graph.query(GET_XREFS, initNs=rdf_sparql.PREFIXES)
     pm_ids = defaultdict(list)
@@ -333,6 +343,14 @@ def main(input, output):
         if modification:
             tuples.add((str(entity_id), str(modification), "has_modification"))
         tuples.add((str(reaction_id), str(entity_id), control_type))
+
+    ids = set()
+    for tuple in tuples:
+        ids.update(tuple[:2])
+
+    for pathway_name, reaction_id in pathways:
+        if reaction_id in ids:
+            tuples.add((str(reaction_id), str(pathway_name), "in_pathway"))
 
     with open(output + '.cif', 'w') as f:
         for t in tuples:

@@ -1,3 +1,6 @@
+import argparse
+import os
+import sys
 from collections import defaultdict
 import re
 from typing import List, Dict, Optional
@@ -5,13 +8,14 @@ from typing import List, Dict, Optional
 import networkx as nx
 import itertools
 
+from pathlib import Path
 from tqdm import tqdm
 
 import constants
 import json
 import logging
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 
 PREFERED_IDS = ['uniprot', 'chebi']
 
@@ -28,7 +32,7 @@ class Event:
         self.text_id = text_id
 
     def to_text(self):
-        text = f"E{self.id}\t{self.type}:{self.text_id}"
+        text = f"{self.id}\t{self.type}:{self.text_id}"
         for i, theme in enumerate(self.themes, start=1):
             text += f" Theme{i}:{theme}" if i > 0 else f" Theme:{theme}"
         for i, product in enumerate(self.products, start=1):
@@ -176,9 +180,9 @@ def count_molucule_in_chemical(molecule: str, chemical: str):
 
 
 def get_modification_type(left_mod: str, right_mod: str):
-    if 'inactive' in left_mod and 'active' in right_mod and 'inactive' not in right_mod:
+    if ('inactive' in left_mod or not 'active' in left_mod) and 'active' in right_mod and 'inactive' not in right_mod:
        return constants.ACTIVATION
-    elif 'active' in left_mod and 'inactive' in right_mod and 'inactive' not in left_mod:
+    elif 'active' in left_mod and ('inactive' in right_mod or not 'active' in right_mod) and 'inactive' not in left_mod:
         return constants.INACTIVATION
     elif 'sumoylated' not in left_mod and 'sumoylated' in right_mod:
         return constants.SUMOYLATION
@@ -358,9 +362,18 @@ def reactions_to_standoff(reactions, g):
     return events, text_expressions
 
 
+def mention_to_str(name, info):
+    return f"{info['id']}\t{info['type']} ? ?\t{name}"
+
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input')
+    parser.add_argument('output')
+    args = parser.parse_args()
+
     g = nx.MultiDiGraph()
-    fname = 'data/reactome'
+    fname = args.input
     graph = fname + '.cif'
     references = fname + '_references.json'
 
@@ -373,7 +386,7 @@ if __name__ == '__main__':
         reactions_to_pm_ids = json.load(f)
 
     pm_id_to_reactions = defaultdict(list)
-    for reaction, pm_ids in reactions_to_pm_ids.items():
+    for reaction, pm_ids in list(reactions_to_pm_ids.items()):
         for pm_id in pm_ids:
             pm_id_to_reactions[pm_id].append(reaction)
 
@@ -386,4 +399,22 @@ if __name__ == '__main__':
     n_events = 0
     for events in pm_id_to_events.values():
         n_events += len(events)
-    print(f"Collected {n_events} events spread across {len(pm_id_to_events)} articles.")
+    logging.info(f"Collected {n_events} events spread across {len(pm_id_to_events)} articles.")
+
+    out_dir = Path(args.output)
+    os.makedirs(out_dir, exist_ok=True)
+    for pm_id, (events, text_mentions) in pm_id_to_events.items():
+        pm_id = pm_id.split('/')[-1]
+        with open(str(out_dir/pm_id) + '.a1', 'w') as f_a1, open(str(out_dir/pm_id) + '.a2', 'w') as f_a2:
+            for name, info in text_mentions.items():
+                if name and name.startswith('E'):
+                    f_a2.write(mention_to_str(name, info))
+                    f_a2.write("\n")
+                else:
+                    f_a1.write(mention_to_str(name, info))
+                    f_a1.write("\n")
+
+            for event in events:
+                f_a2.write(event.to_text())
+                f_a2.write('\n')
+
