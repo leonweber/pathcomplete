@@ -4,7 +4,7 @@ from pathlib import Path
 from sklearn import model_selection
 
 IGNORE = {'has_subreaction'}
-DONT_SPLIT = {'has_id'}
+PREDICT = {'activation', 'inhibition'}
 
 
 if __name__ == '__main__':
@@ -22,10 +22,10 @@ if __name__ == '__main__':
             if triple[2] in IGNORE:
                 continue
 
-            if triple[2] in DONT_SPLIT:
-                common_lines.append(line)
-            else:
+            if triple[2] in PREDICT:
                 split_lines.append(line)
+            else:
+                common_lines.append(line)
 
     train_lines, split_lines = model_selection.train_test_split(split_lines, train_size=0.5)
     dev_lines, test_lines = model_selection.train_test_split(split_lines, test_size=0.5)
