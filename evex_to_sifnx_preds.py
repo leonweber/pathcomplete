@@ -1,8 +1,8 @@
-import argparse
-from pathlib import Path
-from typing import Dict, List
-import pandas as pd
+import json
+from collections import defaultdict
+from typing import Dict, Tuple, Set, List
 
+import pandas as pd
 
 TYPE_MAPPING = {
     'Binding': 'in-complex-with',
@@ -18,32 +18,45 @@ TYPE_MAPPING = {
     'Regulation of transcription': 'controls-expression-of'
 }
 
+PMID = str
+Confidence = float
+Triple = str
+Prediction = Tuple[PMID, Confidence]
 
-def convert_to_sifnx(relations: pd.DataFrame, articles: List[str]) -> List[Dict]:
-    for relation in relations.iterrows():
+
+def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, List]) -> Dict[Triple, List[Prediction]]:
+    sifnx_triples = defaultdict(set)
+    for idx, relation in relations.iterrows():
         if relation['refined_type'] not in TYPE_MAPPING:
+            continue
+        if relation['negation'] == 1:
             continue
 
         sifnx_type = TYPE_MAPPING[relation['refined_type']]
+        head = str(relation['source_entrezgene_id'])
+        tail = str(relation['target_entrezgene_id'])
+        confidence = relation['confidence']
+        sifnx_triple = ','.join((head, sifnx_type, tail))
+        for pmid in event_id_to_article[str(relation['general_event_id'])]:
+            sifnx_triples[sifnx_triple].add((pmid, confidence))
 
+    result = {}
+    for k, v in sifnx_triples.items():
+        result[k] = list(v)
 
-
-
+    return result
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--relations', required=True)
-    parser.add_argument('--articles', required=True)
-    parser.add_argument('--out', required=True)
-    args = parser.parse_args()
+    relations = pd.read_csv('data/EVEX_relations_9606.tab', sep='\t')
+    event_id_to_article = defaultdict(list)
+    with open('data/EVEX_articles_9606.tab') as f:
+        next(f)
+        for line in f:
+            event_id, pmid = line.strip().split('\t')
+            pmid = pmid.split(':')[1].strip()
+            event_id_to_article[event_id].append(pmid)
 
-    relations = pd.read_csv(args.relations, sep='\t')
-    with open(args.articles) as f:
-        articles = f.read().splitlines(keepends=False)
-    preds = convert_to_sifnx(relations, articles)
-    print(preds)
-
-
-
-
+    preds = convert_to_sifnx(relations, event_id_to_article)
+    with open('data/EVEX_preds.json', 'w') as f:
+        json.dump(preds, f)
