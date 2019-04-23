@@ -13,6 +13,10 @@ def evaluate_relations(anns, preds):
 
     prec = tps / (tps + fps)
     rec = tps / (tps + fns)
+
+    if prec == 0 or rec == 0:
+        return 0, 0, 0, len(true_relations)
+
     f1 = 2 * prec * rec / (prec + rec)
 
     return prec, rec, f1, len(true_relations)
@@ -29,6 +33,10 @@ def evaluate_pairs(anns, preds):
 
     prec = tps / (tps + fps)
     rec = tps / (tps + fns)
+
+    if prec == 0 or rec == 0:
+        return 0, 0, 0, len(true_pairs)
+
     f1 = 2 * prec * rec / (prec + rec)
 
     return prec, rec, f1, len(true_pairs)
