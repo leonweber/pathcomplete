@@ -80,10 +80,12 @@ if __name__ == '__main__':
     df = pd.read_csv(args.input, sep='\t', header=0)
     interactions = to_interactions(df, mg)
     with open(args.input + '.train.json', 'w') as f_train, open(args.input + '.dev.json', 'w') as f_dev, \
-        open(args.input + '.test.json', 'w') as f_test:
+        open(args.input + '.test.json', 'w') as f_test, open(args.input + '.json', 'w') as f_all:
         train, dev, test = split(interactions)
 
         json.dump(train, f_train)
         json.dump(dev, f_dev)
         json.dump(test, f_test)
+
+        json.dump(interactions, f_all)
 
