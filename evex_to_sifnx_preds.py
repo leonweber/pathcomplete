@@ -39,6 +39,9 @@ def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, Lis
         sifnx_triple = ','.join((head, sifnx_type, tail))
         for pmid in event_id_to_article[str(relation['general_event_id'])]:
             sifnx_triples[sifnx_triple].add((pmid, confidence))
+            if sifnx_type == 'controls-phosphorylation-of':
+                sifnx_triples[','.join((head, 'controls-state-change-of', tail))].add((pmid, confidence))
+
 
     result = {}
     for k, v in sifnx_triples.items():

@@ -30,7 +30,6 @@ def evaluate_pairs(anns, preds):
     fps = len(pred_pairs - true_pairs)
     fns = len(true_pairs - pred_pairs)
 
-
     prec = tps / (tps + fps)
     rec = tps / (tps + fns)
 
@@ -72,8 +71,8 @@ def evaluate_provenance(anns, preds):
 
     f1 = 2 * prec * rec / (prec + rec)
 
-
     return prec, rec, f1, support
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -90,6 +89,12 @@ if __name__ == '__main__':
 
     prec, rec, f1, support = evaluate_relations(anns, preds)
     print(f"Relations: {prec}/{rec}/{f1}, Support: {support}")
+    relations = set(t.split(',')[1] for t in anns)
+    for relation in relations:
+        rel_anns = {k: v for k, v in anns.items() if k.split(',')[1] == relation}
+        prec, rec, f1, support = evaluate_relations(rel_anns, preds)
+        print(f"{relation}: {prec}/{rec}/{f1}, Support: {support}")
+
 
     prec, rec, f1, support = evaluate_pairs(anns, preds)
     print(f"Pairs: {prec}/{rec}/{f1}, Support: {support}")

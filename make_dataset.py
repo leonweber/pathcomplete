@@ -56,6 +56,13 @@ def to_interactions(df: pd.DataFrame, mg):
 
 
 def split(interactions):
+    filtered_interactions = interactions.copy()
+    for k in interactions:
+        triple = k.split(",")
+        if triple[1] == "controls-phosphorylation-of":
+            del filtered_interactions[",".join([triple[0], "controls-state-change-of", triple[2]])]
+
+    interactions = filtered_interactions
     keys = list(interactions.keys())
     np.random.seed(5005)
     np.random.shuffle(keys)
@@ -66,7 +73,7 @@ def split(interactions):
     dev_interactions = {k: interactions[k] for k in keys[idx1:idx2]}
     test_interactions = {k: interactions[k] for k in keys[idx2:]}
 
-    return train_interactions, dev_interactions, test_interactions
+    return train_interactions, dev_interactions, test_interactions, filtered_interactions
 
 
 
@@ -81,7 +88,7 @@ if __name__ == '__main__':
     interactions = to_interactions(df, mg)
     with open(args.input + '.train.json', 'w') as f_train, open(args.input + '.dev.json', 'w') as f_dev, \
         open(args.input + '.test.json', 'w') as f_test, open(args.input + '.json', 'w') as f_all:
-        train, dev, test = split(interactions)
+        train, dev, test, interactions = split(interactions)
 
         json.dump(train, f_train)
         json.dump(dev, f_dev)
