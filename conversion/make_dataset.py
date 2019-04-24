@@ -6,8 +6,7 @@ import pandas as pd
 import mygene
 import numpy as np
 
-import evex_to_sifnx_preds
-
+from conversion import evex_to_sifnx_preds
 
 INTERACTION_TYPES = set(evex_to_sifnx_preds.TYPE_MAPPING.values())
 

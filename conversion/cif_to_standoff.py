@@ -1,17 +1,15 @@
 import argparse
 import os
-import sys
 from collections import defaultdict
 import re
 from typing import List, Dict, Optional
 
 import networkx as nx
-import itertools
 
 from pathlib import Path
 from tqdm import tqdm
 
-import constants
+from util import constants
 import json
 import logging
 

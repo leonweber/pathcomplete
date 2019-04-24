@@ -2,7 +2,7 @@ import logging
 import os
 import tarfile
 from collections import defaultdict
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Set
 
 import spacy
 
@@ -14,7 +14,7 @@ from allennlp.data.tokenizers import WordTokenizer
 from allennlp.data.tokenizers.word_splitter import JustSpacesWordSplitter
 from overrides import overrides
 
-import constants
+from util import constants
 
 logger = logging.getLogger(__name__)
 
