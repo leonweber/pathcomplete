@@ -1,3 +1,9 @@
 [submodule "third_party/SimplE"]
 	path = third_party/SimplE
 	url = https://github.com/baharefatemi/SimplE.git
+[submodule "third_party/TuckER"]
+	path = third_party/TuckER
+	url = https://github.com/ibalazevic/TuckER.git
+[submodule "third_party/PCNN-NMAR"]
+	path = third_party/PCNN-NMAR
+	url = https://github.com/bflashcp3f/PCNN-NMAR.git

@@ -6,10 +6,21 @@ import pandas as pd
 import mygene
 import numpy as np
 
-from conversion import evex_to_sifnx_preds
+import evex_to_sifnx_preds
 
 INTERACTION_TYPES = set(evex_to_sifnx_preds.TYPE_MAPPING.values())
 
+def augment_interactions(interactions):
+    augmented_interactions = {}
+    for i in interactions:
+        augmented_interactions[i] = interactions[i]
+        e1, r, e2 = i.split(',')
+        if r == 'controls-phosphorylation-of':
+            augmented_interactions[f"{e1},controls-state-change-of,{e2}"] = interactions[i]
+        if r == 'in-complex-with':
+            augmented_interactions[f"{e2},in-complex-with,{e1}"] = interactions[i]
+
+    return augmented_interactions
 
 def to_interactions(df: pd.DataFrame, mg):
     genes = set()
@@ -55,11 +66,21 @@ def to_interactions(df: pd.DataFrame, mg):
 
 
 def split(interactions):
-    filtered_interactions = interactions.copy()
+    filtered_interactions = {}
+    blacklist = set()
     for k in interactions:
+        if k in blacklist:
+            continue
+
         triple = k.split(",")
         if triple[1] == "controls-phosphorylation-of":
-            del filtered_interactions[",".join([triple[0], "controls-state-change-of", triple[2]])]
+            blacklist.add(",".join([triple[0], "controls-state-change-of", triple[2]]))
+
+        if triple[1] == "in-complex-with":
+            blacklist.add(",".join([triple[2], "in-complex-with", triple[0]]))
+    for k in interactions:
+        if k not in blacklist:
+            filtered_interactions[k] = interactions[k]
 
     interactions = filtered_interactions
     keys = list(interactions.keys())
@@ -68,9 +89,9 @@ def split(interactions):
     idx1 = int(len(keys) * 0.6)
     idx2 = idx1 + int(len(keys) * 0.1)
 
-    train_interactions = {k: interactions[k] for k in keys[:idx1]}
-    dev_interactions = {k: interactions[k] for k in keys[idx1:idx2]}
-    test_interactions = {k: interactions[k] for k in keys[idx2:]}
+    train_interactions = augment_interactions({k: interactions[k] for k in keys[:idx1]})
+    dev_interactions = augment_interactions({k: interactions[k] for k in keys[idx1:idx2]})
+    test_interactions = augment_interactions({k: interactions[k] for k in keys[idx2:]})
 
     return train_interactions, dev_interactions, test_interactions, filtered_interactions
 

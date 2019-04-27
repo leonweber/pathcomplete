@@ -1,56 +1,47 @@
-import torch.nn as nn
+import numpy as np
+import torch
+from torch.nn import functional as F, Parameter
+from torch.nn.init import xavier_normal_
 
-class BaseRGCN(nn.Module):
-    def __init__(self, num_nodes, h_dim, out_dim, num_rels, num_bases=-1,
-                 num_hidden_layers=1, dropout=0, use_cuda=False):
-        super(BaseRGCN, self).__init__()
-        self.num_nodes = num_nodes
-        self.h_dim = h_dim
-        self.out_dim = out_dim
-        self.num_rels = num_rels
-        self.num_bases = num_bases
-        self.num_hidden_layers = num_hidden_layers
-        self.dropout = dropout
-        self.use_cuda = use_cuda
 
-        # create rgcn layers
-        self.build_model()
+class TuckER(torch.nn.Module):
+    def __init__(self, d, d1, d2, **kwargs):
+        super(TuckER, self).__init__()
 
-        # create initial features
-        self.features = self.create_features()
+        self.E = torch.nn.Embedding(len(d.entities), d1, padding_idx=0)
+        self.R = torch.nn.Embedding(len(d.relations), d2, padding_idx=0)
+        self.W = torch.nn.Parameter(torch.tensor(np.random.uniform(-1, 1, (d2, d1, d1)), 
+                                    dtype=torch.float, requires_grad=True))
 
-    def build_model(self):
-        self.layers = nn.ModuleList()
-        # i2h
-        i2h = self.build_input_layer()
-        if i2h is not None:
-            self.layers.append(i2h)
-        # h2h
-        for idx in range(self.num_hidden_layers):
-            h2h = self.build_hidden_layer(idx)
-            self.layers.append(h2h)
-        # h2o
-        h2o = self.build_output_layer()
-        if h2o is not None:
-            self.layers.append(h2o)
+        self.input_dropout = torch.nn.Dropout(kwargs["input_dropout"])
+        self.hidden_dropout1 = torch.nn.Dropout(kwargs["hidden_dropout1"])
+        self.hidden_dropout2 = torch.nn.Dropout(kwargs["hidden_dropout2"])
+        self.loss = torch.nn.BCELoss()
 
-    # initialize feature for each node
-    def create_features(self):
-        return None
+        self.bn0 = torch.nn.BatchNorm1d(d1)
+        self.bn1 = torch.nn.BatchNorm1d(d1)
+        
 
-    def build_input_layer(self):
-        return None
+    def init(self):
+        xavier_normal_(self.E.weight.data)
+        xavier_normal_(self.R.weight.data)
 
-    def build_hidden_layer(self, idx):
-        raise NotImplementedError
+    def forward(self, e1_idx, r_idx):
+        e1 = self.E(e1_idx)
+        x = self.bn0(e1)
+        x = self.input_dropout(x)
+        x = x.view(-1, 1, e1.size(1))
 
-    def build_output_layer(self):
-        return None
+        r = self.R(r_idx)
+        W_mat = torch.mm(r, self.W.view(r.size(1), -1))
+        W_mat = W_mat.view(-1, e1.size(1), e1.size(1))
+        W_mat = self.hidden_dropout1(W_mat)
 
-    def forward(self, g):
-        if self.features is not None:
-            g.ndata['id'] = self.features
-        for layer in self.layers:
-            layer(g)
-        return g.ndata.pop('h')
+        x = torch.bmm(x, W_mat) 
+        x = x.view(-1, e1.size(1))      
+        x = self.bn1(x)
+        x = self.hidden_dropout2(x)
+        x = torch.mm(x, self.E.weight.transpose(1,0))
+        pred = F.sigmoid(x)
+        return pred
 
