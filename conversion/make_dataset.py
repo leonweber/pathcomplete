@@ -15,7 +15,7 @@ def augment_interactions(interactions):
     for i in interactions:
         augmented_interactions[i] = interactions[i]
         e1, r, e2 = i.split(',')
-        if r == 'controls-phosphorylation-of':
+        if r in {'controls-phosphorylation-of', 'controls-transport-of'}:
             augmented_interactions[f"{e1},controls-state-change-of,{e2}"] = interactions[i]
         if r == 'in-complex-with':
             augmented_interactions[f"{e2},in-complex-with,{e1}"] = interactions[i]
@@ -73,7 +73,7 @@ def split(interactions):
             continue
 
         triple = k.split(",")
-        if triple[1] == "controls-phosphorylation-of":
+        if triple[1] in {"controls-phosphorylation-of", "controls-transport-of"}:
             blacklist.add(",".join([triple[0], "controls-state-change-of", triple[2]]))
 
         if triple[1] == "in-complex-with":
