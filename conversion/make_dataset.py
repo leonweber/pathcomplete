@@ -4,6 +4,7 @@ from collections import defaultdict
 
 import pandas as pd
 import mygene
+import itertools
 import numpy as np
 
 import evex_to_sifnx_preds
@@ -17,6 +18,7 @@ def augment_interactions(interactions):
         e1, r, e2 = i.split(',')
         if r in {'controls-phosphorylation-of', 'controls-transport-of'}:
             augmented_interactions[f"{e1},controls-state-change-of,{e2}"] = interactions[i]
+            augmented_interactions[f"_{e2},controls-state-change-of,{e1}"] = interactions[i]
         if r == 'in-complex-with':
             augmented_interactions[f"{e2},in-complex-with,{e1}"] = interactions[i]
 
@@ -66,8 +68,12 @@ def to_interactions(df: pd.DataFrame, mg):
 
 
 def split(interactions):
+    """
+    Split `interactions` into train/dev/test sets
+    Entailed interactions are removed and added in a later step to make sure that the entailing and entailed relations are in the same fold
+    """
     filtered_interactions = {}
-    blacklist = set()
+    blacklist = set() # blacklist is used to filter entailed relations, e.g. for `A controls-phosphorylation-of B` `A controls-state-change-of B` is blacklisted
     for k in interactions:
         if k in blacklist:
             continue
@@ -95,6 +101,31 @@ def split(interactions):
 
     return train_interactions, dev_interactions, test_interactions, filtered_interactions
 
+def add_na_interactions(interactions, factor=10):
+    """
+    Add NA interaction if (e1, r, e2) and (e2, r, e1) are both not in interactions
+    NA interactions are randomly sampled and the number is determined by `factor`*len(interactions)
+    Assumes that inverse relations are added later on
+    """
+    pairs = set()
+    entities = set()
+    na_interactions = set()
+    for interaction in interactions:
+        e1, _, e2 = interaction.split(',')
+        pairs.add(tuple(sorted([e1, e2])))
+        entities.update([e1, e2])
+    
+    for pair in itertools.combinations(entities, 2):
+        e1, e2 = sorted(pair) 
+        if (e1, e2) not in pairs:
+            na_interactions.add(",".join([e1, "NA", e2]))
+    
+    na_interactions = np.random.choice(list(na_interactions),
+        size=int(factor*len(interactions)), replace=False)
+    
+    for interaction in na_interactions:
+        interactions[interaction] = []
+    
 
 
 if __name__ == '__main__':
@@ -108,6 +139,7 @@ if __name__ == '__main__':
     interactions = to_interactions(df, mg)
     with open(args.input + '.train.json', 'w') as f_train, open(args.input + '.dev.json', 'w') as f_dev, \
         open(args.input + '.test.json', 'w') as f_test, open(args.input + '.json', 'w') as f_all:
+        add_na_interactions(interactions)
         train, dev, test, interactions = split(interactions)
 
         json.dump(train, f_train)
