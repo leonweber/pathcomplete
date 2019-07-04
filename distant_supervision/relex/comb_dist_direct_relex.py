@@ -203,7 +203,14 @@ class CombDistDirectRelex(Model):
             x = torch.cat([x, e1_e2_mult], dim=1)
 
         logits = self.ff(x)  # batch_size x self.num_classes
-        output_dict = {'logits': logits, 'alphas': alphas}  # sigmoid is applied in the loss function and the metric class, not here
+        alpha_mask = [len(d['mentions']) for d in metadata]
+
+        unpadded_alphas = []
+        for alpha, d in zip(alphas, metadata):
+            unpadded_alphas.append(alpha.cpu().numpy()[:len(d['mentions'])])
+
+        output_dict = {'logits': logits, 'alphas': unpadded_alphas}  # sigmoid is applied in the loss function and the metric class, not here
+
 
         if labels is not None:  # Training and evaluation
             w = self.sent_loss_weight / (self.sent_loss_weight + 1)
