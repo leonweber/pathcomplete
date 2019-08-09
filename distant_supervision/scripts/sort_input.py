@@ -13,6 +13,8 @@ def foo():
 bags = defaultdict(foo)
 with open(sys.argv[1]) as f:
     for line in f:
+        if len(line.split('\t')) != 10:
+            continue
         pair = tuple(line.split('\t')[:2])
         if get_sup_type(line) == 'distant':
             bags[pair]['distant'].append(line)

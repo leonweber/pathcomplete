@@ -6,10 +6,11 @@ import torch
 from torch import nn
 import numpy as np
 from allennlp.data import Vocabulary
-from allennlp.modules.seq2vec_encoders import CnnEncoder
+from allennlp.modules.seq2vec_encoders import Seq2VecEncoder, CnnEncoder
 from allennlp.models.model import Model
 from allennlp.nn import util
 from allennlp.training.metrics.average import Average
+from allennlp.training.metrics.f1_measure import F1Measure
 from allennlp.modules import TextFieldEmbedder
 
 from relex.multilabel_average_precision_metric import MultilabelAveragePrecision
@@ -28,7 +29,9 @@ class CombDistDirectRelex(Model):
                  with_entity_embeddings: bool = True ,
                  sent_loss_weight: float = 1,
                  attention_weight_fn: str = 'sigmoid',
-                 attention_aggregation_fn: str = 'max') -> None:
+                 attention_aggregation_fn: str = 'max',
+                 sent_encoder: Seq2VecEncoder = CnnEncoder,
+                 embedding_size: int = 200) -> None:
         regularizer = None
         super().__init__(vocab, regularizer)
         self.num_classes = self.vocab.get_vocab_size("labels")
@@ -39,6 +42,7 @@ class CombDistDirectRelex(Model):
         self.sent_loss_weight = sent_loss_weight
         self.attention_weight_fn = attention_weight_fn
         self.attention_aggregation_fn = attention_aggregation_fn
+        self.sent_encoder = sent_encoder
 
         # instantiate position embedder
         pos_embed_output_size = 5
@@ -48,14 +52,8 @@ class CombDistDirectRelex(Model):
         self.pos_embed.weight = nn.Parameter(torch.Tensor(pos_embed_weights))
 
         d = cnn_size
-        sent_encoder = CnnEncoder  # TODO: should be moved to the config file
         cnn_output_size = d
-        embedding_size = 200  # TODO: should be moved to the config file
 
-        # instantiate sentence encoder 
-        self.cnn = sent_encoder(embedding_dim=(embedding_size + 2 * pos_embed_output_size), num_filters=cnn_size,
-                                ngram_filter_sizes=(2, 3, 4, 5),
-                                conv_layer_activation=torch.nn.ReLU(), output_dim=cnn_output_size)
 
         # dropout after word embedding
         self.dropout = nn.Dropout(p=self.dropout_weight)
@@ -88,6 +86,8 @@ class CombDistDirectRelex(Model):
         self.metrics = {}
         self.metrics['ap'] = MultilabelAveragePrecision()  # average precision = AUC
         self.metrics['bag_loss'] = Average()  # to display bag-level loss
+        self.metrics['sent_ap'] = MultilabelAveragePrecision(1)
+        self.metrics['sent_ap'](torch.tensor([[1.0,0.0]]), torch.tensor([[0,1]]))
 
         if self.sent_loss_weight > 0:
             self.metrics['sent_loss'] = Average()  # to display sentence-level loss
@@ -138,7 +138,7 @@ class CombDistDirectRelex(Model):
         mask = mask.view(batch_size * padded_bag_size, -1)
 
         # call sequence encoder
-        x = self.cnn(x, mask)  # (batch_size * padded_bag_size) x cnn_output_size
+        x = self.sent_encoder(x, mask)  # (batch_size * padded_bag_size) x cnn_output_size
 
         # separate the first two dimensions back
         x = x.view(batch_size, padded_bag_size, -1)
@@ -207,7 +207,7 @@ class CombDistDirectRelex(Model):
 
         unpadded_alphas = []
         for alpha, d in zip(alphas, metadata):
-            unpadded_alphas.append(alpha.cpu().numpy()[:len(d['mentions'])])
+            unpadded_alphas.append(alpha.cpu().detach().numpy()[:len(d['mentions'])])
 
         output_dict = {'logits': logits, 'alphas': unpadded_alphas}  # sigmoid is applied in the loss function and the metric class, not here
 
@@ -223,6 +223,11 @@ class CombDistDirectRelex(Model):
             loss *= one_minus_w
             self.metrics['bag_loss'](loss.item())
             self.metrics['ap'](logits, labels.squeeze(-1))
+
+            sent_predictions = torch.cat([sent_labels_masked_pred, 1-sent_labels_masked_pred], dim=-1)
+            sent_labels = torch.cat([(sent_labels_masked_pred != 1), (sent_labels_masked_pred == 1)], dim=-1)
+            if is_direct_supervision_batch:
+                self.metrics['sent_ap'](sent_predictions, sent_labels)
 
             if self.sent_loss_weight > 0:
                 sent_loss *= w
@@ -256,4 +261,9 @@ class CombDistDirectRelex(Model):
 
     @overrides
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        return {metric_name: metric.get_metric(reset) for metric_name, metric in self.metrics.items()}
+        return {
+            "ap": self.metrics["ap"].get_metric(reset=reset),
+            "sent_ap": self.metrics["sent_ap"].get_metric(reset=reset),
+            "bag_loss": self.metrics["bag_loss"].get_metric(reset=reset),
+            "sent_loss": self.metrics["sent_loss"].get_metric(reset=reset)
+        }

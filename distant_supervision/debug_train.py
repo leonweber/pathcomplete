@@ -5,6 +5,8 @@ import os
 
 from allennlp.commands import main
 
+os.chdir('distant_supervision')
+
 config_file = "allennlp_config/config.json"
 
 # Use overrides to train on CPU.
@@ -34,7 +36,6 @@ os.environ['with_direct_supervision']='true'  # false for distant supervision on
 
 
 # model configurations
-os.environ['cnn_size'] = '100'
 os.environ['dropout_weight'] = '0.1'  # dropout weight after word embeddings
 os.environ['with_entity_embeddings']='true'  # false for no entity embeddings
 

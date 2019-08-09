@@ -18,13 +18,13 @@ def convert(lines, mg):
 
         head_members = []
         for head_member in head.split(':'):
-            head_member = to_entrez(head_member, mg)
+            #head_member = to_entrez(head_member, mg)
             if head_member:
                 head_members.append(head_member)
 
         tail_members = []
         for tail_member in tail.split(':'):
-            tail_member = to_entrez(tail_member, mg)
+            #tail_member = to_entrez(tail_member, mg)
             if tail_member:
                 tail_members.append(tail_member)
 
@@ -38,8 +38,8 @@ def convert(lines, mg):
                 if a == b:
                     continue
 
-                if relation in {"activation", "inhibition", "phosphorylation", "transport"}:
-                    relations[f"{a},controls-state-change-of,{b}"] = []
+                #if relation in {"activation", "inhibition", "phosphorylation", "transport"}:
+                relations[f"{a},controls-state-change-of,{b}"] = []
 
                 if relation == "phosphorylation":
                     relations[f"{a},controls-phosphorylation-of,{b}"] = []
@@ -47,6 +47,9 @@ def convert(lines, mg):
                     relations[f"{a},controls-transport-of,{b}"] = []
                 elif relation == "transcription":
                     relations[f"{a},controls-expression-of,{b}"] = []
+                elif relation == "binding":
+                    relations[f"{a},in-complex-with,{b}"] = []
+
 
     return relations
 
@@ -60,7 +63,7 @@ if __name__ == '__main__':
         lines = f.read().splitlines(keepends=False)
 
     mg = mygene.MyGeneInfo()
-    relations = convert(lines[1:], mg)
+    relations = convert(lines, mg)
 
     with open(args.input + '.json', 'w') as f:
         json.dump(relations, f)

@@ -46,7 +46,7 @@ def evaluate(preds, anns, pathway):
     pathway_nodes.update(p.split(',')[2] for p in pathway)
     print(f"{len(pathway_nodes)} pathway nodes")
 
-    entrez2hgnc = get_entrez2hgnc(pathway_nodes)
+    #entrez2hgnc = get_entrez2hgnc(pathway_nodes)
     
     preds = [(triple, score) for triple, score in preds if triple[0] in pathway_nodes and triple[2] in pathway_nodes]
     preds = sorted(preds, key=lambda x: x[1])[::-1]
@@ -55,7 +55,7 @@ def evaluate(preds, anns, pathway):
     hgnc_preds = []
     for pred in new_triples[:50]:
         hits.append(f"{pred[0]},{pred[1]},{pred[2]}" in pathway)
-        hgnc_preds.append((entrez2hgnc[pred[0]], pred[1], entrez2hgnc[pred[2]]))
+        hgnc_preds.append(([pred[0]], pred[1], [pred[2]]))
 
 
     known = set()

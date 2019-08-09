@@ -1,4 +1,4 @@
-from typing import Set, Tuple, List, Dict
+from typing import Set, Tuple, List, Dict, Optional
 
 from dataclasses import dataclass
 
@@ -45,24 +45,27 @@ class RelationInstancesReader(DatasetReader):
 
     """
 
-    max_distance = 30  # for position embeddings
-    max_sentence_length = 130 # words
+    max_distance = 100  # for position embeddings
+    max_sentence_length = None # words
 
     def __init__(self, lazy: bool = False,
-                 max_bag_size: int = 25,
+                 max_bag_size: Optional[int] = None,
                  negative_exampels_percentage: int = 100,
-                 with_direct_supervision: bool = True) -> None:
+                 with_direct_supervision: bool = True,
+                 ignore_pairs_without_mentions: bool = True) -> None:
         """
         args:
             lazy: lazy reading of the dataset
             max_bag_size: maximum number of sentences per a bag
             negative_exampels_percentage: percentage of negative examples to keep
             with_direct_supervision: keep or ignore direct supervision examples
+            ignore_pairs_without_mentions: keep or ignore pairs without mentions
         """
         super().__init__(lazy=lazy)
         self.max_bag_size = max_bag_size
         self.negative_exampels_percentage = negative_exampels_percentage
         self.with_direct_supervision = with_direct_supervision
+        self.ignore_pairs_without_mentions = ignore_pairs_without_mentions
 
         self._tokenizer = WordTokenizer(word_splitter=JustSpacesWordSplitter())
         self._token_indexers = {"tokens": SingleIdTokenIndexer()}
@@ -70,7 +73,9 @@ class RelationInstancesReader(DatasetReader):
         # for logging and input validation
         self._inst_counts: Dict = defaultdict(int)  # count instances per relation type
         self._pairs: Set = set()  # keep track of pairs of entities
-        self._bag_sizes: Dict = defaultdict(int)  # count relation types per bag
+        self._bag_sizes: Dict = defaultdict(int)
+        self._relation_types_per_bag = defaultdict(int) # count relation types per bag
+        self._relation_coocur = defaultdict(int)  # count relation types per bag
         self._relation_coocur: Dict = defaultdict(int)  # count relation types per bag
         self._failed_mentions_count: int = 0  # count mentions with wrong formating
         self._count_direct_supervised_inst: int = 0
@@ -83,7 +88,8 @@ class RelationInstancesReader(DatasetReader):
 
             self._inst_counts = defaultdict(int)  # count instances per relation type
             self._pairs = set()  # keep track of pairs of entities
-            self._bag_sizes = defaultdict(int)  # count relation types per bag
+            self._bag_sizes = defaultdict(int)  
+            self._relation_types_per_bag = defaultdict(int) # count relation types per bag
             self._relation_coocur = defaultdict(int)  # count relation types per bag
             self._failed_mentions_count = 0
             self._count_direct_supervised_inst: int = 0
@@ -96,7 +102,12 @@ class RelationInstancesReader(DatasetReader):
             # Lines are assumed to be sorted by entity1/entity2/relation_type and `distant' has to be before `direct'
             for lino, line in enumerate(tqdm.tqdm(data_file.readlines())):
                 line = line.strip()
-                new_e1, new_e2, _, _, rel, m, new_supervision_type = line.strip().split("\t")
+                try:
+                    new_e1, new_e2, _, _, rel, m, new_supervision_type, journal, year, pmid = line.strip().split("\t")
+                except ValueError:
+                    print(line, " does not have enough tabs.")
+                if self.ignore_pairs_without_mentions and "PAIR_NOT_FOUND" in m:
+                    continue
                 assert new_supervision_type in ['direct', 'distant']
                 if new_e1 != e1 or new_e2 != e2 or supervision_type == 'direct':
                     # new entity pair
@@ -137,7 +148,7 @@ class RelationInstancesReader(DatasetReader):
 
             # log number of relations per bag
             log.info("number of relations per bag size (bagsize -> relation count)")
-            for k, v in sorted(self._bag_sizes.items(), key=lambda x: -x[1]):
+            for k, v in sorted(self._relation_types_per_bag.items(), key=lambda x: -x[1]):
                 log.info("%s - %d", k, v)
 
             for k, v in sorted(self._relation_coocur.items(), key=lambda x: -x[1]):
@@ -171,7 +182,7 @@ class RelationInstancesReader(DatasetReader):
                           NEGATIVE_RELATION_NAME, rels, e1, e2)
             rels.remove(NEGATIVE_RELATION_NAME)
 
-        self._bag_sizes[len(rels)] += 1
+        self._relation_types_per_bag[len(rels)] += 1
         if len(rels) > 1:
             rels_str = ", ".join(sorted(list(rels)))
             self._relation_coocur[rels_str] += 1
@@ -185,7 +196,7 @@ class RelationInstancesReader(DatasetReader):
                         self._tokenizer.tokenize(m)[:self.max_sentence_length]
                 )
                 fields_list.append(mention_fields)
-            except ValueError:
+            except ValueError as ve:
                 # ignore mentions with wrong entity tags
                 self._failed_mentions_count += 1
                 if self._failed_mentions_count % 1000 == 0:

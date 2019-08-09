@@ -18,18 +18,52 @@ def augment_interactions(interactions):
         e1, r, e2 = i.split(',')
         if r in {'controls-phosphorylation-of', 'controls-transport-of'}:
             augmented_interactions[f"{e1},controls-state-change-of,{e2}"] = interactions[i]
-            augmented_interactions[f"_{e2},controls-state-change-of,{e1}"] = interactions[i]
         if r == 'in-complex-with':
             augmented_interactions[f"{e2},in-complex-with,{e1}"] = interactions[i]
 
     return augmented_interactions
 
-def to_interactions(df: pd.DataFrame, mg):
+
+def subsample_genes(df, size):
+    neighbours = defaultdict(list)
+    for _, row in df.iterrows():
+        prot_a = row['PARTICIPANT_A']
+        prot_b = row['PARTICIPANT_B']
+
+        if ':' in prot_a or ':' in prot_b:
+            continue
+
+        neighbours[prot_a].append(prot_b)
+        neighbours[prot_b].append(prot_a)
+    
+    np.random.seed(5005)
+    selected_nodes = set(np.random.choice(sorted(neighbours), 5, replace=False))
+
+    while len(selected_nodes) < size:
+        active_node = np.random.choice(list(selected_nodes), 1)[0]
+        if neighbours[active_node]:
+            random_neighbour = np.random.choice(neighbours[active_node], 1)[0]
+            selected_nodes.add(random_neighbour)
+    
+    return selected_nodes
+
+
+
+
+
+
+def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     genes = set()
+    np.random.seed(5005)
+
     df = df[df['INTERACTION_TYPE'].isin(INTERACTION_TYPES)]
     df = df.fillna({"INTERACTION_PUBMED_ID": ""})
     genes.update(id_ for id_ in df['PARTICIPANT_A'].unique() if not ':' in id_)
     genes.update(id_ for id_ in df['PARTICIPANT_B'].unique() if not ':' in id_)
+
+    if subsample < 1.0:
+        genes = subsample_genes(df, size=int(len(genes)*subsample))
+
     genes = sorted(genes)
 
     mapping = {g: None for g in genes}
@@ -44,6 +78,8 @@ def to_interactions(df: pd.DataFrame, mg):
         if res['_score'] > scores[res['query']]:
             scores[res['query']] = res['_score']
             mapping[res['query']] = res['_id']
+            if '_' in res['_id']:
+                import pdb; pdb.set_trace()
 
     interactions = defaultdict(set)
     for _, row in df.iterrows():
@@ -72,6 +108,12 @@ def split(interactions):
     Split `interactions` into train/dev/test sets
     Entailed interactions are removed and added in a later step to make sure that the entailing and entailed relations are in the same fold
     """
+    entities = set()
+    for k in interactions:
+        e1, r, e2 = k.split(',')
+        entities.add(e1)
+        entities.add(e2)
+
     filtered_interactions = {}
     blacklist = set() # blacklist is used to filter entailed relations, e.g. for `A controls-phosphorylation-of B` `A controls-state-change-of B` is blacklisted
     for k in interactions:
@@ -79,25 +121,30 @@ def split(interactions):
             continue
 
         triple = k.split(",")
+
+
         if triple[1] in {"controls-phosphorylation-of", "controls-transport-of"}:
             blacklist.add(",".join([triple[0], "controls-state-change-of", triple[2]]))
 
         if triple[1] == "in-complex-with":
             blacklist.add(",".join([triple[2], "in-complex-with", triple[0]]))
+
     for k in interactions:
+        triple = k.split(",")
+
         if k not in blacklist:
             filtered_interactions[k] = interactions[k]
 
-    interactions = filtered_interactions
-    keys = list(interactions.keys())
+    keys = sorted(filtered_interactions.keys())
     np.random.seed(5005)
     np.random.shuffle(keys)
     idx1 = int(len(keys) * 0.6)
     idx2 = idx1 + int(len(keys) * 0.1)
 
-    train_interactions = augment_interactions({k: interactions[k] for k in keys[:idx1]})
-    dev_interactions = augment_interactions({k: interactions[k] for k in keys[idx1:idx2]})
-    test_interactions = augment_interactions({k: interactions[k] for k in keys[idx2:]})
+    train_interactions = augment_interactions({k: filtered_interactions[k] for k in keys[:idx1]})
+    dev_interactions = augment_interactions({k: filtered_interactions[k] for k in keys[idx1:idx2]})
+    test_interactions = augment_interactions({k: filtered_interactions[k] for k in keys[idx2:]})
+
 
     return train_interactions, dev_interactions, test_interactions, filtered_interactions
 
@@ -120,8 +167,11 @@ def add_na_interactions(interactions, factor=10):
         if (e1, e2) not in pairs:
             na_interactions.add(",".join([e1, "NA", e2]))
     
-    na_interactions = np.random.choice(list(na_interactions),
-        size=int(factor*len(interactions)), replace=False)
+    try:
+        na_interactions = np.random.choice(list(na_interactions),
+            size=int(factor*len(interactions)), replace=False)
+    except ValueError:
+        pass
     
     for interaction in na_interactions:
         interactions[interaction] = []
@@ -131,14 +181,20 @@ def add_na_interactions(interactions, factor=10):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input')
+    parser.add_argument('--small', action='store_true')
     args = parser.parse_args()
 
     mg = mygene.MyGeneInfo()
 
     df = pd.read_csv(args.input, sep='\t', header=0)
-    interactions = to_interactions(df, mg)
-    with open(args.input + '.train.json', 'w') as f_train, open(args.input + '.dev.json', 'w') as f_dev, \
-        open(args.input + '.test.json', 'w') as f_test, open(args.input + '.json', 'w') as f_all:
+    subsample = 0.01 if args.small else 1.0
+    interactions = to_interactions(df, mg, subsample=subsample)
+    fname = args.input
+    if args.small:
+        fname += '_small'
+    with open(fname + '.train.json', 'w') as f_train, open(fname + '.dev.json', 'w') as f_dev, \
+        open(fname + '.test.json', 'w') as f_test, open(fname + '.json', 'w') as f_all:
+
         add_na_interactions(interactions)
         train, dev, test, interactions = split(interactions)
 
