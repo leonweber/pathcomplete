@@ -20,7 +20,7 @@ with open(sys.argv[1]) as f:
         if new_e1 != e1 or new_e2 != e2 or supervision_type == 'direct':
             # new entity pair
 
-            if mentions:
+            if mentions and 'PAIR_NOT_FOUND' not in list(mentions)[0] and 'NA' not in rels:
                 examples.append({'e1': e1, 'e2': e2, 'mentions': "\n".join(mentions), "rel": " ".join(rels)})
 
             e1 = new_e1

@@ -72,7 +72,7 @@ class Experiment:
                 for e1_i, r_i, pred_es, pred_vals in zip(e1_idx, r_idx, sort_idxs, sort_values):
                     e1 = self.entities[e1_i.item()]
 
-                    for p_i, score in zip(pred_es[:10], pred_vals[:10]):
+                    for p_i, score in zip(pred_es[:100], pred_vals[:100]):
                         e = self.entities[p_i.item()]
                         all_predictions.append([[e1, relation, e], score.item()])
 
