@@ -38,10 +38,10 @@ def convert(lines, mg):
                 if a == b:
                     continue
 
-                #if relation in {"activation", "inhibition", "phosphorylation", "transport"}:
-                relations[f"{a},controls-state-change-of,{b}"] = []
+                if relation in {"phosphorylation", "dephosphorylation", "ubiquitinylation"}:
+                    relations[f"{a},controls-state-change-of,{b}"] = []
 
-                if relation == "phosphorylation":
+                if relation in {"phosphorylation", "dephosphorylation"}:
                     relations[f"{a},controls-phosphorylation-of,{b}"] = []
                 elif relation == "transport":
                     relations[f"{a},controls-transport-of,{b}"] = []
@@ -49,6 +49,7 @@ def convert(lines, mg):
                     relations[f"{a},controls-expression-of,{b}"] = []
                 elif relation == "binding":
                     relations[f"{a},in-complex-with,{b}"] = []
+                    relations[f"{b},in-complex-with,{a}"] = []
 
 
     return relations

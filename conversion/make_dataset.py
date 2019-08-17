@@ -1,11 +1,13 @@
 import argparse
 import json
 from collections import defaultdict
+from tqdm import tqdm
 
 import pandas as pd
 import mygene
 import itertools
 import numpy as np
+import re
 
 import evex_to_sifnx_preds
 
@@ -49,12 +51,32 @@ def subsample_genes(df, size):
 
 
 
+def hgnc_to_uniprot(symbol, mapping, mg):
+    try:
+        symbol = mapping[symbol]
+        return symbol
+    except KeyError as ke:
+        res = mg.query('symbol:%s' % symbol, size=1, fields='uniprot')['hits']
+        if res and 'uniprot' in res[0]:
+            if 'Swiss-Prot' in res[0]['uniprot']:
+                return res[0]['uniprot']['Swiss-Prot']
+
+        print("Couldn't find %s" % symbol)
+        return None
 
 
 
 def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     genes = set()
     np.random.seed(5005)
+
+    mapping = {}
+    for _, row in df[df['INTERACTION_TYPE'].str.contains('ProteinReference')].iterrows():
+        uniprot_id = re.findall(r'uniprot knowledgebase:(\S+)', row['INTERACTION_DATA_SOURCE'])[0]
+        hgnc_name = row['PARTICIPANT_A']
+        assert hgnc_name not in mapping
+        mapping[hgnc_name] = uniprot_id
+
 
     df = df[df['INTERACTION_TYPE'].isin(INTERACTION_TYPES)]
     df = df.fillna({"INTERACTION_PUBMED_ID": ""})
@@ -66,32 +88,19 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
 
     genes = sorted(genes)
 
-    mapping = {g: None for g in genes}
-    scores = {g: np.float('-inf') for g in genes}
-
-    mg_result = mg.querymany(genes, scopes='symbol', fields='entrezgene', species='human')
-
-    for res in mg_result:
-        if '_score' not in res:
-            continue
-
-        if res['_score'] > scores[res['query']]:
-            scores[res['query']] = res['_score']
-            mapping[res['query']] = res['_id']
-            if '_' in res['_id']:
-                import pdb; pdb.set_trace()
 
     interactions = defaultdict(set)
-    for _, row in df.iterrows():
+    for _, row in tqdm(df.iterrows(), total=len(df)):
         head = row['PARTICIPANT_A']
         tail = row['PARTICIPANT_B']
-        if head not in mapping or tail not in mapping:
+
+        head = hgnc_to_uniprot(head, mapping, mg)
+        tail = hgnc_to_uniprot(tail, mapping, mg)
+
+        if not head or not tail:
             continue
 
 
-
-        head = mapping[head]
-        tail = mapping[tail]
         relation_type = row['INTERACTION_TYPE']
         pmids = row['INTERACTION_PUBMED_ID'].split(';')
 
@@ -185,6 +194,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     mg = mygene.MyGeneInfo()
+    mg.set_caching('mg_cache')
 
     df = pd.read_csv(args.input, sep='\t', header=0)
     subsample = 0.01 if args.small else 1.0

@@ -4,15 +4,14 @@
   "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
   "dataset_reader": {
     "type": "relation_instances",
-    "lazy": true,
+    "lazy": false,
     "max_bag_size": std.parseInt(std.extVar("max_bag_size")),
     "negative_exampels_percentage": std.parseInt(std.extVar("negative_exampels_percentage")),
     "with_direct_supervision": std.extVar("with_direct_supervision")
   },
-  "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.txt",
-  "validation_data_path": "data/PathwayCommons11.reactome.hgnc.txt/dev.txt",
-  "test_data_path": "data/PathwayCommons11.reactome.hgnc.txt/test.txt",
-  "evaluate_on_test": true,
+  "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.txt.small",
+  "validation_data_path": "data/PathwayCommons11.reactome.hgnc.txt/dev.txt.small",
+  "evaluate_on_test": false,
   "model": {
     "type": "comb_dist_direct_relex",
     "text_field_embedder": {
@@ -47,7 +46,7 @@
   },
   "trainer": {
     "num_epochs": std.parseInt(std.extVar("num_epochs")),
-    "cuda_device": [0,2],
+    "cuda_device": 0,
     "grad_clipping": 5.0,
     "patience": 3,
     "validation_metric": "+ap",

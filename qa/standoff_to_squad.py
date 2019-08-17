@@ -6,6 +6,30 @@ import json
 
 Event = namedtuple('Event', 'type start end text')
 
+SIMPLE_BOOLEAN_QUESTIONS = {
+    "Binding": "Does %s bind to something?",
+    "Conversion": "Is %s modified?",
+    "Phosphorylation": "Is %s phosphorylated?",
+    "Dephosphorylation": "Is %s dephosphorylated?",
+    "Acetylation": "Is %s acetylated?",
+    "Deacetylation": "Is %s deacetylated?",
+    "Methylation": "Is %s methylated?",
+    "Demethylation": "Is %s demethylated?",
+    "Ubiquitination": "Is %s ubiquitinated?",
+    "Deubiquitination": "Is %s deubiquitinated?",
+    "Degradation": "Does %s degrade?",
+    "Regulation": "Is %s regulated?",
+    "Transcription": "Is %s transcribed?",
+    "Translation": "Is %s translated?",
+    "Activation": "Is %s activated?",
+    "Inactivation": "Is %s inactivated?",
+    "Positive_regulation": "Is %s positively regulated?",
+    "Negative_regulation": "Is %s negatively regulated?",
+    "Gene_expression": "Is the %s expressed?",
+    "Localization": "Is %s in a specific location?",
+    "Transport": "Is %s transported?",
+}
+
 def get_entities(a1, types=None):
     entities = {}
     for line in a1:
@@ -38,49 +62,96 @@ def get_simple_events(a2, entities):
     return events, themes
     
 
-def gen_simple_questions(a1, a2):
+def gen_simple_questions(a1, a2, aggregate_answers=False):
     entities = get_entities(a1, types={"Gene_or_gene_product"})
     events, themes = get_simple_events(a2, entities)
-
-    name_to_entity_id = defaultdict(set)
-
-    for entity_id, name in entities.items():
-        name_to_entity_id[name].add(entity_id)
-
-    all_themes = set()
 
     question_to_answers = defaultdict(set)
     questions = []
 
     for event_id, event in events.items():
         for theme in themes[event_id]:
-            all_themes.add(theme)
             question = f"event {entities[theme]}"
             question_to_answers[question].add((event.start, event.text))
 
-    for entity_theme in entities:
-        if entity_theme not in all_themes:
+    
+    for question, answers in question_to_answers.items():
+        answers = [{"text": text, "answer_start": answer_start} for answer_start, text in answers]
+        if aggregate_answers:
+            questions.append({
+                "question": question,
+                "id": str(hash(("".join(a1), "".join(a2), question, "".join(a["text"] for a in answers)))),
+                "answers": answers,
+                "is_impossible": False
+            })
+        else:
+            for answer in answers:
+                questions.append({
+                    "question": question,
+                    "id": str(hash(("".join(a1), "".join(a2), question, answer["text"]))),
+                    "answers": [answer],
+                    "is_impossible": False
+                })
+
+    for entity_name in entities.values():
+        q =  f"event {entity_name}"
+        if q not in question_to_answers:
             questions.append( {
-                "question": f"event {entities[entity_theme]}",
-                "id": str(hash(("".join(a1), "".join(a2), entity_theme, event_id))),
+                "question": q,
+                "id": str(hash(("".join(a1), "".join(a2), entity_name, event_id))),
                 "answers": [],
                 "is_impossible": True
             } )
-    
-    for question, answers in question_to_answers.items():
-        answers = [{"text": text, "answer_start": answer_start} for text, answer_start in answers]
-        questions.append({
-            "question": question,
-            "id": str(hash(("".join(a1), "".join(a2), question))),
-            "answers": answers,
-            "is_impossible": False
-        })
         
         
     return questions
 
+def gen_simple_boolean_questions(a1, a2, aggregate_answers=False):
+    entities = get_entities(a1, types={"Gene_or_gene_product"})
+    events, themes = get_simple_events(a2, entities)
 
-def standoff_to_squad(fname):
+    question_to_answers = defaultdict(set)
+    questions = []
+
+    for event_id, event in events.items():
+        for theme in themes[event_id]:
+            question = SIMPLE_BOOLEAN_QUESTIONS[event.type] % entities[theme]
+            question_to_answers[question].add((event.start, event.text))
+
+    
+    for question, answers in question_to_answers.items():
+        answers = [{"text": text, "answer_start": answer_start} for answer_start, text in answers]
+        if aggregate_answers:
+            questions.append({
+                "question": question,
+                "id": str(hash(("".join(a1), "".join(a2), question, "".join(a["text"] for a in answers)))),
+                "answers": answers,
+                "is_impossible": False
+            })
+        else:
+            for answer in answers:
+                questions.append({
+                    "question": question,
+                    "id": str(hash(("".join(a1), "".join(a2), question, answer["text"]))),
+                    "answers": [answer],
+                    "is_impossible": False
+                })
+
+    for entity_name in entities.values():
+        for question_template in SIMPLE_BOOLEAN_QUESTIONS.values():
+            q = question_template % entity_name
+            if q not in question_to_answers:
+                questions.append( {
+                    "question": q,
+                    "id": str(hash(("".join(a1), "".join(a2), entity_name, event_id))),
+                    "answers": [],
+                    "is_impossible": True
+                } )
+
+    return questions
+
+
+def standoff_to_squad(fname, aggregate_answers=False):
     with open(fname + '.txt') as f:
         txt = f.read().strip()
     with open(fname + '.a1') as f:
@@ -88,7 +159,7 @@ def standoff_to_squad(fname):
     with open(fname + '.a2') as f:
         a2 = [l.strip() for l in f]
     
-    simple_questions = gen_simple_questions(a1, a2)
+    simple_questions = gen_simple_boolean_questions(a1, a2, aggregate_answers=aggregate_answers)
     questions = list(itertools.chain(simple_questions))
 
     return {"qas": questions, "context": txt}
@@ -98,6 +169,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data')
     parser.add_argument('--out')
+    parser.add_argument('--aggregate_answers', action='store_true')
     args = parser.parse_args()
 
     data = Path(args.data)
@@ -106,7 +178,7 @@ if __name__ == '__main__':
     squad_examples = []
 
     for fname in fnames:
-        squad_examples.append(standoff_to_squad(str(data/fname)))
+        squad_examples.append(standoff_to_squad(str(data/fname), aggregate_answers=args.aggregate_answers))
 
     result = {
         "version": "v0.0.1",

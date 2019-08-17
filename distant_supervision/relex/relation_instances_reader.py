@@ -118,7 +118,7 @@ class RelationInstancesReader(DatasetReader):
                            supervision_type == 'direct':  # pylint: disable=unsupported-membership-test
 
                             if not self.with_direct_supervision and supervision_type == 'direct':
-                                pass
+                                supervision_type = 'distant'
                             else:
                                 inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False,
                                                              supervision_type=supervision_type)
@@ -229,7 +229,7 @@ class RelationInstancesReader(DatasetReader):
                   "is_direct_supervision_bag": is_direct_supervision_bag_field,
                   "sent_labels": ListField(sent_labels),  # 0: -ve, 1: directly supervised +ve, 2: distantly-supervised +ve
                   "labels": MultiLabelField(rels),  # bag-level labels
-                  "metadata": MetadataField({"mentions": list(mentions)})
+                #   "metadata": MetadataField({"mentions": list(mentions)})
                  }
         return Instance(fields)
 

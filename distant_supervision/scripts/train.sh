@@ -11,11 +11,11 @@ export NUMPY_SEED=$NUMPY_SEED
 
 # change the following two variables to make the problem smaller for debugging
 export negative_exampels_percentage=100 # set to 100 to use all of the dataset. Values < 100 will randomely drop some of the negative examples
-export max_bag_size=200  # set to 25 to use all of the dataset. Keep only the top `max_bag_size` sentences in each bag and drop the rest
+export max_bag_size=100  # set to 25 to use all of the dataset. Keep only the top `max_bag_size` sentences in each bag and drop the rest
 
 
 # reader configurations
-export with_direct_supervision=true  # false for distant supervision only
+export with_direct_supervision=false  # false for distant supervision only
 
 
 # model configurations
@@ -29,8 +29,8 @@ export attention_aggregation_fn=max  # avg, max
 
 
 # trainer configurations
-export batch_size=32
+export batch_size=4
 export num_epochs=100  # set to 100 and rely on early stopping
 
 
-allennlp train $config_file --include-package relex -s $1 $2 --cache-directory /mnt/fob-wbia-vol2/wbi/weberple/.data_cache --cache-prefix reactome
+allennlp train $config_file --include-package relex -s $1 # --cache-directory /mnt/fob-wbia-vol2/wbi/weberple/.data_cache --cache-prefix reactome
