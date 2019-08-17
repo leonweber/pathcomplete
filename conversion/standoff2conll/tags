@@ -1,0 +1,147 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+BC2GM_FORMAT	document.py	/^BC2GM_FORMAT = 'bc2gm'$/;"	v
+BIO_indices	tagsequence.py	/^def BIO_indices(blocks, is_bio=is_tag):$/;"	f
+BIO_to_IO	tagsequence.py	/^def BIO_to_IO(tag, next_tag=None):$/;"	f
+BIO_to_IOBES	tagsequence.py	/^def BIO_to_IOBES(tag, next_tag):$/;"	f
+CONLL_FORMAT	document.py	/^CONLL_FORMAT = 'conll'$/;"	v
+CONTINUE_TAGS	tagsequence.py	/^CONTINUE_TAGS = ('I', 'E')$/;"	v
+DEBUG_SS_POSTPROCESSING	sspostproc.py	/^DEBUG_SS_POSTPROCESSING = False$/;"	v
+DEFAULT_FORMAT	document.py	/^DEFAULT_FORMAT=NERSUITE_FORMAT$/;"	v
+DEFAULT_TAGSET	tagsequence.py	/^DEFAULT_TAGSET = BIO_TAGSET$/;"	v
+DISCONT_RULES	standoff.py	/^DISCONT_RULES = [FULL_SPAN, LAST_SPAN]$/;"	v
+Document	document.py	/^class Document(object):$/;"	c
+FORMATS	document.py	/^FORMATS = [$/;"	v
+FULL_SPAN	standoff.py	/^FULL_SPAN = 'full-span'$/;"	v
+FormatError	common.py	/^class FormatError(Exception):$/;"	c
+INPUT_ENCODING	sspostproc.py	/^INPUT_ENCODING = "UTF-8"$/;"	v
+KEEP_LONGER	standoff.py	/^KEEP_LONGER = 'keep-longer'$/;"	v
+KEEP_SHORTER	standoff.py	/^KEEP_SHORTER = 'keep-shorter'$/;"	v
+LAST_SPAN	standoff.py	/^LAST_SPAN = 'last-span'$/;"	v
+MAPPING_FILE_NAME	unicode2ascii.py	/^MAPPING_FILE_NAME = "entities.dat"$/;"	v
+NERSUITE_FORMAT	document.py	/^NERSUITE_FORMAT = 'nersuite'$/;"	v
+NERSUITE_TOKEN_MAX_LENGTH	document.py	/^NERSUITE_TOKEN_MAX_LENGTH = 500$/;"	v
+OUTPUT_ENCODING	sspostproc.py	/^OUTPUT_ENCODING = "UTF-8"$/;"	v
+OUT_TAG	tagsequence.py	/^OUT_TAG = 'O'$/;"	v
+OVERLAP_RULES	standoff.py	/^OVERLAP_RULES = [KEEP_LONGER, KEEP_SHORTER]$/;"	v
+ParseError	tagsequence.py	/^class ParseError(Exception):$/;"	c
+STANDOFF_FORMAT	document.py	/^STANDOFF_FORMAT = 'standoff'$/;"	v
+START_TAGS	tagsequence.py	/^START_TAGS = ('B', 'S')$/;"	v
+Sentence	document.py	/^class Sentence(object):$/;"	c
+TAGSETS	tagsequence.py	/^TAGSETS = [BIO_TAGSET, IO_TAGSET, IOBES_TAGSET]$/;"	v
+TAG_RE	tagsequence.py	/^TAG_RE = re.compile(r'^([IOBES])((?:-\\S+)?)$')$/;"	v
+TEXTBOUND_LINE_RE	standoff.py	/^TEXTBOUND_LINE_RE = re.compile(r'^T\\d+\\t')$/;"	v
+TEXT_FORMAT	document.py	/^TEXT_FORMAT = 'text'$/;"	v
+TOKENIZATION_REGEXS	common.py	/^TOKENIZATION_REGEXS = OrderedDict([$/;"	v
+Textbound	standoff.py	/^class Textbound(object):$/;"	c
+Token	document.py	/^class Token(object):$/;"	c
+TypedSpan	tagsequence.py	/^TypedSpan = namedtuple('TypedSpan', ['type', 'start', 'end'])$/;"	v
+__final	sspostproc.py	/^__final = []$/;"	v
+__init__	document.py	/^    def __init__(self, text, base_offset, tokens):$/;"	m	class:Sentence
+__init__	document.py	/^    def __init__(self, text, sentences):$/;"	m	class:Document
+__init__	document.py	/^    def __init__(self, text, start, tag=OUT_TAG, fvec=None):$/;"	m	class:Token
+__init__	standoff.py	/^    def __init__(self, id_, type_, start, end, text):$/;"	m	class:Textbound
+__init__	tagsequence.py	/^    def __init__(self, line, linenum, message=None, filename=None):$/;"	m	class:ParseError
+__initial	sspostproc.py	/^__initial = []$/;"	v
+__len__	document.py	/^    def __len__(self):$/;"	m	class:Document	file:
+__len__	document.py	/^    def __len__(self):$/;"	m	class:Sentence	file:
+__repeated	sspostproc.py	/^__repeated = []$/;"	v
+__str__	standoff.py	/^    def __str__(self):$/;"	m	class:Textbound	file:
+__str__	tagsequence.py	/^    def __str__(self):$/;"	m	class:ParseError	file:
+__unicode__	standoff.py	/^    def __unicode__(self):$/;"	m	class:Textbound	file:
+_fix_BIO_index	tagsequence.py	/^def _fix_BIO_index(blocks, index):$/;"	f
+_line_is_empty	tagsequence.py	/^def _line_is_empty(l):$/;"	f
+_normspace	sentencesplit.py	/^def _normspace(s):$/;"	f
+_parse_offsets	standoff.py	/^    def _parse_offsets(cls, offsets):$/;"	m	class:Textbound
+_refine_split	ssplit.py	/^def _refine_split(offsets, original_text):$/;"	f
+_resolve_discontinuous	standoff.py	/^    def _resolve_discontinuous(cls, offsets, text, discont_rule=None):$/;"	m	class:Textbound
+_retag_sentence	standoff.py	/^def _retag_sentence(sentence, offset_ann):$/;"	f
+_sentence_boundary_gen	ssplit.py	/^def _sentence_boundary_gen(text, regex):$/;"	f
+_text_by_offsets_gen	sentencesplit.py	/^def _text_by_offsets_gen(text, offsets):$/;"	f
+_text_by_offsets_gen	ssplit.py	/^    def _text_by_offsets_gen(text, offsets):$/;"	f	function:en_sentence_boundary_gen
+argparser	standoff2conll.py	/^def argparser():$/;"	f
+argparser	tagsequence.py	/^def argparser():$/;"	f
+argparser	unicode2ascii.py	/^def argparser():$/;"	f
+bc2gm_text	document.py	/^    def bc2gm_text(self):$/;"	m	class:Document
+convert_directory	standoff2conll.py	/^def convert_directory(directory, options):$/;"	f
+convert_files	standoff2conll.py	/^def convert_files(files, options):$/;"	f
+convert_u2a	unicode2ascii.py	/^def convert_u2a(f, out=None, mapping=None):$/;"	f
+document_id	standoff2conll.py	/^def document_id(filename):$/;"	f
+document_to_ascii	asciify.py	/^def document_to_ascii(document):$/;"	f
+eliminate_overlaps	standoff.py	/^def eliminate_overlaps(textbounds, overlap_rule=None):$/;"	f
+en_sentence_boundary_gen	ssplit.py	/^def en_sentence_boundary_gen(text):$/;"	f
+filter_textbounds	standoff.py	/^def filter_textbounds(textbounds, types, exclude=False):$/;"	f
+fix_BIO	tagsequence.py	/^def fix_BIO(blocks, indices):$/;"	f
+fix_bio_options	tagsequence.py	/^fix_bio_options = None$/;"	v
+fix_sentence_BIO	tagsequence.py	/^def fix_sentence_BIO(sentence):$/;"	f
+from_nersuite	document.py	/^    def from_nersuite(cls, line):$/;"	m	class:Token
+from_nersuite	document.py	/^    def from_nersuite(cls, lines, base_offset=0):$/;"	m	class:Sentence
+from_nersuite	document.py	/^    def from_nersuite(cls, text):$/;"	m	class:Document
+from_standoff	document.py	/^    def from_standoff(cls, text, annotations, sentence_split=True,$/;"	m	class:Document
+from_str	standoff.py	/^    def from_str(cls, string, discont_rule=None):$/;"	m	class:Textbound
+from_text	document.py	/^    def from_text(cls, text, base_offset=0, tokenization_re=None):$/;"	m	class:Sentence
+from_text	document.py	/^    def from_text(cls, text, offset=0):$/;"	m	class:Token
+from_text	document.py	/^    def from_text(cls, text, sentence_split=True, annotations=None,$/;"	m	class:Document
+get_tagged	document.py	/^    def get_tagged(self, relative_offsets=False):$/;"	m	class:Sentence
+get_tags	document.py	/^    def get_tags(self):$/;"	m	class:Document
+get_tags	document.py	/^    def get_tags(self):$/;"	m	class:Sentence
+is_continue_tag	tagsequence.py	/^def is_continue_tag(tag):$/;"	f
+is_out_tag	tagsequence.py	/^def is_out_tag(tag):$/;"	f
+is_standoff_file	standoff2conll.py	/^def is_standoff_file(fn):$/;"	f
+is_start_tag	tagsequence.py	/^def is_start_tag(tag):$/;"	f
+is_tag	tagsequence.py	/^def is_tag(s):$/;"	f
+is_valid	document.py	/^    def is_valid(self):$/;"	m	class:Document
+is_valid	document.py	/^    def is_valid(self):$/;"	m	class:Sentence
+is_valid	document.py	/^    def is_valid(self):$/;"	m	class:Token
+is_valid	standoff.py	/^    def is_valid(self, text):$/;"	m	class:Textbound
+jp_sentence_boundary_gen	ssplit.py	/^def jp_sentence_boundary_gen(text):$/;"	f
+log_missing_ascii_mappings	unicode2ascii.py	/^def log_missing_ascii_mappings(write=warn):$/;"	f
+main	sentencesplit.py	/^def main(argv=None):$/;"	f
+main	standoff2conll.py	/^def main(argv):$/;"	f
+main	tagsequence.py	/^def main(argv=None):$/;"	f
+main	unicode2ascii.py	/^def main(argv):$/;"	f
+make_tag	tagsequence.py	/^def make_tag(ttag, ttype):$/;"	f
+map_count	unicode2ascii.py	/^map_count = {}$/;"	v
+missing_mapping	unicode2ascii.py	/^missing_mapping = {}$/;"	v
+pairwise	common.py	/^def pairwise(iterable, include_last=False):$/;"	f
+parse_conll	tagsequence.py	/^def parse_conll(input, filename=None, separator='\\t', is_empty=_line_is_empty):$/;"	f
+parse_tag	tagsequence.py	/^def parse_tag(tag):$/;"	f
+parse_textbounds	standoff.py	/^def parse_textbounds(input_, discont_rule=None):$/;"	f
+print_summary	unicode2ascii.py	/^def print_summary(out, mapping):$/;"	f
+process	tagsequence.py	/^def process(input, indices=None):$/;"	f
+process_file	tagsequence.py	/^def process_file(fn, indices=None):$/;"	f
+read_ann	standoff2conll.py	/^def read_ann(filename, options, encoding='utf-8'):$/;"	f
+read_mapping	unicode2ascii.py	/^def read_mapping(f, fn="mapping data"):$/;"	f
+read_u2a_data	unicode2ascii.py	/^def read_u2a_data():$/;"	f
+refine_split	sspostproc.py	/^def refine_split(s):$/;"	f
+replace_types_with	standoff2conll.py	/^def replace_types_with(document, type_):$/;"	f
+retag_document	standoff.py	/^def retag_document(document, textbounds):$/;"	f
+retag_document	standoff2conll.py	/^def retag_document(document, tagset):$/;"	f
+s	sspostproc.py	/^                s = "".join(f.read())$/;"	v
+select_eliminated_and_kept	standoff.py	/^def select_eliminated_and_kept(t1, t2, overlap_rule=None):$/;"	f
+sentence_id	document.py	/^    def sentence_id(self, s):$/;"	m	class:Document
+sentence_to_tokens	common.py	/^def sentence_to_tokens(text, tokenization_re=None):$/;"	f
+sentencebreaks_to_newlines	sentencesplit.py	/^def sentencebreaks_to_newlines(text):$/;"	f
+split_keep_separator	common.py	/^def split_keep_separator(s, sep='\\n'):$/;"	f
+split_sentences	sentencesplit.py	/^def split_sentences(text):$/;"	f
+standoffs	document.py	/^    def standoffs(self):$/;"	m	class:Document
+standoffs	document.py	/^    def standoffs(self, index):$/;"	m	class:Sentence
+tagged_spans	tagsequence.py	/^def tagged_spans(tags):$/;"	f
+tagged_type	document.py	/^    def tagged_type(self):$/;"	m	class:Token
+text_to_sentences	sentencesplit.py	/^def text_to_sentences(text, sentence_split=True):$/;"	f
+to_bc2gm	document.py	/^    def to_bc2gm(self):$/;"	m	class:Document
+to_conll	document.py	/^    def to_conll(self, include_offsets=False):$/;"	m	class:Sentence
+to_conll	document.py	/^    def to_conll(self, include_offsets=False):$/;"	m	class:Token
+to_conll	document.py	/^    def to_conll(self, include_offsets=False, include_docid=False):$/;"	m	class:Document
+to_nersuite	document.py	/^    def to_nersuite(self, exclude_tag=False):$/;"	m	class:Document
+to_nersuite	document.py	/^    def to_nersuite(self, exclude_tag=False):$/;"	m	class:Sentence
+to_nersuite	document.py	/^    def to_nersuite(self, exclude_tag=False):$/;"	m	class:Token
+to_standoff	document.py	/^    def to_standoff(self):$/;"	m	class:Document
+txt_for_ann	standoff2conll.py	/^def txt_for_ann(filename):$/;"	f
+u2a_mapping	unicode2ascii.py	/^u2a_mapping = None$/;"	v
+verify_textbounds	standoff.py	/^def verify_textbounds(textbounds, text):$/;"	f
+wide_unichr	unicode2ascii.py	/^def wide_unichr(i):$/;"	f
