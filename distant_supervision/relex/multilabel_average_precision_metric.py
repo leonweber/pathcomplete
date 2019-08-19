@@ -110,6 +110,10 @@ class MultilabelAveragePrecision(Metric):
         ap, index = self._thresholded_average_precision_score(precision, recall)  # fast AP because of binned values
         if reset:
             fast_ap = ap
+
+            if len(self.gold_labels) == 0 or len(self.predictions) == 0:
+                return 0.5
+
             precision, recall, thresholds = precision_recall_curve(self.gold_labels, self.predictions)
 
             # _thresholded_average_precision_score assumes precision is descending and recall is ascending

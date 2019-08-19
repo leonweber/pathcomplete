@@ -47,11 +47,22 @@ def argparser():
                     help='filter annotations to given types')
     ap.add_argument('-x', '--exclude', metavar='TYPE', nargs='*',
                     help='exclude annotations of given types')
+    ap.add_argument('-e', '--include-entities', default=False,
+                    action='store_true'),
+    ap.add_argument('-v', '--include-events', default=False,
+                    action='store_true'),
     ap.add_argument('data', metavar='DIRS/FILES', nargs='+')
     return ap
 
-def is_standoff_file(fn):
-    return os.path.splitext(fn)[1] in ('.ann', '.a1')
+def is_standoff_file(fn, include_entities=True, include_events=True):
+    assert include_entities or include_events
+    res = False
+    if include_entities:
+        res = res or os.path.splitext(fn)[1] in ('.ann', '.a1')
+    if include_events:
+        res = res or os.path.splitext(fn)[1] in ('.ann', '.a2')
+    
+    return res
 
 def txt_for_ann(filename):
     return os.path.splitext(filename)[0]+'.txt'
@@ -94,7 +105,8 @@ def retag_document(document, tagset):
             t.tag = mapper(t.tag, next_tag)
 
 def convert_directory(directory, options):
-    files = [n for n in os.listdir(directory) if is_standoff_file(n)]
+    files = [n for n in os.listdir(directory) if is_standoff_file(n,
+                             include_entities=options.include_entities, include_events=options.include_events)]
     files = [os.path.join(directory, fn) for fn in files]
 
     if not files:
