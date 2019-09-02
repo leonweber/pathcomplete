@@ -52,7 +52,8 @@ class RelationInstancesReader(DatasetReader):
                  max_bag_size: Optional[int] = None,
                  negative_exampels_percentage: int = 100,
                  with_direct_supervision: bool = True,
-                 ignore_pairs_without_mentions: bool = True) -> None:
+                 ignore_pairs_without_mentions: bool = True,
+                 load_metadata = False) -> None:
         """
         args:
             lazy: lazy reading of the dataset
@@ -66,6 +67,8 @@ class RelationInstancesReader(DatasetReader):
         self.negative_exampels_percentage = negative_exampels_percentage
         self.with_direct_supervision = with_direct_supervision
         self.ignore_pairs_without_mentions = ignore_pairs_without_mentions
+
+        self.load_metadata = load_metadata
 
         self._tokenizer = WordTokenizer(word_splitter=JustSpacesWordSplitter())
         self._token_indexers = {"tokens": SingleIdTokenIndexer()}
@@ -229,8 +232,14 @@ class RelationInstancesReader(DatasetReader):
                   "is_direct_supervision_bag": is_direct_supervision_bag_field,
                   "sent_labels": ListField(sent_labels),  # 0: -ve, 1: directly supervised +ve, 2: distantly-supervised +ve
                   "labels": MultiLabelField(rels),  # bag-level labels
-                #   "metadata": MetadataField({"mentions": list(mentions)})
                  }
+        if self.load_metadata:
+            metadata = {
+                "mentions": list(mentions),
+                "entities": [e1, e2]
+            }
+
+            fields["metadata"] = MetadataField(metadata)
         return Instance(fields)
 
     def _tokens_distances_fields(self, tokens):

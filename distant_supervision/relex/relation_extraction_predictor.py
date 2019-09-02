@@ -2,7 +2,7 @@ from typing import Tuple
 
 import logging
 from overrides import overrides
-from allennlp.common.util import JsonDict
+from allennlp.common.util import JsonDict, sanitize
 from allennlp.data import Instance
 from allennlp.predictors.predictor import Predictor
 
@@ -29,3 +29,10 @@ class RelationExtractionPredictor(Predictor):
                     mentions=["Some relation between <e1>entity 1</e1> and <e2>entity 2</e2>"],
                     is_predict=True, supervision_type='distant')
         return instance
+
+    @overrides
+    def predict_instance(self, instance: Instance) -> JsonDict:
+        out = self._model.forward_on_instance(instance)
+        out['entities'] = list(instance['metadata']['entities'])
+
+        return sanitize(out)

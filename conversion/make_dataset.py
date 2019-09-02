@@ -9,21 +9,17 @@ import itertools
 import numpy as np
 import re
 
-import evex_to_sifnx_preds
 
-INTERACTION_TYPES = set(evex_to_sifnx_preds.TYPE_MAPPING.values())
-
-def augment_interactions(interactions):
-    augmented_interactions = {}
-    for i in interactions:
-        augmented_interactions[i] = interactions[i]
-        e1, r, e2 = i.split(',')
-        if r in {'controls-phosphorylation-of', 'controls-transport-of'}:
-            augmented_interactions[f"{e1},controls-state-change-of,{e2}"] = interactions[i]
-        if r == 'in-complex-with':
-            augmented_interactions[f"{e2},in-complex-with,{e1}"] = interactions[i]
-
-    return augmented_interactions
+INTERACTION_TYPES = {
+    'controls-state-change-of',
+    'controls-transport-of',
+    'controls-phosphorylation-of',
+    'controls-expression-of',
+    'catalysis-precedes',
+    'in-complex-with',
+    'interacts-with',
+    'neighbor-of'
+}
 
 
 def subsample_genes(df, size):
@@ -117,45 +113,36 @@ def split(interactions):
     Split `interactions` into train/dev/test sets
     Entailed interactions are removed and added in a later step to make sure that the entailing and entailed relations are in the same fold
     """
-    entities = set()
+    pairs = set()
     for k in interactions:
         e1, r, e2 = k.split(',')
-        entities.add(e1)
-        entities.add(e2)
+        pairs.add(tuple(sorted([e1, e2])))
 
-    filtered_interactions = {}
-    blacklist = set() # blacklist is used to filter entailed relations, e.g. for `A controls-phosphorylation-of B` `A controls-state-change-of B` is blacklisted
-    for k in interactions:
-        if k in blacklist:
-            continue
-
-        triple = k.split(",")
-
-
-        if triple[1] in {"controls-phosphorylation-of", "controls-transport-of"}:
-            blacklist.add(",".join([triple[0], "controls-state-change-of", triple[2]]))
-
-        if triple[1] == "in-complex-with":
-            blacklist.add(",".join([triple[2], "in-complex-with", triple[0]]))
-
-    for k in interactions:
-        triple = k.split(",")
-
-        if k not in blacklist:
-            filtered_interactions[k] = interactions[k]
-
-    keys = sorted(filtered_interactions.keys())
+    pairs = sorted(pairs)
     np.random.seed(5005)
-    np.random.shuffle(keys)
-    idx1 = int(len(keys) * 0.6)
-    idx2 = idx1 + int(len(keys) * 0.1)
+    np.random.shuffle(pairs)
+    idx1 = int(len(pairs) * 0.6)
+    idx2 = idx1 + int(len(pairs) * 0.1)
 
-    train_interactions = augment_interactions({k: filtered_interactions[k] for k in keys[:idx1]})
-    dev_interactions = augment_interactions({k: filtered_interactions[k] for k in keys[idx1:idx2]})
-    test_interactions = augment_interactions({k: filtered_interactions[k] for k in keys[idx2:]})
+    train_pairs = set(pairs[:idx1])
+    dev_pairs = set(pairs[idx1:idx2])
+    test_pairs = set(pairs[idx2:])
 
+    train_interactions = {}
+    dev_interactions = {}
+    test_interactions = {}
+    for k in interactions:
+        e1, _, e2 = k.split(',')
+        pair = tuple(sorted([e1, e2]))
+        if pair in train_pairs:
+            train_interactions[k] = interactions[k]
+        elif pair in dev_pairs:
+            dev_interactions[k] = interactions[k]
+        elif pair in test_pairs:
+            test_interactions[k] = interactions[k]
 
-    return train_interactions, dev_interactions, test_interactions, filtered_interactions
+    return train_interactions, dev_interactions, test_interactions, interactions
+
 
 def add_na_interactions(interactions, factor=10):
     """

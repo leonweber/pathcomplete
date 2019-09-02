@@ -74,6 +74,9 @@ class MultilabelAveragePrecision(Metric):
         self.predictions = np.append(self.predictions, pred)
         self.gold_labels = np.append(self.gold_labels, gold)
 
+        if len(self.predictions) != len(self.gold_labels):
+            __import__("pdb").set_trace()
+
         # update data of fast computation of AP
         idx = (self.bins - 1) - np.minimum((pred/self.bin_size).astype(int), self.bins - 1)
 

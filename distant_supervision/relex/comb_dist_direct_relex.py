@@ -235,18 +235,11 @@ class CombDistDirectRelex(Model):
                 loss += sent_loss
             output_dict['loss'] = loss
 
-
-            if metadata is not None:
-                mentions = []
-                for i in range(batch_size):
-                    mentions.append(metadata[i]['mentions'])
-                output_dict['mentions'] = mentions
-
         return output_dict
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        prob_thr = 0.6  # to ignore predicted labels with low prob. 
+        prob_thr = 0.0  # to ignore predicted labels with low prob.
         probs = torch.sigmoid(output_dict['logits'])
         output_dict['labels'] = []
         for row in probs.cpu().data.numpy():
