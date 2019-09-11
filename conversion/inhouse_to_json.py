@@ -2,29 +2,23 @@ import argparse
 import itertools
 import json
 
-import mygene
 import numpy as np
 
-def to_entrez(uniprot, mg):
-    query_res = mg.query(uniprot, scopes='uniprot', fields='entrezgene', species='human')
-    for result in query_res['hits']:
-        if result['_score'] == query_res['max_score']:
-            return result['entrezgene']
 
-def convert(lines, mg):
+def convert(lines):
     relations = {}
+    pairs = set()
+    proteins = set()
     for line in lines:
         head, relation, tail = line.strip().split('\t')
 
         head_members = []
         for head_member in head.split(':'):
-            #head_member = to_entrez(head_member, mg)
             if head_member:
                 head_members.append(head_member)
 
         tail_members = []
         for tail_member in tail.split(':'):
-            #tail_member = to_entrez(tail_member, mg)
             if tail_member:
                 tail_members.append(tail_member)
 
@@ -37,6 +31,11 @@ def convert(lines, mg):
             for b in tail_members:
                 if a == b:
                     continue
+
+                proteins.add(a)
+                proteins.add(b)
+
+                pairs.add(tuple(sorted([a, b])))
 
                 if relation in {"phosphorylation", "dephosphorylation", "ubiquitinylation"}:
                     relations[f"{a},controls-state-change-of,{b}"] = []
@@ -51,6 +50,10 @@ def convert(lines, mg):
                     relations[f"{a},in-complex-with,{b}"] = []
                     relations[f"{b},in-complex-with,{a}"] = []
 
+    for a, b in itertools.combinations(proteins, 2):
+        pair = tuple(sorted([a, b]))
+        if pair not in pairs:
+            relations[f"{a},NA,{b}"] = []
 
     return relations
 
@@ -63,8 +66,7 @@ if __name__ == '__main__':
     with open(args.input) as f:
         lines = f.read().splitlines(keepends=False)
 
-    mg = mygene.MyGeneInfo()
-    relations = convert(lines, mg)
+    relations = convert(lines)
 
     with open(args.input + '.json', 'w') as f:
         json.dump(relations, f)
