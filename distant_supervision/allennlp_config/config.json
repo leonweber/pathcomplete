@@ -9,8 +9,8 @@
     "negative_exampels_percentage": std.parseInt(std.extVar("negative_exampels_percentage")),
     "with_direct_supervision": std.extVar("with_direct_supervision")
   },
-  "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.txt.small",
-  "validation_data_path": "data/PathwayCommons11.reactome.hgnc.txt/dev.txt.small",
+  "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.json",
+  "validation_data_path": "data/PathwayCommons11.reactome.hgnc.txt/dev.json",
   "evaluate_on_test": false,
   "model": {
     "type": "comb_dist_direct_relex",
@@ -19,7 +19,7 @@
         "tokens": {
           "type": "embedding",
           "embedding_dim": 200,
-          "pretrained_file": "/home/shared/embeddings/PubMed-and-PMC-w2v.vec",
+           "pretrained_file": "wikipedia-pubmed-and-PMC-w2v.vec.gz",
           "trainable": false
         }
       }

@@ -27,12 +27,12 @@ os.environ['NUMPY_SEED']='5005'
 
 
 # change the following two variables to make the problem smaller for debugging
-os.environ['negative_exampels_percentage']='1' # set to 100 to use all of the dataset. Values < 100 will randomely drop some of the negative examples
-os.environ['max_bag_size']='2'  # set to 25 to use all of the dataset. Keep only the top `max_bag_size` sentences in each bag and drop the rest
+os.environ['negative_exampels_percentage']='100' # set to 100 to use all of the dataset. Values < 100 will randomely drop some of the negative examples
+os.environ['max_bag_size']='100'  # set to 25 to use all of the dataset. Keep only the top `max_bag_size` sentences in each bag and drop the rest
 
 
 # reader configurations
-os.environ['with_direct_supervision']='true'  # false for distant supervision only
+os.environ['with_direct_supervision']='false'  # false for distant supervision only
 
 
 # model configurations
@@ -45,8 +45,8 @@ os.environ['attention_aggregation_fn'] = 'max'  # avg, max
 
 
 # trainer configurations
-os.environ['batch_size'] = '128'
-os.environ['cuda_device'] = '0'  # which GPU to use. Use -1 for no-gpu
+os.environ['batch_size'] = '2'
+os.environ['cuda_device'] = '-1'  # which GPU to use. Use -1 for no-gpu
 os.environ['num_epochs'] = '1'  # set to 100 and rely on early stopping
 
 

@@ -23,7 +23,7 @@ export cnn_size=100
 export dropout_weight=0.1  # dropout weight after word embeddings
 export with_entity_embeddings=true  # false for no entity embeddings
 
-export sent_loss_weight=300  # 0, 0.5, 1, 2, 4, 8, 16, 32, 64
+export sent_loss_weight=0  # 0, 0.5, 1, 2, 4, 8, 16, 32, 64
 export attention_weight_fn=sigmoid  # uniform, softmax, sigmoid, norm_sigmoid
 export attention_aggregation_fn=max  # avg, max
 

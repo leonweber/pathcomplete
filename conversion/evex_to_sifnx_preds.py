@@ -1,8 +1,13 @@
 import json
 from collections import defaultdict
 from typing import Dict, Tuple, Set, List
+import numpy as np
+from tqdm import tqdm
 
 import pandas as pd
+
+from utils import load_homologene, TAX_IDS
+
 
 TYPE_MAPPING = {
     'Binding': 'in-complex-with',
@@ -23,10 +28,15 @@ Confidence = float
 Triple = str
 Prediction = Tuple[PMID, Confidence]
 
+homologs = load_homologene(TAX_IDS.values())
 
-def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, List]) -> Dict[Triple, List[Prediction]]:
-    sifnx_triples = defaultdict(set)
-    for idx, relation in relations.iterrows():
+with open('../data/geneid2uniprot.json') as f:
+    geneid_to_uniprot = json.load(f)
+
+
+def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, List]):
+    result = {}
+    for idx, relation in tqdm(relations.iterrows(), total=len(relations)):
         if relation['refined_type'] not in TYPE_MAPPING:
             continue
         if relation['negation'] == 1:
@@ -34,26 +44,36 @@ def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, Lis
 
         sifnx_type = TYPE_MAPPING[relation['refined_type']]
         head = str(relation['source_entrezgene_id'])
+        heads = homologs.get(head, [head])
+
         tail = str(relation['target_entrezgene_id'])
-        confidence = relation['confidence']
-        sifnx_triple = ','.join((head, sifnx_type, tail))
-        for pmid in event_id_to_article[str(relation['general_event_id'])]:
-            sifnx_triples[sifnx_triple].add((pmid, confidence))
-            if sifnx_type == 'controls-phosphorylation-of':
-                sifnx_triples[','.join((head, 'controls-state-change-of', tail))].add((pmid, confidence))
+        tails = homologs.get(tail, [tail])
 
+        for head in heads:
+            for tail in tails:
+                head_proteins = geneid_to_uniprot.get(head, [])
+                tail_proteins = geneid_to_uniprot.get(tail, [])
 
-    result = {}
-    for k, v in sifnx_triples.items():
-        result[k] = list(v)
+        for head in head_proteins:
+            for tail in tail_proteins:
+                confidence = relation['confidence']
+                sifnx_triple = ','.join((head, sifnx_type, tail))
+                for pmid in event_id_to_article[str(relation['general_event_id'])]:
+                    if sifnx_triple not in result:
+                        result[sifnx_triple] = {'provenance': {}}
+                    meta = result[sifnx_triple]
+
+                    meta['provenance'][pmid] = max(confidence, meta['provenance'].get(pmid, -np.inf))
+                    meta['score'] = max(confidence, meta.get('score', -np.inf))
+
 
     return result
 
 
 if __name__ == '__main__':
-    relations = pd.read_csv('data/EVEX_relations_9606.tab', sep='\t')
+    relations = pd.read_csv('../data/EVEX_relations_9606.tab', sep='\t')
     event_id_to_article = defaultdict(list)
-    with open('data/EVEX_articles_9606.tab') as f:
+    with open('../data/EVEX_articles_9606.tab') as f:
         next(f)
         for line in f:
             event_id, pmid = line.strip().split('\t')
@@ -61,5 +81,5 @@ if __name__ == '__main__':
             event_id_to_article[event_id].append(pmid)
 
     preds = convert_to_sifnx(relations, event_id_to_article)
-    with open('data/EVEX_preds.json', 'w') as f:
+    with open('../distant_supervision/EVEX_preds.json', 'w') as f:
         json.dump(preds, f)

@@ -1,3 +1,4 @@
+import json
 from typing import Set, Tuple, List, Dict, Optional
 
 from dataclasses import dataclass
@@ -52,7 +53,8 @@ class RelationInstancesReader(DatasetReader):
                  max_bag_size: Optional[int] = None,
                  negative_exampels_percentage: int = 100,
                  with_direct_supervision: bool = True,
-                 ignore_pairs_without_mentions: bool = True) -> None:
+                 ignore_pairs_without_mentions: bool = True,
+                 load_metadata = False) -> None:
         """
         args:
             lazy: lazy reading of the dataset
@@ -67,8 +69,11 @@ class RelationInstancesReader(DatasetReader):
         self.with_direct_supervision = with_direct_supervision
         self.ignore_pairs_without_mentions = ignore_pairs_without_mentions
 
+        self.load_metadata = load_metadata
+
         self._tokenizer = WordTokenizer(word_splitter=JustSpacesWordSplitter())
         self._token_indexers = {"tokens": SingleIdTokenIndexer()}
+        self._entity_indexer = {"entities": SingleIdTokenIndexer(namespace="entities")}
 
         # for logging and input validation
         self._inst_counts: Dict = defaultdict(int)  # count instances per relation type
@@ -94,53 +99,16 @@ class RelationInstancesReader(DatasetReader):
             self._failed_mentions_count = 0
             self._count_direct_supervised_inst: int = 0
             self._count_bag_labels: Dict = defaultdict(int)
-            e1 = None
-            e2 = None
-            supervision_type = None
-            rels = None
-            mentions = None
-            # Lines are assumed to be sorted by entity1/entity2/relation_type and `distant' has to be before `direct'
-            for lino, line in enumerate(tqdm.tqdm(data_file.readlines())):
-                line = line.strip()
-                try:
-                    new_e1, new_e2, _, _, rel, m, new_supervision_type, journal, year, pmid = line.strip().split("\t")
-                except ValueError:
-                    print(line, " does not have enough tabs.")
-                if self.ignore_pairs_without_mentions and "PAIR_NOT_FOUND" in m:
-                    continue
-                assert new_supervision_type in ['direct', 'distant']
-                if new_e1 != e1 or new_e2 != e2 or supervision_type == 'direct':
-                    # new entity pair
-                    if rels:
-                        # subsample negative examples and sentence-level supervised examples
-                        if random.randint(1, 100) <= self.negative_exampels_percentage or \
-                           NEGATIVE_RELATION_NAME not in rels or \
-                           supervision_type == 'direct':  # pylint: disable=unsupported-membership-test
 
-                            if not self.with_direct_supervision and supervision_type == 'direct':
-                                supervision_type = 'distant'
-                            else:
-                                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False,
-                                                             supervision_type=supervision_type)
-                                if inst:
-                                    yield inst
+            data = json.load(data_file)
 
-                    e1 = new_e1
-                    e2 = new_e2
-                    rels = set([rel])
-                    mentions = set([m])
-                    supervision_type = new_supervision_type
-                else:
-                    # same pair of entities, just add the relation and the mention
-                    rels.add(rel)
-                    mentions.add(m)
-            if rels:
-                if not self.with_direct_supervision and supervision_type == 'direct':
-                    pass
-                else:
-                    inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type=supervision_type)
-                    if inst is not None:
-                        yield inst
+            for pair, pair_data in data.items():
+                e1, e2 = pair.split(',')
+                rels = pair_data['relations']
+                mentions = set(m[0] for m in pair_data['mentions'])
+                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant')
+                if inst is not None:
+                    yield inst
 
             # log relation types and number of instances
             for rel, cnt in sorted(self._inst_counts.items(), key=lambda x: -x[1]):
@@ -203,9 +171,11 @@ class RelationInstancesReader(DatasetReader):
                     log.error('Number of failed mentions: %d', self._failed_mentions_count)
 
         if len(fields_list) == 0:
-            return None  # instance with zero mentions (because all mentions failed)
-
-        mention_f, position1_f, position2_f = zip(*fields_list)
+            mention_f = [TextField([Token('.')] * 5, self._token_indexers)]
+            position1_f = [SequenceLabelField([-1] * 5, mention_f[0])]
+            position2_f = [SequenceLabelField([-1] * 5, mention_f[0])]
+        else:
+            mention_f, position1_f, position2_f = list(zip(*fields_list))
 
         if len(rels) == 0:
             bag_label = 0  # negative bag
@@ -215,7 +185,7 @@ class RelationInstancesReader(DatasetReader):
             bag_label = 2  # positive bag distantly supervised
 
         self._count_bag_labels[bag_label] += 1
-        sent_labels = [LabelField(bag_label, skip_indexing=True)] * len(fields_list)
+        sent_labels = [LabelField(bag_label, skip_indexing=True)] * len(mention_f)
 
         if supervision_type == 'direct':
             is_direct_supervision_bag_field = TextField(self._tokenizer.tokenize(". ."), self._token_indexers)
@@ -223,14 +193,21 @@ class RelationInstancesReader(DatasetReader):
         else:
             is_direct_supervision_bag_field = TextField(self._tokenizer.tokenize("."), self._token_indexers)
 
-        fields = {"mentions": ListField(list(mention_f)),
+        fields = {"entities": TextField([Token(e1), Token(e2)], self._entity_indexer),
+                  "mentions": ListField(list(mention_f)),
                   "positions1": ListField(list(position1_f)),
                   "positions2": ListField(list(position2_f)),
                   "is_direct_supervision_bag": is_direct_supervision_bag_field,
                   "sent_labels": ListField(sent_labels),  # 0: -ve, 1: directly supervised +ve, 2: distantly-supervised +ve
                   "labels": MultiLabelField(rels),  # bag-level labels
-                #   "metadata": MetadataField({"mentions": list(mentions)})
                  }
+        if self.load_metadata:
+            metadata = {
+                "mentions": list(mentions),
+                "entities": [e1, e2]
+            }
+
+            fields["metadata"] = MetadataField(metadata)
         return Instance(fields)
 
     def _tokens_distances_fields(self, tokens):
