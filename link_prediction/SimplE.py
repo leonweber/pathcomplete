@@ -20,19 +20,20 @@ class SimplE(nn.Module):
         nn.init.uniform_(self.ent_t_embs.weight.data, -sqrt_size, sqrt_size)
         nn.init.uniform_(self.rel_embs.weight.data, -sqrt_size, sqrt_size)
         nn.init.uniform_(self.rel_inv_embs.weight.data, -sqrt_size, sqrt_size)
-        
+
     def l2_loss(self):
         return ((torch.norm(self.ent_h_embs.weight, p=2) ** 2) + (torch.norm(self.ent_t_embs.weight, p=2) ** 2) + (torch.norm(self.rel_embs.weight, p=2) ** 2) + (torch.norm(self.rel_inv_embs.weight, p=2) ** 2)) / 2
 
-    def forward(self, heads, rels, tails):
+    def forward(self, pairs):
+        heads = pairs[:, 0]
+        tails = pairs[:, 1]
         hh_embs = self.ent_h_embs(heads)
         ht_embs = self.ent_h_embs(tails)
         th_embs = self.ent_t_embs(heads)
         tt_embs = self.ent_t_embs(tails)
-        r_embs = self.rel_embs(rels)
-        r_inv_embs = self.rel_inv_embs(rels)
+        R_embs = self.rel_embs.weight
+        R_inv_embs = self.rel_inv_embs.weight
 
-        scores1 = torch.sum(hh_embs * r_embs * tt_embs, dim=1)
-        scores2 = torch.sum(ht_embs * r_inv_embs * th_embs, dim=1)
+        scores1 = hh_embs * tt_embs @ R_embs.t()
+        scores2 = ht_embs * th_embs @ R_inv_embs.t()
         return torch.clamp((scores1 + scores2) / 2, -20, 20)
-        

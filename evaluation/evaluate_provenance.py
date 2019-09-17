@@ -145,7 +145,7 @@ if __name__ == '__main__':
 
     with open(args.anns) as f:
         anns = json.load(f)
-        anns = {k: v for k, v in anns.items() if k.split(',')[1] != 'NA'}
+        anns = {k.replace(" ", ""): v for k, v in anns.items() if k.split(',')[1] != 'NA'}
         if args.filter:
             with open(args.filter) as f:
                 filter = json.load(f)
@@ -153,6 +153,7 @@ if __name__ == '__main__':
 
     with open(args.preds) as f:
         preds = json.load(f)
+        preds = {k.replace(" ", ""): v for k, v in preds.items()}
         if args.filter:
             with open(args.filter) as f:
                 filter = json.load(f)
@@ -193,9 +194,11 @@ if __name__ == '__main__':
             rel_anns = deepcopy(anns)
             rel_preds = deepcopy(preds)
 
-        res = evaluate_relations(rel_anns, rel_preds, baseline)
-
         print(relation)
+        if not rel_preds:
+            print(f"No predictions for {relation}")
+            continue
+        res = evaluate_relations(rel_anns, rel_preds, baseline)
         pprint({k: v for k,v in res.items() if 'vals' not in k})
         df['rel'].append(relation)
 

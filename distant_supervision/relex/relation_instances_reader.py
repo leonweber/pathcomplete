@@ -54,7 +54,8 @@ class RelationInstancesReader(DatasetReader):
                  negative_exampels_percentage: int = 100,
                  with_direct_supervision: bool = True,
                  ignore_pairs_without_mentions: bool = True,
-                 load_metadata = False) -> None:
+                 load_metadata = False,
+                 add_inverse=False) -> None:
         """
         args:
             lazy: lazy reading of the dataset
@@ -86,6 +87,8 @@ class RelationInstancesReader(DatasetReader):
         self._count_direct_supervised_inst: int = 0
         self._count_bag_labels: Dict = defaultdict(int)
 
+        self.add_inverse = False
+
     @overrides
     def _read(self, file_path):
         with open(cached_path(file_path), "r") as data_file:
@@ -105,6 +108,11 @@ class RelationInstancesReader(DatasetReader):
             for pair, pair_data in data.items():
                 e1, e2 = pair.split(',')
                 rels = pair_data['relations']
+
+                if self.add_inverse:
+                    for rel in data[f"{e2},{e1}"]['relations']:
+                        rels.append(f"_{rel}_inverse")
+
                 mentions = set(m[0] for m in pair_data['mentions'])
                 inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant')
                 if inst is not None:

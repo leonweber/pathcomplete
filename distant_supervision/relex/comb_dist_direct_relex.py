@@ -234,9 +234,9 @@ class CombDistDirectRelex(Model):
             e1_e2_mult = e1_embd_sent_avg * e2_embd_sent_avg
             x = torch.cat([x, e1_e2_mult], dim=1)
 
+        has_mentions_mask = (~no_mentions_mask).float()
         x = self.downprojection_text(x)
-        text_logits = self.ff_out(x)  # batch_size x self.num_classes
-        text_logits[no_mentions_mask] *= 0
+        text_logits = self.ff_out(x) * has_mentions_mask.unsqueeze(-1)  # batch_size x self.num_classes
 
         # TENSOR MODEL
         ##############

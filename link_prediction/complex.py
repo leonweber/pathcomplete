@@ -26,17 +26,19 @@ class Complex(nn.Module):
         return ((torch.norm(self.ent1_embs.weight, p=2) ** 2) + (torch.norm(self.ent2_embs.weight, p=2) ** 2) + (
                 torch.norm(self.rel1_embs.weight, p=2) ** 2) + (torch.norm(self.rel2_embs.weight, p=2) ** 2)) / 2
 
-    def forward(self, heads, rels, tails):
+    def forward(self, pairs):
+        heads = pairs[:, 0]
+        tails = pairs[:, 1]
         h1 = self.ent1_embs(heads)
         h2 = self.ent2_embs(heads)
         t1 = self.ent1_embs(tails)
         t2 = self.ent2_embs(tails)
-        r1 = self.rel1_embs(rels)
-        r2 = self.rel2_embs(rels)
+        R1 = self.rel1_embs.weight
+        R2 = self.rel2_embs.weight
 
-        term1 = (h1 * t1) @ r1.t()
-        term2 = (h2 * t2) @ r1.t()
-        term3 = (h1 * t2) @ r2.t()
-        term4 = (h2 * t1) @ r2.t()
+        term1 = (h1 * t1) @ R1.t()
+        term2 = (h2 * t2) @ R1.t()
+        term3 = (h1 * t2) @ R2.t()
+        term4 = (h2 * t1) @ R2.t()
 
         return term1 + term2 + term3 - term4
