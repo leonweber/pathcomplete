@@ -20,6 +20,8 @@ from relex.tensor_models import Complex
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 @Model.register("comb_dist_direct_relex")
 class CombDistDirectRelex(Model):
