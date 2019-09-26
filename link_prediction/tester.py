@@ -17,17 +17,19 @@ class Tester:
 
     def test(self):
         last_batch = False
-        aps = []
+        all_ys = []
+        all_scores = []
         while not last_batch:
             X, y = self.dataset.next_batch(self.batch_size, split=self.split)
             with torch.no_grad():
-                scores = self.model.predict_relations(X).cpu().numpy()
-                y = y.cpu().numpy()
-                precisions, recalls, _ = precision_recall_curve(y.ravel(), scores.ravel())
-                ap = np.sum(np.diff(np.insert(recalls[::-1], 0, 0)) * precisions[::-1])
-                aps.append(ap)
+                all_scores.append(self.model.predict_relations(X).cpu().numpy())
+                all_ys.append(y.cpu().numpy())
+        all_scores = np.concatenate(all_scores, axis=0)
+        all_ys = np.concatenate(all_ys, axis=0)
+        precisions, recalls, _ = precision_recall_curve(all_ys.ravel(), all_scores.ravel())
+        ap = np.sum(np.diff(np.insert(recalls[::-1], 0, 0)) * precisions[::-1])
 
-        return np.mean(aps)
+        return ap
 
 
 
