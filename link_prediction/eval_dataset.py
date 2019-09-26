@@ -26,10 +26,10 @@ class Dataset:
 
         for i, line in enumerate(lines):
             triple = line.strip().split("\t")
-            if triple[1] == "NA":
-                continue
             triple = self.triple2ids(triple)
-            pairs_to_labels[(triple[0], triple[2])].add(triple[1])
+
+            if triple[1] != "NA":
+                pairs_to_labels[(triple[0], triple[2])].add(triple[1])
 
         X = np.zeros((len(pairs_to_labels), 2))
         y = np.zeros((len(pairs_to_labels), self.num_rel))
@@ -73,7 +73,7 @@ class Dataset:
         return rand_ent
                      
     def next_batch(self, batch_size, split):
-        if self.batch_index[split] + batch_size < len(self.data["train"][0]):
+        if self.batch_index[split] + batch_size < len(self.data[split][0]):
             X = self.data[split][0][self.batch_index[split]: self.batch_index[split] +batch_size]
             y = self.data[split][1][self.batch_index[split]: self.batch_index[split] + batch_size]
             self.batch_index[split] += batch_size
@@ -91,6 +91,6 @@ class Dataset:
     def was_last_batch(self, split):
         return (self.batch_index[split] == 0)
 
-    def num_batch(self, batch_size):
-        return int(math.ceil(float(len(self.data["train"])) / batch_size))
+    def num_batch(self, batch_size, split):
+        return int(math.ceil(float(len(self.data[split])) / batch_size))
 
