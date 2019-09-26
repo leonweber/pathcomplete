@@ -21,7 +21,7 @@ class Dataset:
             triple = line.strip().split("\t")
             if triple[1] == "NA":
                 continue
-            triples[i] = np.array(self.triple2ids())
+            triples[i] = np.array(self.triple2ids(triple))
         return triples
 
     @property

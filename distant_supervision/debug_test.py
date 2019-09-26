@@ -10,8 +10,8 @@ from allennlp.commands import main
 sys.argv = [
     "allennlp",  # command name, not used by main
     "predict",
-    "distant_supervision/runs/reactome/model.tar.gz",
-    "distant_supervision/data/PathwayCommons11.reactome.hgnc.txt/dev.txt.srtd",
+    "runs/run05/model.tar.gz",
+    "data/PathwayCommons11.reactome.hgnc.txt/dev.json.small",
     "--include-package", "relex",
     "--cuda-device", "0",
     "--batch-size", "32",

@@ -253,19 +253,18 @@ class CombDistDirectRelex(Model):
             logits = text_logits * masked_comb_gate + (1-masked_comb_gate) * tensor_pred
         else:
             logits = text_logits
+            masked_comb_gate = None
+
+        bag_mask = mask.sum(dim=2) > 0
+        unpadded_alphas = []
+        for alpha, bag_m in zip(alphas, bag_mask):
+            if bag_m.sum() == 0:
+                unpadded_alphas.append(np.array([]))
+            else:
+                unpadded_alphas.append(alpha.cpu().detach().numpy()[bag_m.cpu().numpy()])
 
 
-
-
-
-        # alpha_mask = [len(d['mentions']) for d in metadata]
-
-        # unpadded_alphas = []
-        # for alpha, d in zip(alphas, metadata):
-        #     unpadded_alphas.append(alpha.cpu().detach().numpy()[:len(d['mentions'])])
-
-
-        output_dict = {'logits': logits} # 'alphas': unpadded_alphas}  # sigmoid is applied in the loss function and the metric class, not here
+        output_dict = {'logits': logits, 'alphas': unpadded_alphas, 'gate': masked_comb_gate}  # sigmoid is applied in the loss function and the metric class, not here
 
 
 

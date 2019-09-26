@@ -34,5 +34,6 @@ class RelationExtractionPredictor(Predictor):
     def predict_instance(self, instance: Instance) -> JsonDict:
         out = self._model.forward_on_instance(instance)
         out['entities'] = list(instance['metadata']['entities'])
+        out['mentions'] = list(instance['metadata']['mentions'])
 
         return sanitize(out)
