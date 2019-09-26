@@ -55,7 +55,8 @@ def hgnc_to_uniprot(symbol, mapping, mg):
         res = mg.query('symbol:%s' % symbol, size=1, fields='uniprot')['hits']
         if res and 'uniprot' in res[0]:
             if 'Swiss-Prot' in res[0]['uniprot']:
-                return res[0]['uniprot']['Swiss-Prot']
+                uniprot = res[0]['uniprot']['Swiss-Prot']
+                return [uniprot]
 
         print("Couldn't find %s" % symbol)
         return None
@@ -70,6 +71,10 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     for _, row in df[df['INTERACTION_TYPE'].str.contains('ProteinReference')].iterrows():
         try:
             uniprot_id = re.findall(r'uniprot knowledgebase:(\S+)', row['INTERACTION_DATA_SOURCE'])[0]
+            if ',' in uniprot_id:
+                __import__('pdb').set_trace()
+            if not isinstance(uniprot_id, list):
+                uniprot_id = [uniprot_id]
         except TypeError:
             continue
         hgnc_name = row['PARTICIPANT_A']

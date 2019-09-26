@@ -38,10 +38,10 @@ if __name__ == '__main__':
     entities = sorted(entities)
     relations = sorted(relations)
 
-    with open(f"{datadir}/link_prediction/{args.name}/entities.dict", 'w') as f:
+    with open(f"{out_dir}/entities.dict", 'w') as f:
         for i, entity in enumerate(entities):
             f.write(f"{i}\t{entity}\n")
-    with open(f"{datadir}/link_prediction/{args.name}/relations.dict", 'w') as f:
+    with open(f"{out_dir}/relations.dict", 'w') as f:
         for i, relation in enumerate(relations):
             f.write(f"{i}\t{relation}\n")
 

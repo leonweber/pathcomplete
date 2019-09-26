@@ -5,3 +5,4 @@ gunzip PathwayCommons11."$1".hgnc.txt.gz
 mv PathwayCommons11."$1".hgnc.txt ../data
 python make_dataset.py ../data/PathwayCommons11."$1".hgnc.txt
 python json_to_link_prediction.py --name "$1"
+
