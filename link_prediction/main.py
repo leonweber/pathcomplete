@@ -37,10 +37,10 @@ if __name__ == '__main__':
     best_epoch = "0"
     for epoch in epochs2test:
         start = time.time()
-        print(epoch)
         model_path = "models/" + args.dataset + "/" + epoch + args.model  + ".chkpnt"
         tester = Tester(dataset, model_path, args.batch_size*2, "valid")
         ap = tester.test()
+        print(epoch, ":", ap)
         if ap > best_ap:
             best_ap = ap
             best_epoch = epoch
