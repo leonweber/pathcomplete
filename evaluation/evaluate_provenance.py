@@ -34,10 +34,10 @@ def evaluate_relations(anns, preds, baseline=None):
     proba_scores = [preds[rel]["score"] for rel in preds]
     y_true = [int(rel in true_relations) for rel in preds]
 
-    proba_scores = proba_scores + [min(proba_scores)-1] * len(true_relations - set(preds))
-    y_true = y_true + [1] * len(true_relations - set(preds))
+    max_recall = len(true_relations & set(preds)) / len(true_relations)
 
     prec_vals, rec_vals, _ = precision_recall_curve(y_true, proba_scores)
+    rec_vals = rec_vals * max_recall
     ap = np.sum(np.diff(np.insert(rec_vals[::-1], 0, 0)) * prec_vals[::-1])
 
     prec_vals = prec_vals.tolist()
@@ -138,6 +138,7 @@ if __name__ == '__main__':
     parser.add_argument('--pathway', required=False)
     parser.add_argument('--baseline', required=False)
     parser.add_argument('--filter', required=False)
+    parser.add_argument('--rel_filter', required=False)
     parser.add_argument('--no_scores', action='store_true')
     parser.add_argument('--out', required=False)
 
@@ -150,6 +151,10 @@ if __name__ == '__main__':
             with open(args.filter) as f:
                 filter = json.load(f)
             anns = {k: v for k, v in anns.items() if k not in filter}
+        if args.rel_filter:
+            blacklisted_rels = set(args.rel_filter.split(","))
+            anns = {k: v for k, v in anns.items() if k.split(",")[1] not in blacklisted_rels}
+
 
     with open(args.preds) as f:
         preds = json.load(f)
@@ -158,6 +163,9 @@ if __name__ == '__main__':
             with open(args.filter) as f:
                 filter = json.load(f)
             preds = {k: v for k, v in preds.items() if k not in filter}
+        if args.rel_filter:
+            blacklisted_rels = set(args.rel_filter.split(","))
+            preds = {k: v for k, v in preds.items() if k.split(",")[1] not in blacklisted_rels}
 
     entities = set()
     if args.pathway:
