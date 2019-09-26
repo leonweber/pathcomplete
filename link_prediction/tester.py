@@ -1,5 +1,5 @@
 import torch
-from dataset import Dataset
+from eval_dataset import Dataset
 import numpy as np
 from measure import Measure
 from os import listdir
@@ -11,7 +11,7 @@ class Tester:
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.model = torch.load(model_path, map_location = self.device)
         self.model.eval()
-        self.dataset = Dataset(dataset)
+        self.dataset = dataset
         self.batch_size = batch_size
         self.split = split
 
@@ -21,7 +21,8 @@ class Tester:
         while not last_batch:
             X, y = self.dataset.next_batch(self.batch_size, split=self.split)
             with torch.no_grad():
-                scores = self.model(X).cpu().numpy()
+                scores = self.model.predict_relations(X).cpu().numpy()
+                y = y.cpu().numpy()
                 precisions, recalls, _ = precision_recall_curve(y.ravel(), scores.ravel())
                 ap = np.sum(np.diff(np.insert(recalls[::-1], 0, 0)) * precisions[::-1])
                 aps.append(ap)

@@ -26,7 +26,7 @@ class Complex(nn.Module):
         return ((torch.norm(self.ent1_embs.weight, p=2) ** 2) + (torch.norm(self.ent2_embs.weight, p=2) ** 2) + (
                 torch.norm(self.rel1_embs.weight, p=2) ** 2) + (torch.norm(self.rel2_embs.weight, p=2) ** 2)) / 2
 
-    def forward(self, pairs):
+    def predict_relations(self, pairs):
         heads = pairs[:, 0]
         tails = pairs[:, 1]
         h1 = self.ent1_embs(heads)
