@@ -26,9 +26,9 @@ class Dataset:
 
         for i, line in enumerate(lines):
             triple = line.strip().split("\t")
-            triple = self.triple2ids(triple)
 
             if triple[1] != "NA":
+                triple = self.triple2ids(triple)
                 pairs_to_labels[(triple[0], triple[2])].add(triple[1])
 
         X = np.zeros((len(pairs_to_labels), 2))
@@ -92,5 +92,5 @@ class Dataset:
         return (self.batch_index[split] == 0)
 
     def num_batch(self, batch_size, split):
-        return int(math.ceil(float(len(self.data[split])) / batch_size))
+        return int(math.ceil(float(len(self.data[split][0])) / batch_size))
 
