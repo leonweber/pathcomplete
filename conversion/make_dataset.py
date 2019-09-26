@@ -66,7 +66,7 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     genes = set()
     np.random.seed(5005)
 
-    mapping = {}
+    mapping = defaultdict(set)
     for _, row in df[df['INTERACTION_TYPE'].str.contains('ProteinReference')].iterrows():
         try:
             uniprot_id = re.findall(r'uniprot knowledgebase:(\S+)', row['INTERACTION_DATA_SOURCE'])[0]
@@ -74,7 +74,7 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
             continue
         hgnc_name = row['PARTICIPANT_A']
         assert hgnc_name not in mapping
-        mapping[hgnc_name] = uniprot_id
+        mapping[hgnc_name].update(uniprot_id)
 
 
     df = df[df['INTERACTION_TYPE'].isin(INTERACTION_TYPES)]
@@ -93,18 +93,19 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
         head = row['PARTICIPANT_A']
         tail = row['PARTICIPANT_B']
 
-        head = hgnc_to_uniprot(head, mapping, mg)
-        tail = hgnc_to_uniprot(tail, mapping, mg)
+        heads = hgnc_to_uniprot(head, mapping, mg)
+        tails = hgnc_to_uniprot(tail, mapping, mg)
 
-        if not head or not tail:
+        if not heads or not tails:
             continue
 
+        for head in heads:
+            for tail in tails:
+                relation_type = row['INTERACTION_TYPE']
+                pmids = row['INTERACTION_PUBMED_ID'].split(';')
 
-        relation_type = row['INTERACTION_TYPE']
-        pmids = row['INTERACTION_PUBMED_ID'].split(';')
-
-        relation = f"{head},{relation_type},{tail}"
-        interactions[relation].update(pmids)
+                relation = f"{head},{relation_type},{tail}"
+                interactions[relation].update(pmids)
 
     result = {k: list(v) for k, v in interactions.items()}
 
