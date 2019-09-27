@@ -5,12 +5,16 @@ import os
 
 from allennlp.commands import main
 
-os.chdir('distant_supervision')
-
 config_file = "allennlp_config/config.json"
 
 # Use overrides to train on CPU.
-overrides = json.dumps({"trainer": {"cuda_device": 0}})
+overrides = json.dumps({"trainer": {"cuda_device": 0},
+                        "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.json.small",
+                        "validation_data_path": "data/PathwayCommons11.reactome.hgnc.txt/dev.json.small",
+                        "model": {
+                            "tensor_model_size": 200
+                        }
+                        })
 
 serialization_dir = "/tmp/debugger_train"
 
@@ -28,7 +32,7 @@ os.environ['NUMPY_SEED']='5005'
 
 # change the following two variables to make the problem smaller for debugging
 os.environ['negative_exampels_percentage']='100' # set to 100 to use all of the dataset. Values < 100 will randomely drop some of the negative examples
-os.environ['max_bag_size']='100'  # set to 25 to use all of the dataset. Keep only the top `max_bag_size` sentences in each bag and drop the rest
+os.environ['max_bag_size']='5'  # set to 25 to use all of the dataset. Keep only the top `max_bag_size` sentences in each bag and drop the rest
 
 
 # reader configurations
@@ -47,7 +51,7 @@ os.environ['attention_aggregation_fn'] = 'max'  # avg, max
 # trainer configurations
 os.environ['batch_size'] = '2'
 os.environ['cuda_device'] = '-1'  # which GPU to use. Use -1 for no-gpu
-os.environ['num_epochs'] = '1'  # set to 100 and rely on early stopping
+os.environ['num_epochs'] = '100'  # set to 100 and rely on early stopping
 
 
 # Assemble the command into sys.argv

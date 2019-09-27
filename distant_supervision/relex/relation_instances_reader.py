@@ -158,7 +158,7 @@ class RelationInstancesReader(DatasetReader):
                           NEGATIVE_RELATION_NAME, rels, e1, e2)
             rels.remove(NEGATIVE_RELATION_NAME)
 
-            if random.uniform(1) >= self.negative_exampels_percentage:
+            if random.uniform(0, 1) >= self.negative_exampels_percentage:
                 return None
 
         self._relation_types_per_bag[len(rels)] += 1
