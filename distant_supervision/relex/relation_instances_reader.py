@@ -188,15 +188,6 @@ class RelationInstancesReader(DatasetReader):
         else:
             mention_f, position1_f, position2_f = list(zip(*fields_list))
 
-        if len(rels) == 0:
-            bag_label = 0  # negative bag
-        elif supervision_type == 'direct':
-            bag_label = 1  # positive bag with sentence-level supervision
-        else:
-            bag_label = 2  # positive bag distantly supervised
-
-        self._count_bag_labels[bag_label] += 1
-        sent_labels = [LabelField(bag_label, skip_indexing=True)] * len(mention_f)
 
         if supervision_type == 'direct':
             is_direct_supervision_bag_field = TextField(self._tokenizer.tokenize(". ."), self._token_indexers)
@@ -209,7 +200,7 @@ class RelationInstancesReader(DatasetReader):
                   "positions1": ListField(list(position1_f)),
                   "positions2": ListField(list(position2_f)),
                   "is_direct_supervision_bag": is_direct_supervision_bag_field,
-                  "sent_labels": ListField(sent_labels),  # 0: -ve, 1: directly supervised +ve, 2: distantly-supervised +ve
+                  "has_mentions": LabelField(1 if mentions else 0, skip_indexing=True),
                   "labels": MultiLabelField(rels),  # bag-level labels
                  }
         if self.load_metadata:

@@ -105,15 +105,20 @@ class CombDistDirectRelex(Model):
                 positions1: torch.LongTensor,
                 positions2: torch.LongTensor,
                 is_direct_supervision_bag: torch.LongTensor,
-                sent_labels: torch.LongTensor,  # sentence-level labels 
+                has_mentions: torch.LongTensor,
                 labels: torch.LongTensor,  # bag-level labels
                 metadata=None,
                 ) -> Dict[str, torch.Tensor]:
 
         positions1[positions1 < 0] = 0
         positions2[positions2 < 0] = 0
-        alphas1, mask, no_mentions_mask, x1 = self.bag_embedding(mentions, positions1, positions2)
-        alphas2, mask, no_mentions_mask, x2 = self.bag_embedding(mentions, positions2, positions1)
+
+        no_mentions_mask = ~has_mentions.bool()
+
+        alphas1, mask, x1 = self.bag_embedding(mentions=mentions, positions1=positions1, positions2=positions2,
+                                               no_mentions_mask=no_mentions_mask)
+        alphas2, mask, x2 = self.bag_embedding(mentions=mentions, positions1=positions2, positions2=positions1,
+                                               no_mentions_mask=no_mentions_mask)
 
         logits, gate1, gate2 = self.tensor_model(entities['entities'], x1, x2, no_mentions_mask)
 
@@ -142,13 +147,13 @@ class CombDistDirectRelex(Model):
                 logits)) * self.num_classes  # scale the loss to be more readable
             self.metrics['bag_loss'](loss.item())
             self.metrics['ap'](logits, labels.squeeze(-1))
-            self.metrics['gate']((gate1 + gate2).mean().item() * 0.5)
+            self.metrics['gate']((gate1 + gate2).mean().item())
 
             output_dict['loss'] = loss
 
         return output_dict
 
-    def bag_embedding(self, mentions, positions1, positions2):
+    def bag_embedding(self, mentions, positions1, positions2, no_mentions_mask):
         tokens = mentions['tokens']
         assert tokens.dim() == 3
         batch_size = tokens.size(0)
@@ -157,7 +162,6 @@ class CombDistDirectRelex(Model):
         mask = util.get_text_field_mask(mentions, num_wrapping_dims=1)
         # embed text
         t_embd = self.text_field_embedder(mentions)
-        no_mentions_mask = (positions1.sum(2).sum(1) < 0)
         mask[no_mentions_mask] = mask[no_mentions_mask] * 0
         # embed position information
         p1_embd = self.pos_embed(positions1)
@@ -220,7 +224,7 @@ class CombDistDirectRelex(Model):
 
             e1_e2_mult = e1_embd_sent_avg * e2_embd_sent_avg
             x = torch.cat([x, e1_e2_mult], dim=1)
-        return alphas, mask, no_mentions_mask, x
+        return alphas, mask, x
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
