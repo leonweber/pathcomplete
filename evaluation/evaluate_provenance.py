@@ -25,6 +25,26 @@ def augment_preds(preds):
     return augmented_preds
 
 
+def evaluate_provenance(anns, preds):
+    tps = set(anns) & set(preds)
+
+    proba_scores = []
+    y_true = []
+    n_true_pmids = 0
+
+    for tp in tps:
+        true_provenance = anns[tp]
+        n_true_pmids += len(true_provenance)
+        for pmid, score in preds[tp]['provenance'].items():
+            proba_scores.append(score)
+            y_true.append(pmid in true_provenance)
+
+    max_recall = sum(y_true) / n_true_pmids
+    prec_vals, rec_vals, _ = precision_recall_curve(y_true, proba_scores)
+    rec_vals = rec_vals * max_recall
+    ap = np.sum(np.diff(np.insert(rec_vals[::-1], 0, 0)) * prec_vals[::-1])
+
+    return ap
 
 
 def evaluate_relations(anns, preds, baseline=None):
@@ -58,10 +78,13 @@ def evaluate_relations(anns, preds, baseline=None):
         new_rec_vals = None
         new_ap = None
 
+    provenance_ap = evaluate_provenance(anns, preds)
+
 
     result = {
         'support': len(true_relations),
         'ap': ap,
+        'provenance_ap': provenance_ap,
         'new_ap': new_ap,
         'prec_vals': prec_vals,
         'rec_vals': rec_vals,
@@ -70,65 +93,6 @@ def evaluate_relations(anns, preds, baseline=None):
     }
 
     return result
-
-
-def evaluate_pairs(anns, preds, entities=None):
-    if entities:
-        anns = filter_triples(anns, entities)
-        preds = filter_triples(preds, entities)
-
-    true_pairs = set((t.split(',')[0], t.split(',')[2]) for t in anns)
-    pred_pairs = set((t.split(',')[0], t.split(',')[2]) for t in preds)
-
-    tps = len(true_pairs & pred_pairs)
-    fps = len(pred_pairs - true_pairs)
-    fns = len(true_pairs - pred_pairs)
-
-    if tps == 0:
-        return 0, 0, 0, len(true_pairs)
-
-    prec = tps / (tps + fps)
-    rec = tps / (tps + fns)
-
-    if prec == 0 or rec == 0:
-        return 0, 0, 0, len(true_pairs)
-
-    f1 = 2 * prec * rec / (prec + rec)
-
-    return prec, rec, f1, len(true_pairs)
-
-
-def evaluate_provenance(anns, preds):
-    true_predictions = set(anns.keys()) & set(preds.keys())
-
-    tps = 0
-    fps = 0
-    fns = 0
-    support = 0
-
-
-    for pred in true_predictions:
-        pred_pmids = set(p for p, _ in preds[pred])
-        true_pmids = set(anns[pred])
-
-        tps += len(pred_pmids & true_pmids)
-        fps += len(pred_pmids - true_pmids)
-        fns += len(true_pmids - pred_pmids)
-        support += len(true_pmids)
-
-    if not true_predictions:
-        return 0, 0, 0, support
-
-
-    prec = tps / (tps + fps)
-    rec = tps / (tps + fns)
-
-    if prec == 0 or rec == 0:
-        return 0, 0, 0, support
-
-    f1 = 2 * prec * rec / (prec + rec)
-
-    return prec, rec, f1, support
 
 
 if __name__ == '__main__':
@@ -178,7 +142,7 @@ if __name__ == '__main__':
         anns = {k: v for k, v in anns.items() if k.split(',')[0] in entities and k.split(',')[2] in entities}
         preds = {k: v for k, v in preds.items() if k.split(',')[0] in entities and k.split(',')[2] in entities}
 
-    preds = augment_preds(preds)
+    # preds = augment_preds(preds)
 
     df = defaultdict(list)
 
@@ -186,7 +150,7 @@ if __name__ == '__main__':
         with open(args.baseline) as f:
             baseline  = json.load(f)
         baseline = {k: v for k, v in baseline.items() if k.split(',')[1] != 'NA'}
-        baseline = augment_preds(baseline)
+        # baseline = augment_preds(baseline)
     else:
         baseline = None
 
@@ -208,6 +172,8 @@ if __name__ == '__main__':
             continue
         res = evaluate_relations(rel_anns, rel_preds, baseline)
         pprint({k: v for k,v in res.items() if 'vals' not in k})
+        print()
+
         df['rel'].append(relation)
 
         for r, value in res.items():
