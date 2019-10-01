@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from pathlib2 import Path
+from pathlib import Path
 
 
 

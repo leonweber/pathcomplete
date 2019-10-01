@@ -114,7 +114,7 @@ class RelationInstancesReader(DatasetReader):
                         rels.append(f"_{rel}_inverse")
 
                 mentions = set(m[0] for m in pair_data['mentions'])
-                pmids = set(m[4] for m in pair_data['mentions'])
+                pmids = set(m[4].strip() for m in pair_data['mentions'])
                 inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant',
                                              pmids=pmids)
                 if inst is not None:
