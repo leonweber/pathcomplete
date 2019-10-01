@@ -114,7 +114,9 @@ class RelationInstancesReader(DatasetReader):
                         rels.append(f"_{rel}_inverse")
 
                 mentions = set(m[0] for m in pair_data['mentions'])
-                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant')
+                pmids = set(m[4] for m in pair_data['mentions'])
+                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant',
+                                             pmids=pmids)
                 if inst is not None:
                     yield inst
 
@@ -135,7 +137,8 @@ class RelationInstancesReader(DatasetReader):
                          rels: Set[str],
                          mentions: Set[str],
                          is_predict: bool,
-                         supervision_type: str) -> Instance:
+                         supervision_type: str,
+                         pmids: Set[str]) -> Instance:
         """Construct an instance given text input.
 
         is_predict: True if this is being called for prediction not training
@@ -206,7 +209,8 @@ class RelationInstancesReader(DatasetReader):
         if self.load_metadata:
             metadata = {
                 "mentions": list(mentions),
-                "entities": [e1, e2]
+                "entities": [e1, e2],
+                "pmids": pmids
             }
 
             fields["metadata"] = MetadataField(metadata)

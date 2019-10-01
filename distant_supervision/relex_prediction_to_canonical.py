@@ -11,7 +11,7 @@ def convert(preds, out):
         pred = json.loads(pred)
         e1, e2 = pred["entities"]
         for label, score in pred["labels"]:
-            triples[f"{e1},{label},{e2}"] = {"provenance": [], "score": score}
+            triples[f"{e1},{label},{e2}"] = {"provenance": pred["provenance"], "score": score}
 
     json.dump(triples, out)
 
