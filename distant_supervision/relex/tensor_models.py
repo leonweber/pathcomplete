@@ -23,7 +23,7 @@ class Simple(nn.Module):
         self.o_embedding = nn.Embedding(n_entities, tensor_emb_size)
         self.r_embedding = nn.Embedding(n_relations, tensor_emb_size)
         self.r_inv_embedding = nn.Embedding(n_relations, tensor_emb_size)
-        self.no_bag_emb = nn.Parameter(torch.tensor(bag_emb_size).uniform_(-0.02, 0.02))
+        self.no_bag_emb = nn.Parameter(torch.zeros(bag_emb_size).float().uniform_(-0.02, 0.02))
         self.ff_gate = nn.Sequential(
             nn.Linear(2 * tensor_emb_size, 1),
             nn.Sigmoid()
@@ -45,8 +45,8 @@ class Simple(nn.Module):
         es1 = e1_s * e2_o
         es2 = e2_s * e1_o
 
-        bag_emb1 = bag_emb1 * has_mentions_mask.float() + self.no_bag_emb * no_mentions_mask.float()
-        bag_emb2 = bag_emb2 * has_mentions_mask.float() + self.no_bag_emb * no_mentions_mask.float()
+        bag_emb1 = bag_emb1 * has_mentions_mask.float().unsqueeze(1) + self.no_bag_emb.repeat(bag_emb1.size(0), 1) * no_mentions_mask.float().unsqueeze(1)
+        bag_emb2 = bag_emb2 * has_mentions_mask.float().unsqueeze(1) + self.no_bag_emb.repeat(bag_emb1.size(0), 1) * no_mentions_mask.float().unsqueeze(1)
 
         bag_emb1 = self.bag_downprojection(bag_emb1)
         bag_emb2 = self.bag_downprojection(bag_emb2)
@@ -65,5 +65,5 @@ class Simple(nn.Module):
         scores1 = h1 @ r.t()
         scores2 = h2 @ r_inv.t()
 
-        return (scores1 + scores2) / 2, masked_gate1, masked_gate2
+        return (scores1 + scores2) / 2, gate1, gate2
 
