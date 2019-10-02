@@ -1,0 +1,59 @@
+{
+  "random_seed":  std.parseInt(std.extVar("SEED")),
+  "pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
+  "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
+  "dataset_reader": {
+    "type": "relation_instances",
+    "lazy": false,
+    "max_bag_size": std.parseInt(std.extVar("max_bag_size")),
+    "negative_exampels_percentage": std.parseInt(std.extVar("negative_exampels_percentage")),
+    "with_direct_supervision": std.extVar("with_direct_supervision"),
+    "add_inverse": true
+  },
+  "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.json.small",
+  "validation_data_path": "data/PathwayCommons11.reactome.hgnc.txt/dev.json.small",
+  "evaluate_on_test": false,
+  "model": {
+    "type": "comb_dist_direct_relex",
+    "text_field_embedder": {
+      "token_embedders": {
+        "tokens": {
+          "type": "embedding",
+          "embedding_dim": 200,
+           "pretrained_file": "wikipedia-pubmed-and-PMC-w2v.vec.gz",
+          "trainable": false
+        }
+      }
+    },
+    "sent_encoder": {
+      "type": "cnn",
+      "embedding_dim": 210,
+      "num_filters": 100,
+      "ngram_filter_sizes": [2, 3, 4, 5],
+      "conv_layer_activation": "relu",
+      "output_dim": 100
+    },
+    "dropout_weight": std.extVar("dropout_weight"),
+    "with_entity_embeddings": std.extVar("with_entity_embeddings"),
+    "sent_loss_weight": std.extVar("sent_loss_weight"),
+    "attention_weight_fn": std.extVar("attention_weight_fn"),
+    "attention_aggregation_fn": std.extVar("attention_aggregation_fn"),
+    "tensor_model_size": 200
+  },
+  "iterator": {
+    "type": "bucket",
+    "sorting_keys": [["is_direct_supervision_bag", "num_tokens"], ["mentions", "list_num_tokens"]],
+    "batch_size": std.parseInt(std.extVar("batch_size"))
+  },
+  "trainer": {
+    "num_epochs": std.parseInt(std.extVar("num_epochs")),
+    "cuda_device": 0,
+    "grad_clipping": 5.0,
+    "patience": 3,
+    "validation_metric": "+ap",
+    "optimizer": {
+      "type": "adam",
+      "lr": 0.001
+    }
+  }
+}
