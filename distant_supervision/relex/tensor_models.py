@@ -39,7 +39,7 @@ class Simple(nn.Module):
         e2_s = self.s_embedding(entities[:, 1])
         e2_o = self.o_embedding(entities[:, 1])
         r = self.r_embedding.weight
-        r_inv = self.r_embedding.weight
+        r_inv = self.r_inv_embedding.weight
 
         es1 = e1_s * e2_o
         es2 = e2_s * e1_o

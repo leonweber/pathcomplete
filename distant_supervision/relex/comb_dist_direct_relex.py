@@ -19,8 +19,6 @@ from relex.tensor_models import Simple, BagOnly
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-torch.multiprocessing.set_sharing_strategy('file_system')
-
 
 @Model.register("comb_dist_direct_relex")
 class CombDistDirectRelex(Model):
@@ -92,6 +90,7 @@ class CombDistDirectRelex(Model):
         self.metrics['ap'] = MultilabelAveragePrecision()  # average precision = AUC
         self.metrics['bag_loss'] = Average()  # to display bag-level loss
         self.metrics['gate'] = Average()
+        self.metrics['alphas'] = Average()
         # self.metrics['sent_ap'] = MultilabelAveragePrecision()
         # self.metrics['sent_ap'](torch.tensor([[1.0,0.0]]), torch.tensor([[0,1]]))
         #
@@ -148,6 +147,7 @@ class CombDistDirectRelex(Model):
             self.metrics['bag_loss'](loss.item())
             self.metrics['ap'](logits, labels.squeeze(-1))
             self.metrics['gate']((gate1 + gate2).mean().item())
+            self.metrics['alpha']((alphas1 + alphas2).mean().item()/2)
 
             output_dict['loss'] = loss
 
