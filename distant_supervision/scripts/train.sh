@@ -33,4 +33,4 @@ export batch_size=4
 export num_epochs=100  # set to 100 and rely on early stopping
 
 
-allennlp train $config_file --include-package relex -s $1 # --cache-directory /mnt/fob-wbia-vol2/wbi/weberple/.data_cache --cache-prefix reactome
+allennlp train --recover $config_file --include-package relex -s $1 # --cache-directory /mnt/fob-wbia-vol2/wbi/weberple/.data_cache --cache-prefix reactome

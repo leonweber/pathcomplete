@@ -90,7 +90,7 @@ class CombDistDirectRelex(Model):
         self.metrics['ap'] = MultilabelAveragePrecision()  # average precision = AUC
         self.metrics['bag_loss'] = Average()  # to display bag-level loss
         self.metrics['gate'] = Average()
-        self.metrics['alphas'] = Average()
+        self.metrics['alpha'] = Average()
         # self.metrics['sent_ap'] = MultilabelAveragePrecision()
         # self.metrics['sent_ap'](torch.tensor([[1.0,0.0]]), torch.tensor([[0,1]]))
         #
@@ -248,5 +248,6 @@ class CombDistDirectRelex(Model):
             # "sent_ap": self.metrics["sent_ap"].get_metric(reset=reset),
             "bag_loss": self.metrics["bag_loss"].get_metric(reset=reset),
             # "sent_loss": self.metrics["sent_loss"].get_metric(reset=reset)
-            "gate": self.metrics["gate"].get_metric(reset=reset)
+            "gate": self.metrics["gate"].get_metric(reset=reset),
+            "alpha": self.metrics["alpha"].get_metric(reset=reset)
         }
