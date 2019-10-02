@@ -23,6 +23,7 @@ class Simple(nn.Module):
         self.o_embedding = nn.Embedding(n_entities, tensor_emb_size)
         self.r_embedding = nn.Embedding(n_relations, tensor_emb_size)
         self.r_inv_embedding = nn.Embedding(n_relations, tensor_emb_size)
+        self.no_bag_emb = nn.Parameter(torch.tensor(bag_emb_size).uniform_(-0.02, 0.02))
         self.ff_gate = nn.Sequential(
             nn.Linear(2 * tensor_emb_size, 1),
             nn.Sigmoid()
@@ -44,19 +45,22 @@ class Simple(nn.Module):
         es1 = e1_s * e2_o
         es2 = e2_s * e1_o
 
+        bag_emb1 = bag_emb1 * has_mentions_mask.float() + self.no_bag_emb * no_mentions_mask.float()
+        bag_emb2 = bag_emb2 * has_mentions_mask.float() + self.no_bag_emb * no_mentions_mask.float()
+
         bag_emb1 = self.bag_downprojection(bag_emb1)
         bag_emb2 = self.bag_downprojection(bag_emb2)
 
         gate1 = self.ff_gate(torch.cat([es1, bag_emb1], dim=1))
-        masked_gate1 = torch.zeros_like(gate1)
-        masked_gate1[has_mentions_mask] = gate1[has_mentions_mask]
+        # masked_gate1 = torch.zeros_like(gate1)
+        # masked_gate1[has_mentions_mask] = gate1[has_mentions_mask]
 
         gate2 = self.ff_gate(torch.cat([es2, bag_emb2], dim=1))
-        masked_gate2 = torch.zeros_like(gate2)
-        masked_gate2[has_mentions_mask] = gate2[has_mentions_mask]
+        # masked_gate2 = torch.zeros_like(gate2)
+        # masked_gate2[has_mentions_mask] = gate2[has_mentions_mask]
 
-        h1 = masked_gate1 * bag_emb1 + (1-masked_gate1) * es1
-        h2 = masked_gate2 * bag_emb2 + (1-masked_gate2) * es2
+        h1 = gate1 * bag_emb1 + (1-gate1) * es1
+        h2 = gate2 * bag_emb2 + (1-gate2) * es2
 
         scores1 = h1 @ r.t()
         scores2 = h2 @ r_inv.t()
