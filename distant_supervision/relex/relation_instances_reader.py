@@ -114,8 +114,8 @@ class RelationInstancesReader(DatasetReader):
                     for rel in data[f"{e2},{e1}"]['relations']:
                         rels.append(f"_{rel}_inverse")
 
-                mentions = set(m[0] for m in pair_data['mentions'])
-                pmids = list(m[4].strip() for m in pair_data['mentions'])
+                mentions = [m[0] for m in pair_data['mentions']]
+                pmids = [m[4].strip() for m in pair_data['mentions']]
                 true_pmids = set(m[1] for m in pair_data['mentions'])
                 pmid_labels = [pmid in true_pmids for pmid in pmids]
                 inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant',
@@ -138,7 +138,7 @@ class RelationInstancesReader(DatasetReader):
     @overrides
     def text_to_instance(self, e1: str, e2: str,  # pylint: disable=arguments-differ
                          rels: Set[str],
-                         mentions: Set[str],
+                         mentions: List[str],
                          is_predict: bool,
                          supervision_type: str,
                          pmids: List[str],
@@ -203,6 +203,8 @@ class RelationInstancesReader(DatasetReader):
 
         pmid_label_fields = [LabelField(label, skip_indexing=True) for label in pmid_labels]
         pmid_label_fields = pmid_label_fields or [LabelField(0, skip_indexing=True)]
+
+        assert len(pmids) == len(mentions)
 
         fields = {"entities": TextField([Token(e1), Token(e2)], self._entity_indexer),
                   "mentions": ListField(list(mention_f)),
