@@ -5,7 +5,7 @@ import os
 
 from allennlp.commands import main
 
-config_file = "allennlp_config/config.json"
+config_file = "allennlp_config/small.json"
 
 # Use overrides to train on CPU.
 overrides = json.dumps({"trainer": {"cuda_device": 0},

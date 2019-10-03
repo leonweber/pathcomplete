@@ -75,6 +75,7 @@ class RelationInstancesReader(DatasetReader):
         self._tokenizer = WordTokenizer(word_splitter=JustSpacesWordSplitter())
         self._token_indexers = {"tokens": SingleIdTokenIndexer()}
         self._entity_indexer = {"entities": SingleIdTokenIndexer(namespace="entities")}
+        self._pmid_indexer = {"pmids": SingleIdTokenIndexer(namespace="pmids")}
 
         # for logging and input validation
         self._inst_counts: Dict = defaultdict(int)  # count instances per relation type
@@ -114,9 +115,11 @@ class RelationInstancesReader(DatasetReader):
                         rels.append(f"_{rel}_inverse")
 
                 mentions = set(m[0] for m in pair_data['mentions'])
-                pmids = set(m[4].strip() for m in pair_data['mentions'])
+                pmids = list(m[4].strip() for m in pair_data['mentions'])
+                true_pmids = set(m[1] for m in pair_data['mentions'])
+                pmid_labels = [pmid in true_pmids for pmid in pmids]
                 inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant',
-                                             pmids=pmids)
+                                             pmids=pmids, pmid_labels=pmid_labels)
                 if inst is not None:
                     yield inst
 
@@ -138,7 +141,8 @@ class RelationInstancesReader(DatasetReader):
                          mentions: Set[str],
                          is_predict: bool,
                          supervision_type: str,
-                         pmids: Set[str]) -> Instance:
+                         pmids: List[str],
+                         pmid_labels: List[bool] ) -> Instance:
         """Construct an instance given text input.
 
         is_predict: True if this is being called for prediction not training
@@ -191,12 +195,14 @@ class RelationInstancesReader(DatasetReader):
         else:
             mention_f, position1_f, position2_f = list(zip(*fields_list))
 
-
         if supervision_type == 'direct':
             is_direct_supervision_bag_field = TextField(self._tokenizer.tokenize(". ."), self._token_indexers)
             self._count_direct_supervised_inst += 1
         else:
             is_direct_supervision_bag_field = TextField(self._tokenizer.tokenize("."), self._token_indexers)
+
+        pmid_label_fields = [LabelField(label, skip_indexing=True) for label in pmid_labels]
+        pmid_label_fields = pmid_label_fields or [LabelField(0, skip_indexing=True)]
 
         fields = {"entities": TextField([Token(e1), Token(e2)], self._entity_indexer),
                   "mentions": ListField(list(mention_f)),
@@ -205,6 +211,8 @@ class RelationInstancesReader(DatasetReader):
                   "is_direct_supervision_bag": is_direct_supervision_bag_field,
                   "has_mentions": LabelField(1 if mentions else 0, skip_indexing=True),
                   "labels": MultiLabelField(rels),  # bag-level labels
+                  "pmids": MetadataField(pmids),
+                  "pmid_labels": ListField(pmid_label_fields)
                  }
         if self.load_metadata:
             metadata = {
