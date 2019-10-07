@@ -23,11 +23,11 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
 
         mention = mention[0].lower()
         for token in mention.split():
-            is_e1_start = '<e1>' in token
-            is_e2_start = '<e2>' in token
-            is_e1_end = '</e1>' in token
-            is_e2_end = '</e2>' in token
-            token = token.replace('<e1>', '').replace('</e1>', '').replace('<e2>', '').replace('</e2>', '')
+            # is_e1_start = '<e1>' in token
+            # is_e2_start = '<e2>' in token
+            # is_e1_end = '</e1>' in token
+            # is_e2_end = '</e2>' in token
+            # token = token.replace('<e1>', '').replace('</e1>', '').replace('<e2>', '').replace('</e2>', '')
 
             if is_e1_start:
                 e1_start = len(token_ids)
