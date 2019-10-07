@@ -87,13 +87,13 @@ class MultilabelAveragePrecision(Metric):
         self.total_counts[uniq_idx] = np.add(self.total_counts[uniq_idx], idx_count)
 
     def _thresholded_average_precision_score(self, precision, recall):
-        if len(precision) == 0:
-            return 0, -1
-        index = np.argmin(abs(recall - self.recall_thr))
-        filtered_precision = precision[:index + 1]
-        filtered_recall = recall[:index + 1]
-        ap = np.sum(np.diff(np.insert(filtered_recall, 0, 0)) * filtered_precision)
-        return ap, index  # index of the value with recall = self.recall_thr (useful for logging)
+        # if len(precision) == 0:
+        #     return 0, -1
+        # index = np.argmin(abs(recall - self.recall_thr))
+        # filtered_precision = precision[:index + 1]
+        # filtered_recall = recall[:index + 1]
+        ap = np.sum(np.diff(np.insert(recall, 0, 0)) * precision)
+        return ap # index of the value with recall = self.recall_thr (useful for logging)
 
     def get_metric(self, reset: bool = False):
         """
@@ -110,7 +110,7 @@ class MultilabelAveragePrecision(Metric):
         isfinite = np.isfinite(precision)
         precision = precision[isfinite]
         recall = recall[isfinite]
-        ap, index = self._thresholded_average_precision_score(precision, recall)  # fast AP because of binned values
+        ap = self._thresholded_average_precision_score(precision, recall)  # fast AP because of binned values
         if reset:
             fast_ap = ap
 
@@ -123,33 +123,33 @@ class MultilabelAveragePrecision(Metric):
             precision = precision[::-1]
             recall = recall[::-1]
             thresholds = thresholds[::-1]
-            ap, index = self._thresholded_average_precision_score(precision, recall)  # accurate AP because of using all values
+            ap = self._thresholded_average_precision_score(precision, recall)  # accurate AP because of using all values
             logger.info("Fast AP: %0.4f -- Accurate AP: %0.4f", fast_ap, ap)
-            if index >= len(thresholds):
-                logger.info("Index = %d but len(thresholds) = %d. Change index to point to the end of the list.",
-                            index, len(thresholds))
-                index = len(thresholds) - 1
-            logger.info("at index %d/%d (top %%%0.4f) -- threshold: %0.4f",
-                        index, len(self.gold_labels), 100.0 * index / len(self.gold_labels), thresholds[index])
+            # if index >= len(thresholds):
+            #     logger.info("Index = %d but len(thresholds) = %d. Change index to point to the end of the list.",
+            #                 index, len(thresholds))
+            #     index = len(thresholds) - 1
+            # logger.info("at index %d/%d (top %%%0.4f) -- threshold: %0.4f",
+            #             index, len(self.gold_labels), 100.0 * index / len(self.gold_labels), thresholds[index])
 
-            # only keep the top predictions then reverse again for printing (to draw the AUC curve)
-            precision = precision[:index + 1][::-1]
-            recall = recall[:index + 1][::-1]
-            thresholds = thresholds[:index + 1][::-1]
-
-            next_step = thresholds[0]
-            step_size = 0.005
-            max_skip = int(len(thresholds) / 500)
-            skipped = 0
-            logger.info("Precision-Recall curve ... ")
-            logger.info("precision, recall, threshold")
-            for p, r, t in [x for x in zip(precision, recall, thresholds)]:
-                if t < next_step and skipped < max_skip:
-                    skipped += 1
-                    continue
-                skipped = 0
-                next_step += step_size
-                # logger.info("%0.4f, %0.4f, %0.4f", p, r, t)
+            # # only keep the top predictions then reverse again for printing (to draw the AUC curve)
+            # precision = precision[:index + 1][::-1]
+            # recall = recall[:index + 1][::-1]
+            # thresholds = thresholds[:index + 1][::-1]
+            #
+            # next_step = thresholds[0]
+            # step_size = 0.005
+            # max_skip = int(len(thresholds) / 500)
+            # skipped = 0
+            # logger.info("Precision-Recall curve ... ")
+            # logger.info("precision, recall, threshold")
+            # for p, r, t in [x for x in zip(precision, recall, thresholds)]:
+            #     if t < next_step and skipped < max_skip:
+            #         skipped += 1
+            #         continue
+            #     skipped = 0
+            #     next_step += step_size
+            #     # logger.info("%0.4f, %0.4f, %0.4f", p, r, t)
             self.reset()
         return ap
 
