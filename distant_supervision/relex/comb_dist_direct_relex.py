@@ -19,8 +19,6 @@ from relex.tensor_models import Simple, BagOnly
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-torch.multiprocessing.set_sharing_strategy('file_system')
-
 
 @Model.register("comb_dist_direct_relex")
 class CombDistDirectRelex(Model):
@@ -87,11 +85,13 @@ class CombDistDirectRelex(Model):
                                               n_entities=vocab.get_vocab_size('entities'),
                                               n_relations=self.vocab.get_vocab_size("labels"))
 
-        self.loss = torch.nn.BCEWithLogitsLoss()  # sigmoid + binary cross entropy
+        self.bag_loss_fun = torch.nn.BCEWithLogitsLoss()  # sigmoid + binary cross entropy
+        self.prov_loss_fun = torch.nn.BCEWithLogitsLoss()
         self.metrics = {}
         self.metrics['ap'] = MultilabelAveragePrecision()  # average precision = AUC
         self.metrics['bag_loss'] = Average()  # to display bag-level loss
         self.metrics['gate'] = Average()
+        self.metrics['alpha'] = Average()
         # self.metrics['sent_ap'] = MultilabelAveragePrecision()
         # self.metrics['sent_ap'](torch.tensor([[1.0,0.0]]), torch.tensor([[0,1]]))
         #
@@ -106,7 +106,9 @@ class CombDistDirectRelex(Model):
                 positions2: torch.LongTensor,
                 is_direct_supervision_bag: torch.LongTensor,
                 has_mentions: torch.LongTensor,
-                labels: torch.LongTensor,  # bag-level labels
+                labels: torch.LongTensor,  # bag-level labels,
+                pmids: torch.LongTensor,
+                pmid_labels: torch.LongTensor,
                 metadata=None,
                 ) -> Dict[str, torch.Tensor]:
 
@@ -142,12 +144,38 @@ class CombDistDirectRelex(Model):
                        'gate2': gate2}  # sigmoid is applied in the loss function and the metric class, not here
 
         if labels is not None:  # Training and evaluation
+            alphas = (alphas1 * gate1.unsqueeze(-1) + alphas2 * gate2.unsqueeze(-1))/2
+            all_pmid_scores = []
+            all_pmid_labels = []
+            for alphas_, pmids_, pmid_labels_ in zip(alphas, pmids, pmid_labels):
+                pmid_scores = {}
+                pmid_labels_map = {}
+                for alpha, pmid, pmid_label in zip(alphas_, pmids_, pmid_labels_):
+                    if pmid not in pmid_scores:
+                        pmid_scores[pmid] = alpha
+                    else:
+                        pmid_scores[pmid] = pmid_scores[pmid] + alpha
+                    pmid_labels_map[pmid] = pmid_label
+                if pmids_:
+                    all_pmid_scores.append(torch.cat([pmid_scores[pmid] for pmid in pmids_]))
+                    all_pmid_labels.append(torch.stack([pmid_labels_map[pmid] for pmid in pmids_]))
+            if all_pmid_scores:
+                all_pmid_scores = torch.cat(all_pmid_scores).view(-1)
+                all_pmid_labels = torch.cat(all_pmid_labels).view(-1)
 
-            loss = self.loss(logits, labels.squeeze(-1).type_as(
+            bag_loss = self.bag_loss_fun(logits, labels.squeeze(-1).type_as(
                 logits)) * self.num_classes  # scale the loss to be more readable
-            self.metrics['bag_loss'](loss.item())
+
+            if hasattr(all_pmid_scores, 'nelement') and all_pmid_scores.nelement() > 0 and self.sent_loss_weight > 0:
+                provenance_loss = self.prov_loss_fun(all_pmid_scores, all_pmid_labels.type_as(all_pmid_scores))
+                loss = self.sent_loss_weight * provenance_loss + (1-self.sent_loss_weight)  * bag_loss
+            else:
+                loss = bag_loss
+
+            self.metrics['bag_loss'](bag_loss.item())
             self.metrics['ap'](logits, labels.squeeze(-1))
-            self.metrics['gate']((gate1 + gate2).mean().item())
+            self.metrics['gate']((gate1 + gate2).mean().item()/2)
+            self.metrics['alpha']((torch.sigmoid(alphas1) + torch.sigmoid(alphas2)).mean().item()/2)
 
             output_dict['loss'] = loss
 
@@ -180,9 +208,9 @@ class CombDistDirectRelex(Model):
         x = x.view(batch_size, padded_bag_size, -1)
         mask = mask.view(batch_size, padded_bag_size, -1)
         # compute unnormalized attention weights, one scaler per sentence
-        alphas = self.attention_ff(x)
+        unnorm_alphas = self.attention_ff(x)
         # apply a small FF to the attention weights
-        alphas = self.ff_before_alpha(alphas)
+        alphas = self.ff_before_alpha(unnorm_alphas)
         # normalize attention weights based on the selected weighting function
         if self.attention_weight_fn == 'uniform':
             alphas = mask[:, :, 0].float()
@@ -224,7 +252,7 @@ class CombDistDirectRelex(Model):
 
             e1_e2_mult = e1_embd_sent_avg * e2_embd_sent_avg
             x = torch.cat([x, e1_e2_mult], dim=1)
-        return alphas, mask, x
+        return unnorm_alphas, mask, x
 
     @overrides
     def decode(self, output_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -248,5 +276,6 @@ class CombDistDirectRelex(Model):
             # "sent_ap": self.metrics["sent_ap"].get_metric(reset=reset),
             "bag_loss": self.metrics["bag_loss"].get_metric(reset=reset),
             # "sent_loss": self.metrics["sent_loss"].get_metric(reset=reset)
-            "gate": self.metrics["gate"].get_metric(reset=reset)
+            "gate": self.metrics["gate"].get_metric(reset=reset),
+            "alpha": self.metrics["alpha"].get_metric(reset=reset)
         }

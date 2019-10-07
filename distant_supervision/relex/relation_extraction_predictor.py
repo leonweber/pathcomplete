@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Tuple
 
 import logging
@@ -35,5 +36,10 @@ class RelationExtractionPredictor(Predictor):
         out = self._model.forward_on_instance(instance)
         out['entities'] = list(instance['metadata']['entities'])
         out['mentions'] = list(instance['metadata']['mentions'])
+
+        alphas = (out['alphas1'] * out['gate1'] + out['alphas2'] * out['gate2'])/2
+        out['provenance'] = defaultdict(float)
+        for pmid, alpha in zip(instance['metadata']['pmids'], alphas):
+            out['provenance'][pmid] += alpha
 
         return sanitize(out)

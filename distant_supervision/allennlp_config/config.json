@@ -1,13 +1,13 @@
 {
-  "random_seed":  std.parseInt(std.extVar("SEED")),
-  "pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
-  "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
+  "random_seed":  13270,
+  "pytorch_seed": 1327,
+  "numpy_seed": 1327,
   "dataset_reader": {
     "type": "relation_instances",
     "lazy": false,
-    "max_bag_size": std.parseInt(std.extVar("max_bag_size")),
-    "negative_exampels_percentage": std.parseInt(std.extVar("negative_exampels_percentage")),
-    "with_direct_supervision": std.extVar("with_direct_supervision"),
+    "max_bag_size": 100,
+    "negative_exampels_percentage": 100,
+    "with_direct_supervision": false,
     "add_inverse": true
   },
   "train_data_path": "data/PathwayCommons11.reactome.hgnc.txt/train.json",
@@ -33,23 +33,23 @@
       "conv_layer_activation": "relu",
       "output_dim": 100
     },
-    "dropout_weight": std.extVar("dropout_weight"),
-    "with_entity_embeddings": std.extVar("with_entity_embeddings"),
-    "sent_loss_weight": std.extVar("sent_loss_weight"),
-    "attention_weight_fn": std.extVar("attention_weight_fn"),
-    "attention_aggregation_fn": std.extVar("attention_aggregation_fn"),
+    "dropout_weight": 0.1,
+    "with_entity_embeddings": true,
+    "sent_loss_weight": 0.5,
+    "attention_weight_fn": "sigmoid",
+    "attention_aggregation_fn": "max",
     "tensor_model_size": 200
   },
   "iterator": {
     "type": "bucket",
     "sorting_keys": [["is_direct_supervision_bag", "num_tokens"], ["mentions", "list_num_tokens"]],
-    "batch_size": std.parseInt(std.extVar("batch_size"))
+    "batch_size": 4
   },
   "trainer": {
-    "num_epochs": std.parseInt(std.extVar("num_epochs")),
+    "num_epochs": 100,
     "cuda_device": 0,
     "grad_clipping": 5.0,
-    "patience": 3,
+    "patience": 100,
     "validation_metric": "+ap",
     "optimizer": {
       "type": "adam",
