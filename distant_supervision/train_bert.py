@@ -80,6 +80,7 @@ def train(args, train_dataset, model):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--model', required=True)
     parser.add_argument('--seed', default=5005, type=int)
     parser.add_argument('--no_cuda', action='store_true')
     parser.add_argument('--fp16', action='store_true')
@@ -118,7 +119,7 @@ if __name__ == '__main__':
         max_length=128
     )
 
-    model = DistantBert('/home/leon/data/scibert_scivocab_uncased', n_classes=train_dataset.n_classes)
+    model = DistantBert(args.model)
     model.to(args.device)
 
     wandb.watch(model)
