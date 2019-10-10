@@ -9,12 +9,13 @@ import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
 
 
-def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=512):
+def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
     all_token_ids = []
     all_entity_positions = []
     all_attention_masks = []
     all_directs = []
     all_pmids = []
+    n_failed = 0
 
     for mention in example['mentions']:
         e1_start = None
@@ -53,7 +54,9 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=512):
 
             if truncate1 > min(e1_start, e2_start):
                 continue # truncation gobbles entity start
+                n_failed += 1
             if truncate2 <= max(e1_end, e2_end) - len(token_ids):
+                n_failed += 1
                 continue # truncation gobbles entity end
 
             token_ids = token_ids[truncate1:-truncate2]
@@ -82,9 +85,10 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=512):
         all_entity_positions = np.vstack(all_entity_positions)
         all_attention_masks = np.vstack(all_attention_masks)
 
-        return all_token_ids, all_attention_masks, all_entity_positions, all_pmids, all_directs
+        return all_token_ids, all_attention_masks, all_entity_positions, all_pmids, all_directs, n_failed
+
     else:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
 
 
@@ -103,9 +107,11 @@ if __name__ == '__main__':
     label_binarizer = MultiLabelBinarizer()
     labels = []
     entity_ids = []
+    total_fails = 0
     with h5py.File(args.output, "w") as f:
-        for pair, example in tqdm(data.items()):
-            token_ids, attention_masks, entity_positions, pmids, is_direct = example_to_features(example, tokenizer)
+        data_it = tqdm(data.items())
+        for pair, example in data_it:
+            token_ids, attention_masks, entity_positions, pmids, is_direct, n_failed = example_to_features(example, tokenizer)
 
             if token_ids is not None:
                 f.create_dataset(f"token_ids/{pair}", data=token_ids, dtype='i')
@@ -113,6 +119,8 @@ if __name__ == '__main__':
                 f.create_dataset(f"entity_positions/{pair}", data=entity_positions, dtype='i')
                 f.create_dataset(f"pmids/{pair}", data=pmids)
                 f.create_dataset(f"is_direct/{pair}", data=is_direct, dtype='bool')
+                total_fails += n_failed
+                data_it.set_postfix_str(f"fails: {total_fails}")
 
             e1, e2 = pair.split(',')
             if e1 not in entity_dict:

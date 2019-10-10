@@ -1,8 +1,12 @@
 import argparse
 import logging
+import os
 import random
+from pathlib import Path
+
 import numpy as np
 import torch
+from sklearn.metrics import average_precision_score
 from torch import nn
 import wandb
 
@@ -47,33 +51,48 @@ def train(args, train_dataset, model):
 
 
     global_step = 0
-    tr_loss, logging_loss = 0.0, 0.0
     loss_fun = nn.BCEWithLogitsLoss()
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
-        for step, batch in tqdm(enumerate(train_dataloader), desc="Iteration", total=len(train_dataloader)):
+        tr_loss, logging_loss = 0.0, 0.0
+        y_pred, y_true = [], []
+        epoch_iterator = tqdm(enumerate(train_dataloader), desc="Iteration", total=len(train_dataloader))
+        for step, batch in epoch_iterator:
             model.train()
-            if batch['has_mentions'].sum() > 0:
-                batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
-                logits = model(**batch)
-                loss = loss_fun(logits, batch['labels'].float())
-                wandb.log({'loss': loss.item()})
+            batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
+            logits = model(**batch)
 
-                if args.fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
-                else:
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            y_pred.append(logits.cpu().detach().numpy())
+            y_true.append(batch['labels'].cpu().numpy())
 
-                tr_loss += loss.item()
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    optimizer.step()
-                    scheduler.step()  # Update learning rate schedule
-                    model.zero_grad()
-                    global_step += 1
+            loss = loss_fun(logits, batch['labels'].float())
+            ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
+
+            wandb.log({'loss': loss.item(), 'ap': ap})
+            epoch_iterator.set_postfix_str(f"loss: {loss.item()}, ap: {ap}")
+
+            if args.fp16:
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+                torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+
+            tr_loss += loss.item()
+            if (step + 1) % args.gradient_accumulation_steps == 0:
+                optimizer.step()
+                scheduler.step()  # Update learning rate schedule
+                model.zero_grad()
+                global_step += 1
+
+        if args.save_steps > 0 and global_step % args.save_steps == 0:
+            output_dir = args.output_dir / f'checkpoint-{global_step}'
+            os.makedirs(output_dir, exist_ok=True)
+            torch.save(model.state_dict(), output_dir/'weights.th')
+            torch.save(args, os.path.join(output_dir, 'training_args.bin'))
+            logger.info("Saving model checkpoint to %s", output_dir)
 
 
 if __name__ == '__main__':
@@ -85,6 +104,8 @@ if __name__ == '__main__':
     parser.add_argument('--no_cuda', action='store_true')
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
+    parser.add_argument('--save_steps', type=int, default=1000000)
+    parser.add_argument('--output_dir', type=Path, default=Path('runs'))
     parser.add_argument('--num_train_epochs', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0.0)
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
@@ -121,7 +142,9 @@ if __name__ == '__main__':
         max_length=args.max_length
     )
 
-    model = DistantBert(args.model, n_classes=train_dataset.n_classes)
+    args.n_classes = train_dataset.n_classes
+
+    model = DistantBert(args.model, args=args)
     model.to(args.device)
 
     wandb.watch(model)
