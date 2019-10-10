@@ -81,6 +81,8 @@ def train(args, train_dataset, model):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', required=True)
+    parser.add_argument('--train', required=True)
+    parser.add_argument('--dev', required=True)
     parser.add_argument('--seed', default=5005, type=int)
     parser.add_argument('--no_cuda', action='store_true')
     parser.add_argument('--fp16', action='store_true')
@@ -109,17 +111,17 @@ if __name__ == '__main__':
     logger.warning(f"n_gpu: {args.n_gpu}, 16-bits training: {args.fp16}")
 
     train_dataset = DistantBertDataset(
-        '/home/leon/projects/pathcomplete/distant_supervision/data/PathwayCommons11.reactome.hgnc.txt/train.hdf5.small',
+        args.train,
         max_bag_size=5,
         max_length=128
     )
     dev_dataset = DistantBertDataset(
-        '/home/leon/projects/pathcomplete/distant_supervision/data/PathwayCommons11.reactome.hgnc.txt/dev.hdf5.small',
+        args.dev,
         max_bag_size=5,
         max_length=128
     )
 
-    model = DistantBert(args.model)
+    model = DistantBert(args.model, n_classes=train_dataset.n_classes)
     model.to(args.device)
 
     wandb.watch(model)
