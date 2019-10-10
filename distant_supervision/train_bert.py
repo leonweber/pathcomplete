@@ -58,7 +58,7 @@ def train(args, train_dataset, model):
                 batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
                 logits = model(**batch)
                 loss = loss_fun(logits, batch['labels'].float())
-                wandb.log(loss.item())
+                wandb.log({'loss': loss.item()})
 
                 if args.fp16:
                     with amp.scale_loss(loss, optimizer) as scaled_loss:
