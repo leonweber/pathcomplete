@@ -52,12 +52,13 @@ def train(args, train_dataset, model):
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
-        for step, batch in tqdm(enumerate(train_dataloader), desc="Iteration"):
+        for step, batch in tqdm(enumerate(train_dataloader), desc="Iteration", total=len(train_dataloader)):
             model.train()
             if batch['has_mentions'].sum() > 0:
                 batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
                 logits = model(**batch)
                 loss = loss_fun(logits, batch['labels'].float())
+                wandb.log(loss.item())
 
                 if args.fp16:
                     with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -125,4 +126,5 @@ if __name__ == '__main__':
 
     wandb.watch(model)
 
+    wandb.config.update(args)
     train(args, train_dataset=train_dataset, model=model)
