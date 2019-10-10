@@ -1,11 +1,13 @@
 import transformers
 from torch import nn
 import torch
+from torch.nn import DataParallel
+
 
 class DistantBert(nn.Module):
     def __init__(self, bert, n_classes):
         super().__init__()
-        self.bert = transformers.BertModel.from_pretrained(bert)
+        self.bert = DataParallel(transformers.BertModel.from_pretrained(bert))
         self.ff_attention = nn.Linear(768, 1)
         self.ff_output = nn.Linear(768, n_classes)
 
