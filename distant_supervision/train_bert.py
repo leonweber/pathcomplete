@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader, RandomSampler
 from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
-from .dataset import DistantBertDataset
-from .model import DistantBert
+from dataset import DistantBertDataset
+from model import DistantBert
 
 logger = logging.getLogger(__name__)
 
