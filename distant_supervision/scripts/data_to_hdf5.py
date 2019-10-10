@@ -9,10 +9,12 @@ import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
 
 
-def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
+def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=512):
     all_token_ids = []
     all_entity_positions = []
     all_attention_masks = []
+    all_directs = []
+    all_pmids = []
 
     for mention in example['mentions']:
         e1_start = None
@@ -20,6 +22,9 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
         e2_start = None
         e2_end = None
         token_ids = []
+
+        all_directs.append(mention[1] == 'direct')
+        all_pmids.append(int(mention[4].strip()))
 
         mention = mention[0].lower()
         for token in mention.split():
@@ -77,9 +82,9 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
         all_entity_positions = np.vstack(all_entity_positions)
         all_attention_masks = np.vstack(all_attention_masks)
 
-        return all_token_ids, all_attention_masks, all_entity_positions
+        return all_token_ids, all_attention_masks, all_entity_positions, all_pmids, all_directs
     else:
-        return None, None, None
+        return None, None, None, None, None
 
 
 
@@ -100,12 +105,14 @@ if __name__ == '__main__':
     entity_ids = []
     with h5py.File(args.output, "w") as f:
         for pair, example in tqdm(data.items()):
-            token_ids, attention_masks, entity_positions = example_to_features(example, tokenizer)
+            token_ids, attention_masks, entity_positions, pmids, is_direct = example_to_features(example, tokenizer)
 
             if token_ids is not None:
                 f.create_dataset(f"token_ids/{pair}", data=token_ids, dtype='i')
                 f.create_dataset(f"attention_masks/{pair}", data=attention_masks, dtype='i')
                 f.create_dataset(f"entity_positions/{pair}", data=entity_positions, dtype='i')
+                f.create_dataset(f"pmids/{pair}", data=pmids)
+                f.create_dataset(f"is_direct/{pair}", data=is_direct, dtype='bool')
 
             e1, e2 = pair.split(',')
             if e1 not in entity_dict:
