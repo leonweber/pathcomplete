@@ -94,6 +94,8 @@ if __name__ == '__main__':
                         help="The initial learning rate for Adam.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
                         help="Max gradient norm.")
+    parser.add_argument("--max_bag_size", default=None, type=int)
+    parser.add_argument("--max_length", default=None, type=int)
 
     args = parser.parse_args()
 
@@ -109,13 +111,13 @@ if __name__ == '__main__':
 
     train_dataset = DistantBertDataset(
         args.train,
-        max_bag_size=5,
-        max_length=128
+        max_bag_size=args.max_bag_size,
+        max_length=args.max_length
     )
     dev_dataset = DistantBertDataset(
         args.dev,
-        max_bag_size=5,
-        max_length=128
+        max_bag_size=args.max_bag_size,
+        max_length=args.max_length
     )
 
     model = DistantBert(args.model, n_classes=train_dataset.n_classes)
