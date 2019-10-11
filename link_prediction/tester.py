@@ -4,7 +4,8 @@ import numpy as np
 from measure import Measure
 from os import listdir
 from os.path import isfile, join
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import precision_recall_curve, average_precision_score
+
 
 class Tester:
     def __init__(self, dataset, model_path, batch_size, split):
@@ -27,8 +28,7 @@ class Tester:
             last_batch = self.dataset.was_last_batch(self.split)
         all_scores = np.concatenate(all_scores, axis=0)
         all_ys = np.concatenate(all_ys, axis=0)
-        precisions, recalls, _ = precision_recall_curve(all_ys.ravel(), all_scores.ravel())
-        ap = np.sum(np.diff(np.insert(recalls[::-1], 0, 0)) * precisions[::-1])
+        ap = average_precision_score(all_ys.ravel(), all_scores.ravel(), average='micro')
 
         return ap
 

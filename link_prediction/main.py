@@ -44,7 +44,6 @@ if __name__ == '__main__':
         if ap > best_ap:
             best_ap = ap
             best_epoch = epoch
-        print(time.time() - start)
 
     print("Best epoch: " + best_epoch)
 

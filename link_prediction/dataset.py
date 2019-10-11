@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import random
 import torch
@@ -7,8 +9,20 @@ class Dataset:
     def __init__(self, ds_name):
         self.name = ds_name
         self.dir = "data/" + ds_name + "/"
+
         self.ent2id = {}
+        with open(os.path.join(self.dir, 'entities.dict')) as f:
+            for line in f:
+                id_, ent = line.strip().split('\t')
+                self.ent2id[ent] = int(id_)
+
         self.rel2id = {}
+        with open(os.path.join(self.dir, 'relations.dict')) as f:
+            for line in f:
+                id_, rel = line.strip().split('\t')
+                self.rel2id[rel] = int(id_)
+            assert self.rel2id["NA"] == 0
+
         self.data = {spl: self.read(self.dir + spl + ".txt") for spl in ["train", "valid", "test"]}
         self.batch_index = 0
        
@@ -36,13 +50,9 @@ class Dataset:
         return [self.get_ent_id(triple[0]), self.get_rel_id(triple[1]), self.get_ent_id(triple[2])]
                      
     def get_ent_id(self, ent):
-        if not ent in self.ent2id:
-            self.ent2id[ent] = len(self.ent2id)
         return self.ent2id[ent]
             
     def get_rel_id(self, rel):
-        if not rel in self.rel2id:
-            self.rel2id[rel] = len(self.rel2id)
         return self.rel2id[rel]
                      
     def rand_ent_except(self, ent):

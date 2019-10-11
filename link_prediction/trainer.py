@@ -1,8 +1,7 @@
 from sklearn.metrics import precision_recall_curve
 
 from eval_dataset import Dataset
-from SimplE import SimplE
-from complex import Complex
+from model import SimplE, Complex
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
