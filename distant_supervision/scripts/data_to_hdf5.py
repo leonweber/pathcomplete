@@ -9,7 +9,7 @@ import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
 
 
-def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
+def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
     all_token_ids = []
     all_entity_positions = []
     all_attention_masks = []
@@ -47,23 +47,21 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
             if is_e2_end:
                 e2_end = len(token_ids)
 
-        truncate = len(token_ids) + 2 - max_seq_len
-        if truncate > 0:
-            truncate1 = truncate//2
-            truncate2 = ceil(truncate/2)
+        while len(token_ids) + 2 > max_seq_len:
+            left_buffer = min(e1_start, e2_start)
+            right_buffer = min(e1_end, e2_end)
+            if left_buffer > right_buffer:
+                token_ids = token_ids[1:]
+                e1_start -= 1
+                e2_start -= 1
+                e1_end -= 1
+                e2_end -= 1
+            else:
+                token_ids = token_ids[:-1]
 
-            if truncate1 > min(e1_start, e2_start):
-                n_failed += 1
-                continue # truncation gobbles entity start
-            if truncate2 <= max(e1_end, e2_end) - len(token_ids):
-                n_failed += 1
-                continue # truncation gobbles entity end
-
-            token_ids = token_ids[truncate1:-truncate2]
-            e1_start -= truncate1
-            e2_start -= truncate1
-            e1_end -= truncate2
-            e2_end -= truncate2
+        if min(e1_start, e2_start) < 0 or max(e1_end, e2_end) > max_seq_len:
+            n_failed += 1
+            continue
 
         token_ids = tokenizer.convert_tokens_to_ids(['[CLS]']) + token_ids + tokenizer.convert_tokens_to_ids(['[SEP]'])
         e1_start += 1
@@ -91,7 +89,6 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
         return None, None, None, None, None, None
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input')
@@ -99,6 +96,7 @@ if __name__ == '__main__':
     parser.add_argument('--tokenizer', required=True)
     args = parser.parse_args()
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer)
+    tokenizer.add_special_tokens({ 'additional_special_tokens': ['<e1>','</e1>', '<e2>', '</e2>'] })
     entity_dict = {}
 
     with open(args.input) as f:
@@ -111,7 +109,8 @@ if __name__ == '__main__':
     with h5py.File(args.output, "w") as f:
         data_it = tqdm(data.items())
         for pair, example in data_it:
-            token_ids, attention_masks, entity_positions, pmids, is_direct, n_failed = example_to_features(example, tokenizer)
+            token_ids, attention_masks, entity_positions, pmids, is_direct, n_failed = example_to_features(example,
+                                                                                                           tokenizer)
 
             if token_ids is not None:
                 f.create_dataset(f"token_ids/{pair}", data=token_ids, dtype='i')
@@ -131,7 +130,6 @@ if __name__ == '__main__':
             entity_ids.append(np.array([entity_dict[e1], entity_dict[e2]], dtype='i'))
             labels.append([l for l in example['relations'] if l != 'NA'])
 
-
         labels = label_binarizer.fit_transform(labels)
         entity_ids = np.array(entity_ids)
 
@@ -147,4 +145,3 @@ if __name__ == '__main__':
 
         id2label = np.array([np.string_(s) for s in label_binarizer.classes_.tolist()])
         dset = f.create_dataset(f"id2label", data=id2label)
-
