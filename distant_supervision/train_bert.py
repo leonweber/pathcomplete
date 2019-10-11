@@ -16,9 +16,15 @@ from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
 from dataset import DistantBertDataset
-from model import BagOnly, Simple
+from model import BagOnly, Complex
 
 logger = logging.getLogger(__name__)
+
+
+MODEL_TYPES = {
+    'complex': Complex,
+    'bag': BagOnly
+}
 
 
 def set_seed(args):
@@ -131,6 +137,7 @@ if __name__ == '__main__':
     parser.add_argument("--max_bag_size", default=None, type=int)
     parser.add_argument("--max_length", default=None, type=int)
     parser.add_argument("--tensor_emb_size", default=200, type=int)
+    parser.add_argument("--model_type", default='complex', choices=MODEL_TYPES.keys())
 
     args = parser.parse_args()
 
@@ -158,7 +165,7 @@ if __name__ == '__main__':
     args.n_classes = train_dataset.n_classes
     args.n_entities = train_dataset.n_entities
 
-    model = Simple(args.model, args=args)
+    model = MODEL_TYPES[args.model_type](args.model, args=args)
     model.to(args.device)
 
     wandb.watch(model)

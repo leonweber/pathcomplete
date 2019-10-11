@@ -29,6 +29,7 @@ class BagOnly(nn.Module):
         self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
 
     def forward(self, token_ids, attention_masks, entity_pos, has_mentions, **kwargs):
+        meta = {}
 
         if has_mentions.sum() > 0:
             x, m = self.bag_embedder(token_ids, attention_masks)
@@ -39,7 +40,7 @@ class BagOnly(nn.Module):
 
         return x, meta
 
-class Simple(nn.Module):
+class Complex(nn.Module):
     def __init__(self, bert, args):
         super().__init__()
         self.tensor_emb_size = args.tensor_emb_size
