@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 class DistantBertDataset(Dataset):
 
-    def __init__(self, path, max_bag_size=None, max_length=512):
+    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False):
         self.file = h5py.File(path)
         self.max_bag_size = max_bag_size
         self.max_length = max_length
@@ -16,6 +16,13 @@ class DistantBertDataset(Dataset):
             e2 = self.file['id2entity'][e2_id].decode()
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
+        if ignore_no_mentions:
+            filtered_pairs = []
+            for pair in self.pairs:
+                if pair in self.file['token_ids']:
+                    filtered_pairs.append(pair)
+            self.pairs = filtered_pairs
+
         self.n_classes = len(self.file['id2label'])
         self.n_entities = len(self.file['id2entity'])
 

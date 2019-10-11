@@ -138,6 +138,7 @@ if __name__ == '__main__':
     parser.add_argument("--max_length", default=None, type=int)
     parser.add_argument("--tensor_emb_size", default=200, type=int)
     parser.add_argument("--model_type", default='complex', choices=MODEL_TYPES.keys())
+    parser.add_argument('--ignore_no_mentions', action='store_true')
 
     args = parser.parse_args()
 
@@ -154,12 +155,14 @@ if __name__ == '__main__':
     train_dataset = DistantBertDataset(
         args.train,
         max_bag_size=args.max_bag_size,
-        max_length=args.max_length
+        max_length=args.max_length,
+        ignore_no_mentions=args.ignore_no_mentions
     )
     dev_dataset = DistantBertDataset(
         args.dev,
         max_bag_size=args.max_bag_size,
-        max_length=args.max_length
+        max_length=args.max_length,
+        ignore_no_mentions=args.ignore_no_mentions
     )
 
     args.n_classes = train_dataset.n_classes
