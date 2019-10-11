@@ -1,4 +1,5 @@
 import transformers
+import numpy as np
 from torch import nn
 import torch
 from torch.nn import DataParallel
@@ -16,7 +17,7 @@ class BagEmbedder(nn.Module):
         alphas = torch.sigmoid(self.ff_attention(x))
         x = torch.sum(alphas * x, dim=0)
 
-        meta = {'alphas': alphas}
+        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy())}
         return x, meta
 
 
@@ -28,8 +29,6 @@ class BagOnly(nn.Module):
         self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
 
     def forward(self, token_ids, attention_masks, entity_pos, has_mentions, **kwargs):
-
-        meta = {}
 
         if has_mentions.sum() > 0:
             x, m = self.bag_embedder(token_ids, attention_masks)

@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import random
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -56,7 +57,7 @@ def train(args, train_dataset, model):
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
         tr_loss, logging_loss = 0.0, 0.0
-        y_pred, y_true = [], []
+        y_pred, y_true = deque(maxlen=1000), deque(maxlen=1000)
         epoch_iterator = tqdm(enumerate(train_dataloader), desc="Iteration", total=len(train_dataloader))
         for step, batch in epoch_iterator:
             model.train()
@@ -75,6 +76,8 @@ def train(args, train_dataset, model):
                     v = v.detach()
                 if hasattr(v, 'cpu'):
                     v = v.cpu().numpy()
+                if '_hist' in k:
+                    v = wandb.Histogram(np_histogram=v)
 
                 log_dict[k] = v
 
