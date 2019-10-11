@@ -16,7 +16,9 @@ class BagEmbedder(nn.Module):
         alphas = torch.sigmoid(self.ff_attention(x))
         x = torch.sum(alphas * x, dim=0)
 
-        return x
+        meta = {'alphas': alphas}
+        return x, meta
+
 
 class BagOnly(nn.Module):
     def __init__(self, bert, args):
@@ -25,25 +27,29 @@ class BagOnly(nn.Module):
         self.ff_output = nn.Linear(768, args.n_classes)
         self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
 
-    def forward(self, token_ids, attention_masks, entity_pos, labels, has_mentions, **kwargs):
+    def forward(self, token_ids, attention_masks, entity_pos, has_mentions, **kwargs):
+
+        meta = {}
 
         if has_mentions.sum() > 0:
-            x = self.bag_embedder(token_ids, attention_masks)
+            x, m = self.bag_embedder(token_ids, attention_masks)
+            meta.update(m)
         else:
             x = self.no_mentions_emb
         x = self.ff_output(x)
 
-        return x
+        return x, meta
 
 class Simple(nn.Module):
     def __init__(self, bert, args):
         super().__init__()
         self.tensor_emb_size = args.tensor_emb_size
-        self.s_embedding = nn.Embedding(args.n_entities, self.tensor_emb_size)
-        self.o_embedding = nn.Embedding(args.n_entities, self.tensor_emb_size)
-        self.r_embedding = nn.Embedding(args.n_relations, self.tensor_emb_size)
-        self.r_inv_embedding = nn.Embedding(args.n_relations, self.tensor_emb_size)
-        self.no_bag_emb = nn.Parameter(torch.zeros(768).float().uniform_(-0.02, 0.02))
+        self.entity_re_embedding = nn.Embedding(args.n_entities, self.tensor_emb_size)
+        self.entity_im_embedding = nn.Embedding(args.n_entities, self.tensor_emb_size)
+        self.r_re_embedding = nn.Embedding(args.n_classes, self.tensor_emb_size)
+        self.r_im_embedding = nn.Embedding(args.n_classes, self.tensor_emb_size)
+        self.bag_embedder = BagEmbedder(bert, args)
+        self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
         self.ff_gate = nn.Sequential(
             nn.Linear(2 * self.tensor_emb_size, 1),
             nn.Sigmoid()
@@ -53,37 +59,43 @@ class Simple(nn.Module):
             nn.ReLU()
         )
 
-    def forward(self, entities, bag_emb1, bag_emb2, no_mentions_mask):
-        has_mentions_mask = ~no_mentions_mask
-        e1_s = self.s_embedding(entities[:, 0])
-        e1_o = self.o_embedding(entities[:, 0])
-        e2_s = self.s_embedding(entities[:, 1])
-        e2_o = self.o_embedding(entities[:, 1])
-        r = self.r_embedding.weight
-        r_inv = self.r_inv_embedding.weight
+    def forward(self, entity_ids, entity_pos, token_ids, attention_masks, has_mentions, **kwargs):
+        e1_re = self.entity_re_embedding(entity_ids[0])
+        e1_im = self.entity_im_embedding(entity_ids[0])
+        e2_re = self.entity_re_embedding(entity_ids[1])
+        e2_im = self.entity_im_embedding(entity_ids[1])
+        r_re = self.r_re_embedding.weight
+        r_im = self.r_im_embedding.weight
 
-        es1 = e1_s * e2_o
-        es2 = e2_s * e1_o
+        es1 = e1_re * e2_re
+        es2 = e1_im * e2_im
+        es3 = e1_re * e2_im
+        es4 = e1_im * e2_re
 
-        bag_emb1 = bag_emb1 * has_mentions_mask.float().unsqueeze(1) + self.no_bag_emb.repeat(bag_emb1.size(0), 1) * no_mentions_mask.float().unsqueeze(1)
-        bag_emb2 = bag_emb2 * has_mentions_mask.float().unsqueeze(1) + self.no_bag_emb.repeat(bag_emb1.size(0), 1) * no_mentions_mask.float().unsqueeze(1)
+        meta = {}
 
-        bag_emb1 = self.bag_downprojection(bag_emb1)
-        bag_emb2 = self.bag_downprojection(bag_emb2)
+        if has_mentions.sum().item() > 0:
+            bag_emb, m = self.bag_embedder(token_ids, attention_masks, **kwargs)
+            meta.update(m)
+        else:
+            bag_emb = self.no_mentions_emb
 
-        gate1 = self.ff_gate(torch.cat([es1, bag_emb1], dim=1))
-        # masked_gate1 = torch.zeros_like(gate1)
-        # masked_gate1[has_mentions_mask] = gate1[has_mentions_mask]
+        bag_emb = self.bag_downprojection(bag_emb)
 
-        gate2 = self.ff_gate(torch.cat([es2, bag_emb2], dim=1))
-        # masked_gate2 = torch.zeros_like(gate2)
-        # masked_gate2[has_mentions_mask] = gate2[has_mentions_mask]
 
-        h1 = gate1 * bag_emb1 + (1-gate1) * es1
-        h2 = gate2 * bag_emb2 + (1-gate2) * es2
+        gate1 = self.ff_gate(torch.cat([es1, bag_emb]))
+        gate2 = self.ff_gate(torch.cat([es2, bag_emb]))
+        gate3 = self.ff_gate(torch.cat([es3, bag_emb]))
+        gate4 = self.ff_gate(torch.cat([es4, bag_emb]))
 
-        scores1 = h1 @ r.t()
-        scores2 = h2 @ r_inv.t()
+        meta.update({'gate1': gate1, 'gate2': gate2, 'gate3': gate3, 'gate4': gate4})
 
-        return (scores1 + scores2) / 2
+        h1 = gate1 * bag_emb + (1-gate1) * es1
+        h2 = gate2 * bag_emb + (1-gate2) * es2
+        h3 = gate3 * bag_emb + (1-gate3) * es2
+        h4 = gate4 * bag_emb + (1-gate4) * es2
+
+        scores = h1 @ r_re.t() + h2 @ r_re.t() + h3 @ r_im.t() - h4 @ r_im.t()
+
+        return scores, meta
 

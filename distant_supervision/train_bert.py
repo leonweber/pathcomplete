@@ -15,7 +15,7 @@ from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
 from dataset import DistantBertDataset
-from model import DistantBert
+from model import BagOnly, Simple
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def train(args, train_dataset, model):
         for step, batch in epoch_iterator:
             model.train()
             batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
-            logits = model(**batch)
+            logits, meta = model(**batch)
 
             y_pred.append(logits.cpu().detach().numpy())
             y_true.append(batch['labels'].cpu().numpy())
@@ -69,7 +69,16 @@ def train(args, train_dataset, model):
             loss = loss_fun(logits, batch['labels'].float())
             ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
 
-            wandb.log({'loss': loss.item(), 'ap': ap})
+            log_dict = {'loss': loss.item(), 'ap': ap}
+            for k, v in meta.items():
+                if hasattr(v, 'detach'):
+                    v = v.detach()
+                if hasattr(v, 'cpu'):
+                    v = v.cpu().numpy()
+
+                log_dict[k] = v
+
+            wandb.log(log_dict, step=global_step)
             epoch_iterator.set_postfix_str(f"loss: {loss.item()}, ap: {ap}")
 
             if args.fp16:
@@ -118,6 +127,7 @@ if __name__ == '__main__':
                         help="Max gradient norm.")
     parser.add_argument("--max_bag_size", default=None, type=int)
     parser.add_argument("--max_length", default=None, type=int)
+    parser.add_argument("--tensor_emb_size", default=200, type=int)
 
     args = parser.parse_args()
 
@@ -143,8 +153,9 @@ if __name__ == '__main__':
     )
 
     args.n_classes = train_dataset.n_classes
+    args.n_entities = train_dataset.n_entities
 
-    model = DistantBert(args.model, args=args)
+    model = Simple(args.model, args=args)
     model.to(args.device)
 
     wandb.watch(model)

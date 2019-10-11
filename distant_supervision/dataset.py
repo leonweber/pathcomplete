@@ -17,6 +17,7 @@ class DistantBertDataset(Dataset):
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
         self.n_classes = len(self.file['id2label'])
+        self.n_entities = len(self.file['id2entity'])
 
     def __len__(self):
         return len(self.pairs)
@@ -28,7 +29,7 @@ class DistantBertDataset(Dataset):
         pair = self.pairs[idx]
         token_ids = self.file.get(f"token_ids/{pair}", np.array([[-1]]))[:]
         attention_masks = self.file.get(f"attention_masks/{pair}", np.array([[-1]]))[:]
-        entity_pos = self.file.get(f"entity_positions/{pair}", np.array([[-1]]))[:]
+        entity_pos = self.file.get(f"entity_positions/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
         labels = self.file["labels"][idx]
         entity_ids = self.file["entity_ids"][idx]
 
@@ -43,7 +44,7 @@ class DistantBertDataset(Dataset):
             "entity_pos": torch.from_numpy(entity_pos).long(),
             "entity_ids": torch.from_numpy(entity_ids).long(),
             "labels": torch.from_numpy(labels).long(),
-            "has_mentions": torch.tensor(token_ids[0] >= 0).bool()
+            "has_mentions": torch.tensor([token_ids[0][0] >= 0]).bool()
         }
 
         return sample

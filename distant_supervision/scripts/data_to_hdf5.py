@@ -53,8 +53,8 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
             truncate2 = ceil(truncate/2)
 
             if truncate1 > min(e1_start, e2_start):
-                continue # truncation gobbles entity start
                 n_failed += 1
+                continue # truncation gobbles entity start
             if truncate2 <= max(e1_end, e2_end) - len(token_ids):
                 n_failed += 1
                 continue # truncation gobbles entity end
@@ -81,9 +81,9 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=128):
         all_entity_positions.append([[e1_start, e1_end], [e2_start, e2_end]])
 
     if len(all_token_ids) > 0:
-        all_token_ids = np.vstack(all_token_ids)
-        all_entity_positions = np.vstack(all_entity_positions)
-        all_attention_masks = np.vstack(all_attention_masks)
+        all_token_ids = np.array(all_token_ids)
+        all_entity_positions = np.array(all_entity_positions)
+        all_attention_masks = np.array(all_attention_masks)
 
         return all_token_ids, all_attention_masks, all_entity_positions, all_pmids, all_directs, n_failed
 
@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
 
         labels = label_binarizer.fit_transform(labels)
-        entity_ids = np.vstack(entity_ids)
+        entity_ids = np.array(entity_ids)
 
         dset = f.create_dataset(f"entity_ids", data=entity_ids, dtype='i')
 
