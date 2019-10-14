@@ -105,25 +105,25 @@ def train(args, train_dataset, model):
                 model.zero_grad()
                 global_step += 1
 
-        if args.save_steps > 0 and global_step % args.save_steps == 0:
-            output_dir = args.output_dir / f'checkpoint-{global_step}'
-            os.makedirs(output_dir, exist_ok=True)
-            torch.save(model.state_dict(), output_dir/'weights.th')
-            torch.save(args, os.path.join(output_dir, 'training_args.bin'))
-            logger.info("Saving model checkpoint to %s", output_dir)
+        output_dir = args.output_dir / f'checkpoint-{global_step}'
+        os.makedirs(output_dir, exist_ok=True)
+        model.to('cpu')
+        torch.save(model.state_dict(), output_dir/'weights.th')
+        torch.save(args, os.path.join(output_dir, 'training_args.bin'))
+        logger.info("Saving model checkpoint to %s", output_dir)
+        model.to(args.device)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', required=True)
+    parser.add_argument('--bert', required=True)
     parser.add_argument('--train', required=True)
     parser.add_argument('--dev', required=True)
     parser.add_argument('--seed', default=5005, type=int)
     parser.add_argument('--no_cuda', action='store_true')
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
-    parser.add_argument('--save_steps', type=int, default=1000000)
-    parser.add_argument('--output_dir', type=Path, default=Path('runs'))
+    parser.add_argument('--output_dir', type=Path, default=Path('runs/test'))
     parser.add_argument('--num_train_epochs', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0.0)
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
@@ -164,11 +164,9 @@ if __name__ == '__main__':
         max_length=args.max_length,
         ignore_no_mentions=args.ignore_no_mentions
     )
-
-    args.n_classes = train_dataset.n_classes
     args.n_entities = train_dataset.n_entities
 
-    model = MODEL_TYPES[args.model_type](args.model, args=args)
+    model = MODEL_TYPES[args.model_type](args.bert, args=args)
     model.to(args.device)
 
     wandb.watch(model)

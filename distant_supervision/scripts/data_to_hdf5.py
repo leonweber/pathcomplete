@@ -2,6 +2,7 @@ import argparse
 import json
 from math import ceil
 
+from pathlib import Path
 from tqdm import tqdm
 from transformers import BertTokenizer
 import h5py
@@ -94,15 +95,31 @@ if __name__ == '__main__':
     parser.add_argument('input')
     parser.add_argument('output')
     parser.add_argument('--tokenizer', required=True)
+    parser.add_argument('--entity_dict', required=True, type=Path)
+    parser.add_argument('--label_dict', required=True, type=Path)
     args = parser.parse_args()
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer)
     tokenizer.add_special_tokens({ 'additional_special_tokens': ['<e1>','</e1>', '<e2>', '</e2>'] })
+
     entity_dict = {}
+    with args.entity_dict.open() as f:
+        for line in f:
+            id, item = line.strip().split('\t')
+            entity_dict = {id: item}
+
+    label_dict = {}
+    with args.label_dict.open() as f:
+        for line in f:
+            id, item = line.strip().split('\t')
+            label_dict = {id: item}
+    labels = [None for _ in label_dict]
+    for id, item in label_dict.items():
+        labels[id] = item
 
     with open(args.input) as f:
         data = json.load(f)
 
-    label_binarizer = MultiLabelBinarizer()
+    label_binarizer = MultiLabelBinarizer(classes=labels)
     labels = []
     entity_ids = []
     total_fails = 0
@@ -122,10 +139,6 @@ if __name__ == '__main__':
                 data_it.set_postfix_str(f"fails: {total_fails}")
 
             e1, e2 = pair.split(',')
-            if e1 not in entity_dict:
-                entity_dict[e1] = len(entity_dict)
-            if e2 not in entity_dict:
-                entity_dict[e2] = len(entity_dict)
 
             entity_ids.append(np.array([entity_dict[e1], entity_dict[e2]], dtype='i'))
             labels.append([l for l in example['relations'] if l != 'NA'])

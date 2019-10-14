@@ -7,6 +7,17 @@ import torch
 from torch.nn import DataParallel
 
 
+def aggregate_provenance_predictions(alphas, pmids):
+    pmid_predictions = {}
+    for alpha, pmid in zip(alphas, pmids):
+        pmid = pmid.item()
+        if pmid not in pmid_predictions:
+            pmid_predictions[pmid] = alpha
+        else:
+            pmid_predictions[pmid] += alpha
+
+    return pmid_predictions
+
 
 class BagEmbedder(nn.Module):
     def __init__(self, bert, args):
@@ -29,7 +40,7 @@ class BagEmbedder(nn.Module):
         alphas = torch.sigmoid(self.ff_attention(x))
         x = torch.max(alphas * x, dim=0)[0]
 
-        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy())}
+        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': alphas}
         return x, meta
 
 
