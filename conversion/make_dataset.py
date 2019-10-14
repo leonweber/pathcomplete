@@ -67,20 +67,7 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     genes = set()
     np.random.seed(5005)
 
-    mapping = defaultdict(set)
-    for _, row in df[df['INTERACTION_TYPE'].str.contains('ProteinReference')].iterrows():
-        try:
-            uniprot_id = re.findall(r'uniprot knowledgebase:(\S+)', row['INTERACTION_DATA_SOURCE'])[0]
-            if ',' in uniprot_id:
-                __import__('pdb').set_trace()
-            if not isinstance(uniprot_id, list):
-                uniprot_id = [uniprot_id]
-        except TypeError:
-            continue
-        hgnc_name = row['PARTICIPANT_A']
-        assert hgnc_name not in mapping
-        mapping[hgnc_name].update(uniprot_id)
-
+    mapping = get_mapping_from_df(df)
 
     df = df[df['INTERACTION_TYPE'].isin(INTERACTION_TYPES)]
     df = df.fillna({"INTERACTION_PUBMED_ID": ""})
@@ -115,6 +102,23 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     result = {k: list(v) for k, v in interactions.items()}
 
     return result
+
+
+def get_mapping_from_df(df):
+    mapping = defaultdict(set)
+    for _, row in df[df['INTERACTION_TYPE'].str.contains('ProteinReference')].iterrows():
+        try:
+            uniprot_id = re.findall(r'uniprot knowledgebase:(\S+)', row['INTERACTION_DATA_SOURCE'])[0]
+            if ',' in uniprot_id:
+                __import__('pdb').set_trace()
+            if not isinstance(uniprot_id, list):
+                uniprot_id = [uniprot_id]
+        except TypeError:
+            continue
+        hgnc_name = row['PARTICIPANT_A']
+        assert hgnc_name not in mapping
+        mapping[hgnc_name].update(uniprot_id)
+    return mapping
 
 
 def split(interactions):
