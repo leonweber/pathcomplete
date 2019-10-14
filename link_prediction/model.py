@@ -45,11 +45,11 @@ class SimplE(nn.Module):
         ht_embs = self.ent_h_embs(tails)
         th_embs = self.ent_t_embs(heads)
         tt_embs = self.ent_t_embs(tails)
-        R_embs = self.rel_embs.weight
-        R_inv_embs = self.rel_inv_embs.weight
+        R_embs = self.rel_embs.weight[1:] # first relation is 'NA', do not predict this
+        R_inv_embs = self.rel_inv_embs.weight[1:] # first relation is 'NA', do not predict this
 
-        scores1 = hh_embs * tt_embs @ R_embs.t()[1:] # first relation is 'NA', do not predict this
-        scores2 = ht_embs * th_embs @ R_inv_embs.t()[1:] # first relation is 'NA', do not predict this
+        scores1 = hh_embs * tt_embs @ R_embs.t()
+        scores2 = ht_embs * th_embs @ R_inv_embs.t()
         return torch.clamp((scores1 + scores2) / 2, -20, 20)
 
 
