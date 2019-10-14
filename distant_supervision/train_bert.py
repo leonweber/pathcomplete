@@ -165,6 +165,7 @@ if __name__ == '__main__':
         ignore_no_mentions=args.ignore_no_mentions
     )
     args.n_entities = train_dataset.n_entities
+    args.n_classes = train_dataset.n_classes
 
     model = MODEL_TYPES[args.model_type](args.bert, args=args)
     model.to(args.device)
