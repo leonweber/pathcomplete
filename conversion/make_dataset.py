@@ -1,6 +1,8 @@
 import argparse
 import json
 from collections import defaultdict
+
+import requests
 from tqdm import tqdm
 
 import pandas as pd
@@ -61,26 +63,29 @@ def hgnc_to_uniprot(symbol, mapping, mg):
         print("Couldn't find %s" % symbol)
         return None
 
+def geneid_to_uniprot(symbol, mg):
+    try:
+        res = mg.query('%s' % symbol, size=1, fields='uniprot')['hits']
+    except requests.exceptions.HTTPError:
+        print("Couldn't find %s" % symbol)
+        return None
+    if res and 'uniprot' in res[0]:
+        if 'Swiss-Prot' in res[0]['uniprot']:
+            uniprot = res[0]['uniprot']['Swiss-Prot']
+            if isinstance(uniprot, list):
+                return uniprot
+            else:
+                return [uniprot]
+
+    print("Couldn't find %s" % symbol)
+    return None
 
 
 def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     genes = set()
     np.random.seed(5005)
 
-    mapping = defaultdict(set)
-    for _, row in df[df['INTERACTION_TYPE'].str.contains('ProteinReference')].iterrows():
-        try:
-            uniprot_id = re.findall(r'uniprot knowledgebase:(\S+)', row['INTERACTION_DATA_SOURCE'])[0]
-            if ',' in uniprot_id:
-                __import__('pdb').set_trace()
-            if not isinstance(uniprot_id, list):
-                uniprot_id = [uniprot_id]
-        except TypeError:
-            continue
-        hgnc_name = row['PARTICIPANT_A']
-        assert hgnc_name not in mapping
-        mapping[hgnc_name].update(uniprot_id)
-
+    mapping = get_mapping_from_df(df)
 
     df = df[df['INTERACTION_TYPE'].isin(INTERACTION_TYPES)]
     df = df.fillna({"INTERACTION_PUBMED_ID": ""})
@@ -115,6 +120,21 @@ def to_interactions(df: pd.DataFrame, mg, subsample=1.0):
     result = {k: list(v) for k, v in interactions.items()}
 
     return result
+
+
+def get_mapping_from_df(df):
+    mapping = defaultdict(set)
+    for _, row in df[df.iloc[:,1].str.contains('ProteinReference')].iterrows():
+        try:
+            uniprot_id = re.findall(r'uniprot knowledgebase:([^\s;]+)', row['INTERACTION_DATA_SOURCE'])
+            if not isinstance(uniprot_id, list):
+                uniprot_id = [uniprot_id]
+        except TypeError:
+            continue
+        hgnc_name = row.iloc[0]
+        assert hgnc_name not in mapping
+        mapping[hgnc_name].update(uniprot_id)
+    return dict(mapping)
 
 
 def split(interactions):

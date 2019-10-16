@@ -39,10 +39,13 @@ def evaluate_provenance(anns, preds):
             proba_scores.append(score)
             y_true.append(pmid in true_provenance)
 
-    max_recall = sum(y_true) / n_true_pmids
-    prec_vals, rec_vals, _ = precision_recall_curve(y_true, proba_scores)
-    rec_vals = rec_vals * max_recall
-    ap = np.sum(np.diff(np.insert(rec_vals[::-1], 0, 0)) * prec_vals[::-1])
+    if n_true_pmids:
+        max_recall = sum(y_true) / n_true_pmids
+        prec_vals, rec_vals, _ = precision_recall_curve(y_true, proba_scores)
+        rec_vals = rec_vals * max_recall
+        ap = np.sum(np.diff(np.insert(rec_vals[::-1], 0, 0)) * prec_vals[::-1])
+    else:
+        ap = np.nan
 
     return ap
 
@@ -102,33 +105,34 @@ if __name__ == '__main__':
     parser.add_argument('--pathway', required=False)
     parser.add_argument('--baseline', required=False)
     parser.add_argument('--filter', required=False)
-    parser.add_argument('--rel_filter', required=False)
+    parser.add_argument('--rel_blacklist', required=False)
     parser.add_argument('--no_scores', action='store_true')
+    parser.add_argument('--augment_preds', action='store_true')
     parser.add_argument('--out', required=False)
 
     args = parser.parse_args()
 
     with open(args.anns) as f:
-        anns = json.load(f)
-        anns = {k.replace(" ", ""): v for k, v in anns.items() if k.split(',')[1] != 'NA'}
+        unfiltered_anns = {k.replace(" ", ""): v for k,v in json.load(f).items()}
+        anns = {k.replace(" ", ""): v for k, v in unfiltered_anns.items() if k.split(',')[1] != 'NA'}
         if args.filter:
             with open(args.filter) as f:
                 filter = json.load(f)
             anns = {k: v for k, v in anns.items() if k not in filter}
-        if args.rel_filter:
-            blacklisted_rels = set(args.rel_filter.split(","))
+        if args.rel_blacklist:
+            blacklisted_rels = set(args.rel_blacklist.split(","))
             anns = {k: v for k, v in anns.items() if k.split(",")[1] not in blacklisted_rels}
 
 
     with open(args.preds) as f:
-        preds = json.load(f)
-        preds = {k.replace(" ", ""): v for k, v in preds.items()}
+        preds = {k.replace(" ", ""): v for k,v in json.load(f).items()}
+        preds = {k: v for k, v in preds.items() if k in anns}
         if args.filter:
             with open(args.filter) as f:
                 filter = json.load(f)
             preds = {k: v for k, v in preds.items() if k not in filter}
-        if args.rel_filter:
-            blacklisted_rels = set(args.rel_filter.split(","))
+        if args.rel_blacklist:
+            blacklisted_rels = set(args.rel_blacklist.split(","))
             preds = {k: v for k, v in preds.items() if k.split(",")[1] not in blacklisted_rels}
 
     entities = set()
@@ -142,7 +146,8 @@ if __name__ == '__main__':
         anns = {k: v for k, v in anns.items() if k.split(',')[0] in entities and k.split(',')[2] in entities}
         preds = {k: v for k, v in preds.items() if k.split(',')[0] in entities and k.split(',')[2] in entities}
 
-    # preds = augment_preds(preds)
+    if args.augment_preds:
+        preds = augment_preds(preds)
 
     df = defaultdict(list)
 
@@ -169,6 +174,7 @@ if __name__ == '__main__':
         print(relation)
         if not rel_preds:
             print(f"No predictions for {relation}")
+            print()
             continue
         res = evaluate_relations(rel_anns, rel_preds, baseline)
         pprint({k: v for k,v in res.items() if 'vals' not in k})
