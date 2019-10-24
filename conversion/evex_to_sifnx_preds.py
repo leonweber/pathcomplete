@@ -2,9 +2,11 @@ import json
 from collections import defaultdict
 from typing import Dict, Tuple, Set, List
 import numpy as np
+from mygene import MyGeneInfo
 from tqdm import tqdm
 
 import pandas as pd
+from make_dataset import geneid_to_uniprot
 
 from utils import load_homologene, TAX_IDS
 
@@ -28,13 +30,10 @@ Confidence = float
 Triple = str
 Prediction = Tuple[PMID, Confidence]
 
-homologs = load_homologene(TAX_IDS.values())
-
-with open('../data/geneid2uniprot.json') as f:
-    geneid_to_uniprot = json.load(f)
+# homologs = load_homologene(TAX_IDS.values())
 
 
-def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, List]):
+def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, List], mg: MyGeneInfo):
     result = {}
     for idx, relation in tqdm(relations.iterrows(), total=len(relations)):
         if relation['refined_type'] not in TYPE_MAPPING:
@@ -43,16 +42,23 @@ def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, Lis
             continue
 
         sifnx_type = TYPE_MAPPING[relation['refined_type']]
-        head = str(relation['source_entrezgene_id'])
-        heads = homologs.get(head, [head])
+        heads = [str(relation['source_entrezgene_id'])]
+        # heads = homologs.get(head, [head])
 
-        tail = str(relation['target_entrezgene_id'])
-        tails = homologs.get(tail, [tail])
+        tails = [str(relation['target_entrezgene_id'])]
+        # tails = homologs.get(tail, [tail])
 
+        head_proteins = set()
+        tail_proteins = set()
         for head in heads:
             for tail in tails:
-                head_proteins = geneid_to_uniprot.get(head, [])
-                tail_proteins = geneid_to_uniprot.get(tail, [])
+                head = geneid_to_uniprot(head, mg)
+                tail = geneid_to_uniprot(tail, mg)
+
+                if head:
+                    head_proteins.update(head)
+                if tail:
+                    tail_proteins.update(tail)
 
         for head in head_proteins:
             for tail in tail_proteins:
@@ -71,6 +77,8 @@ def convert_to_sifnx(relations: pd.DataFrame, event_id_to_article: Dict[str, Lis
 
 
 if __name__ == '__main__':
+    mg = MyGeneInfo()
+    mg.set_caching('mg_cache')
     relations = pd.read_csv('../data/EVEX_relations_9606.tab', sep='\t')
     event_id_to_article = defaultdict(list)
     with open('../data/EVEX_articles_9606.tab') as f:
@@ -80,6 +88,6 @@ if __name__ == '__main__':
             pmid = pmid.split(':')[1].strip()
             event_id_to_article[event_id].append(pmid)
 
-    preds = convert_to_sifnx(relations, event_id_to_article)
-    with open('../distant_supervision/EVEX_preds.json', 'w') as f:
+    preds = convert_to_sifnx(relations, event_id_to_article, mg=mg)
+    with open('../data/EVEX_preds.json', 'w') as f:
         json.dump(preds, f)

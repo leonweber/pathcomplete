@@ -7,7 +7,6 @@ import pandas as pd
 from pathlib import Path
 
 from make_dataset import hgnc_to_uniprot, get_mapping_from_df
-from mygene import MyGeneInfo
 
 def sifnx_to_uniprot(sifnx_lines):
     mg = mygene.MyGeneInfo()
@@ -16,7 +15,10 @@ def sifnx_to_uniprot(sifnx_lines):
 
     new_lines = set()
 
-    for line in sifnx_lines[1:]:
+    if 'PARTICIPANT_A' in sifnx_lines[0]:
+        sifnx_lines = sifnx_lines[1:]
+    for line in sifnx_lines:
+        line = line.strip()
 
         if not line.strip():
             continue
@@ -29,7 +31,7 @@ def sifnx_to_uniprot(sifnx_lines):
                 new_fields = deepcopy(fields)
                 new_fields[0] = e1
                 new_fields[2] = e2
-                new_lines.add('\t'.join(new_fields))
+                new_lines.add('\t'.join(new_fields) + '\n')
 
     return [sifnx_lines[0]] + list(new_lines)
 
