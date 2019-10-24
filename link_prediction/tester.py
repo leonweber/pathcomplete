@@ -23,7 +23,7 @@ class Tester:
         while not last_batch:
             X, y = self.dataset.next_batch(self.batch_size, split=self.split)
             with torch.no_grad():
-                all_scores.append(self.model.predict_relations(X).cpu().numpy())
+                all_scores.append(self.model.predict_relations(X).cpu().numpy()[:, 1:])
                 all_ys.append(y.cpu().numpy())
             last_batch = self.dataset.was_last_batch(self.split)
         all_scores = np.concatenate(all_scores, axis=0)

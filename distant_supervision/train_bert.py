@@ -54,7 +54,7 @@ def train(args, train_dataset, model):
             from apex import amp
         except ImportError:
             raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
-        model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
+        model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
 
 
     global_step = 0
