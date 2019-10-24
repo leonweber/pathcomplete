@@ -6,7 +6,8 @@ from pathlib import Path
 
 def json_to_sif(data):
     for triple in data:
-        yield triple.replace(",", "\t")
+        score = data[triple]['score']
+        yield triple.replace(",", "\t") + "\t" + str(score)
 
 
 if __name__ == '__main__':

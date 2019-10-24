@@ -106,7 +106,6 @@ if __name__ == '__main__':
     parser.add_argument('--baseline', required=False)
     parser.add_argument('--filter', required=False)
     parser.add_argument('--rel_blacklist', required=False)
-    parser.add_argument('--no_scores', action='store_true')
     parser.add_argument('--augment_preds', action='store_true')
     parser.add_argument('--out', required=False)
 

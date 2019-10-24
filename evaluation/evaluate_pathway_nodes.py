@@ -15,9 +15,12 @@ def evaluate(anns, preds):
         fps += len(pred_nodes - true_nodes)
         fns += len(true_nodes - pred_nodes)
 
-    p = tps / (tps + fps)
-    r = tps / (tps + fns)
-    f1 = 2 * p * r / (p + r)
+    try:
+        p = tps / (tps + fps)
+        r = tps / (tps + fns)
+        f1 = 2 * p * r / (p + r)
+    except:
+        p = r = f1 = 0.0
     return p, r, f1
 
 

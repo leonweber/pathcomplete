@@ -23,8 +23,12 @@ def convert(lines):
                 tail_members.append(tail_member)
 
         for a, b in itertools.combinations(head_members, 2):
+            a = a.strip('()')
+            b = b.strip('()')
             relations[f"{a},in-complex-with,{b}"] = []
         for a, b in itertools.combinations(tail_members, 2):
+            a = a.strip('()')
+            b = b.strip('()')
             relations[f"{a},in-complex-with,{b}"] = []
 
         for a in head_members:
@@ -38,15 +42,25 @@ def convert(lines):
                 pairs.add(tuple(sorted([a, b])))
 
                 if relation in {"phosphorylation", "dephosphorylation", "ubiquitinylation"}:
+                    if '(' in b:
+                        continue
                     relations[f"{a},controls-state-change-of,{b}"] = []
 
                 if relation in {"phosphorylation", "dephosphorylation"}:
+                    if '(' in b:
+                        continue
                     relations[f"{a},controls-phosphorylation-of,{b}"] = []
                 elif relation == "transport":
+                    a = a.strip('()')
+                    b = b.strip('()')
                     relations[f"{a},controls-transport-of,{b}"] = []
                 elif relation == "transcription":
+                    a = a.strip('()')
+                    b = b.strip('()')
                     relations[f"{a},controls-expression-of,{b}"] = []
                 elif relation == "binding":
+                    a = a.strip('()')
+                    b = b.strip('()')
                     relations[f"{a},in-complex-with,{b}"] = []
                     relations[f"{b},in-complex-with,{a}"] = []
 
