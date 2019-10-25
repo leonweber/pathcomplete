@@ -21,7 +21,8 @@ def predict(dataset, model, args):
     for batch in data_it:
         model.eval()
         batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
-        logits, meta = model(**batch)
+        with torch.no_grad():
+            logits, meta = model(**batch)
 
         e1, e2 = batch['entity_ids']
 
