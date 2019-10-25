@@ -26,7 +26,7 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
         token_ids = []
 
         all_directs.append(mention[1] == 'direct')
-        all_pmids.append(int(mention[4].strip()))
+        all_pmids.append(int(mention[2].strip()))
 
         mention = mention[0].lower()
         for token in mention.split():
@@ -105,15 +105,18 @@ if __name__ == '__main__':
     with args.entity_dict.open() as f:
         for line in f:
             id, item = line.strip().split('\t')
-            entity_dict = {id: item}
+            entity_dict[item] = int(id)
+    entities = [None for _ in entity_dict]
+    for item, id in entity_dict.items():
+        entities[id] = item
 
     label_dict = {}
     with args.label_dict.open() as f:
         for line in f:
             id, item = line.strip().split('\t')
-            label_dict = {id: item}
+            label_dict[item] = int(id)
     labels = [None for _ in label_dict]
-    for id, item in label_dict.items():
+    for item, id in label_dict.items():
         labels[id] = item
 
     with open(args.input) as f:
@@ -132,6 +135,7 @@ if __name__ == '__main__':
             if token_ids is not None:
                 f.create_dataset(f"token_ids/{pair}", data=token_ids, dtype='i')
                 f.create_dataset(f"attention_masks/{pair}", data=attention_masks, dtype='i')
+
                 f.create_dataset(f"entity_positions/{pair}", data=entity_positions, dtype='i')
                 f.create_dataset(f"pmids/{pair}", data=pmids)
                 f.create_dataset(f"is_direct/{pair}", data=is_direct, dtype='bool')
