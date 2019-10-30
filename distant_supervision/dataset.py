@@ -16,12 +16,16 @@ class DistantBertDataset(Dataset):
             e2 = self.file['id2entity'][e2_id].decode()
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
+        self.labels = self.file['labels'][:]
         if ignore_no_mentions:
             filtered_pairs = []
-            for pair in self.pairs:
+            filtered_labels = []
+            for pair, label in zip(self.pairs, self.labels):
                 if pair in self.file['token_ids']:
                     filtered_pairs.append(pair)
+                    filtered_labels.append(label)
             self.pairs = filtered_pairs
+            self.labels = np.vstack(filtered_labels)
 
         self.n_classes = len(self.file['id2label'])
         self.n_entities = len(self.file['id2entity'])
@@ -38,7 +42,7 @@ class DistantBertDataset(Dataset):
         attention_masks = self.file.get(f"attention_masks/{pair}", np.array([[-1]]))[:]
         entity_pos = self.file.get(f"entity_positions/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
         pmids = self.file.get(f"pmids/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
-        labels = self.file["labels"][idx]
+        labels = self.labels[idx]
         entity_ids = self.file["entity_ids"][idx]
 
         token_ids = token_ids[:self.max_bag_size, :self.max_length]
