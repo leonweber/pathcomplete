@@ -1,0 +1,454 @@
+{
+ "alpha-methylisocitrate,aconitase": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Steric and conformational features of the aconitase mechanism. Crystal structures of mitochondrial <e2>aconitase</e2> with <e1>alpha-methylisocitrate</e1> and with sulfate bound have been solved and refined at 2.0 A resolution with R factors of 18.2 and 16.8%, respectively. The steric factors and",
+    "direct",
+    "7675781"
+   ]
+  ]
+ },
+ "p53,MDM2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "SMAR1 forms a ternary complex with <e1>p53</e1>-<e2>MDM2</e2> and negatively regulates p53-mediated transcription. The intra-cellular level of tumor suppressor protein p53 is tightly controlled by an autoregulatory feedback loop between the protein and",
+    "direct",
+    "19303885"
+   ]
+  ]
+ },
+ "p53,SMAR1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>SMAR1</e2> forms a ternary complex with <e1>p53</e1>-MDM2 and negatively regulates p53-mediated transcription. The intra-cellular level of tumor suppressor protein p53 is tightly controlled by an autoregulatory feedback loop between the",
+    "direct",
+    "19303885"
+   ]
+  ]
+ },
+ "MDM2,SMAR1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>SMAR1</e2> forms a ternary complex with p53-<e1>MDM2</e1> and negatively regulates p53-mediated transcription. The intra-cellular level of tumor suppressor protein p53 is tightly controlled by an autoregulatory feedback loop between the protein",
+    "direct",
+    "19303885"
+   ]
+  ]
+ },
+ "retinoblastoma protein,apoptosis signal-regulating kinase 1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Direct binding of <e2>apoptosis signal-regulating kinase 1</e2> to <e1>retinoblastoma protein</e1>: novel links between apoptotic signaling and cell cycle machinery. The retinoblastoma protein Rb has antiproliferative and antiapoptotic functions. Our previous studies have shown that",
+    "direct",
+    "15210709"
+   ]
+  ]
+ },
+ "Cbl-b,Syk": {
+  "relations": [
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "<e1>Cbl-b</e1> negatively regulates B cell antigen receptor signaling in mature B cells through ubiquitination of the tyrosine kinase <e2>Syk</e2>. Members of the Cbl family of molecular adaptors play key roles in regulating tyrosine kinase-dependent signaling in a variety of cellular systems. Here we",
+    "direct",
+    "12771181"
+   ]
+  ]
+ },
+ "mdm2,IE2-86": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Evidence that the human cytomegalovirus <e2>IE2-86</e2> protein binds <e1>mdm2</e1> and facilitates mdm2 degradation. Levels of the p53 tumor suppressor protein are increased in human cytomegalovirus (HCMV)-infected cells and may be important for HCMV",
+    "direct",
+    "16571800"
+   ]
+  ]
+ },
+ "large T-antigen,p53": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The SV40 small t-antigen prevents mammary gland differentiation and induces breast cancer formation in transgenic mice; truncated <e1>large T-antigen</e1> molecules harboring the intact <e2>p53</e2> and pRb binding region do not have this effect. We report here for the first time, that the SV40 small t-antigen inhibits mammary gland",
+    "direct",
+    "11402328"
+   ]
+  ]
+ },
+ "TAK1,MKK": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "<e1>TAK1</e1> is a ubiquitin-dependent kinase of <e2>MKK</e2> and IKK. TRAF6 is a signal transducer that activates IkappaB kinase (IKK) and Jun amino-terminal kinase (JNK) in response to pro-inflammatory mediators such",
+    "direct",
+    "11460167"
+   ]
+  ]
+ },
+ "E2F,E2F-pocket protein": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "6-phosphofructo-2-kinase/fructose-2,6-bisphosphatase (6PF2K/Fru-2,6-BPase) during cell division. The expression of this enzyme is induced during the G(1)/S transition of the cell cycle. We identified and monitored the <e2>E2F-pocket protein</e2> complexes that bind to the <e1>E2F</e1> site of the F-type promoter during cell-cycle entry, and we analysed their contribution to the phosphatidylinositol 3-kinase (PI 3-kinase)-mediated regulation of the promoter.",
+    "direct",
+    "12139485"
+   ]
+  ]
+ },
+ "p21,Cdk4/cyclin D": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "demonstrate that DAP treatment of human cancer cells activates the p53-p21 pathway without activating other known mechanisms that inhibit Cdk4 and Cdk2 activities. The induced <e1>p21</e1> binds to both the <e2>Cdk4/cyclin D</e2> and Cdk2/cyclin E complexes and inhibits both of their kinase activities. Conversely, inhibition of p21 induction by cycloheximide or by p21 gene deletion prevents",
+    "direct",
+    "15735718"
+   ]
+  ]
+ },
+ "phosphatidylinositol 4-phosphate 5-kinase,Rho": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Physical association of the small GTPase <e2>Rho</e2> with a 68-kDa <e1>phosphatidylinositol 4-phosphate 5-kinase</e1> in Swiss 3T3 cells. Our previous work showed that post-translationally modified Rho in its GTP-bound state stimulated phosphatidylinositol 4-phosphate 5-kinase (PIP5K) activity in mouse",
+    "direct",
+    "8868471"
+   ]
+  ]
+ },
+ "septin,Hsl7": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>Hsl7</e2> localizes to a <e1>septin</e1> ring and serves as an adapter in a regulatory pathway that relieves tyrosine phosphorylation of Cdc28 protein kinase in Saccharomyces cerevisiae. Successful mitosis",
+    "direct",
+    "10490648"
+   ]
+  ]
+ },
+ "RIP2,TRIP6": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "triggered by tumor necrosis factor (TNF), interleukin 1 (IL-1), Toll-like receptor 2 (TLR2), TLR3, TLR4 and Nod1. In this report, we identified the LIM-domain-containing protein <e2>TRIP6</e2> as a <e1>RIP2</e1>-interacting protein in yeast two-hybrid screens. In mammalian cells, TRIP6 interacts with RIP2 in a TNF- or IL-1-dependent manner. Overexpression of TRIP6 potentiates RIP2-mediated",
+    "direct",
+    "15657077"
+   ]
+  ]
+ },
+ "v-Rel,p105": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>p105</e2>, the NF-kappa B p50 precursor protein, is one of the cellular proteins complexed with the <e1>v-Rel</e1> oncoprotein in transformed chicken spleen cells. Active NF-kappa B-like transcription complexes are multimers consisting of one or two members of a family of",
+    "direct",
+    "1533881"
+   ]
+  ]
+ },
+ "Rb,histone H3": {
+  "relations": [
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "<e1>Rb</e1> targets <e2>histone H3</e2> methylation and HP1 to promoters. In eukaryotic cells the histone methylase SUV39H1 and the methyl-lysine binding protein HP1 functionally interact to repress transcription at",
+    "direct",
+    "11484059"
+   ]
+  ]
+ },
+ "Na+,sulfobromophthalein": {
+  "relations": [
+   "controls-transport-of",
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "Organic anion transporting polypeptide mediates organic anion/HCO3- exchange. Organic anion transporting polypeptide (oatp) is an integral membrane protein cloned from rat liver that mediates <e1>Na+</e1>-independent transport of organic anions such as <e2>sulfobromophthalein</e2> and taurocholic acid. Previous studies in rat hepatocytes suggested that organic anion uptake is associated with base exchange. To better characterize the mechanism of oatp-mediated",
+    "direct",
+    "9334206"
+   ]
+  ]
+ },
+ "phosphoinositide-dependent protein kinases,PKC": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "in the last few years by three seminal discoveries. First, PKC activity and maturation is controlled by autophosphorylation and transphosphorylation mechanisms, which includes phosphorylation of <e2>PKC</e2> isozymes by <e1>phosphoinositide-dependent protein kinases</e1> (PDKs) and tyrosine kinases. Second, PKC activity and localization are regulated by direct interaction with different types of interacting proteins. Protein-protein interactions are now",
+    "direct",
+    "10506570"
+   ]
+  ]
+ },
+ "nuclear factor (NF)-kappaB,Bcl-2": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "indica, enhanced the apoptosis induced by inflammatory cytokines and chemotherapeutic agents in tumor cells. This limonoid abrogated the expression of proteins associated with cell survival (<e2>Bcl-2</e2>, Bcl-xL, IAP-1, and IAP-2), proliferation (cyclin D1), invasion (MMP-9), and angiogenesis (VEGF), all regulated by <e1>nuclear factor (NF)-kappaB</e1>. Nimbolide inhibited the activation of NF-kappaB induced by carcinogens and inflammatory stimuli. Constitutively active NF-kappaB found in most tumor cells was also inhibited. We",
+    "direct",
+    "20829362"
+   ]
+  ]
+ },
+ "Chk1,Claspin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Claspin in the DNA damage/replication checkpoint in mammalian cells. We observed that human Claspin is a cell cycle regulated protein that peaks at S/G2 phase. <e2>Claspin</e2> localizes in the nuclei, but it only associates with <e1>Chk1</e1> following replication stress or other types of DNA damage. In addition, Claspin is phosphorylated in response to replication stress, and this phosphorylation appears to",
+    "direct",
+    "12766152"
+   ]
+  ]
+ },
+ "SCF(Cdc4),Far1": {
+  "relations": [
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "Cdc4. Far1 is a bifunctional protein that is required to arrest the cell cycle and establish cell polarity during yeast mating. Here we show that <e1>SCF(Cdc4)</e1> ubiquitylates <e2>Far1</e2> in the nucleus, which in turn targets the multi-ubiquitylated protein to 26S proteasomes most likely located at the nuclear envelope. In response to mating",
+    "direct",
+    "11080155"
+   ]
+  ]
+ },
+ "cyclin-dependent kinases,p27Kip1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Cdk-inhibitory activity and stability of p27Kip1 are directly regulated by oncogenic tyrosine kinases. <e2>p27Kip1</e2> controls cell proliferation by binding to and regulating the activity of <e1>cyclin-dependent kinases</e1> (Cdks). Here we show that Cdk inhibition and p27 stability are regulated through direct phosphorylation by tyrosine kinases. A conserved tyrosine residue (Y88) in",
+    "direct",
+    "17254966"
+   ]
+  ]
+ },
+ "UMP-CMP kinase,monophosphates": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Phosphorylation of deoxycytidine analog <e2>monophosphates</e2> by <e1>UMP-CMP kinase</e1>: molecular characterization of the human enzyme. Phosphorylation of deoxycytidine analogs by cellular enzymes is a prerequisite for the activity of these compounds. We have",
+    "direct",
+    "10462544"
+   ]
+  ]
+ },
+ "cyclin E,Fbw7": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "of cell division and growth. F-box proteins are the SCF components that bind to substrates, and this binding is usually signaled by substrate phosphorylation. The <e2>Fbw7</e2>/hCdc4 F-box protein was first recognized by its ability to bind <e1>cyclin E</e1>, and the SCF (Fbw7) is now known to target c-Myc, c-Jun and Notch for degradation in addition to its role in cyclin E",
+    "direct",
+    "16131838"
+   ]
+  ]
+ },
+ "Polycomb,E2F6": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "sites, but in contrast to E2F1-5, it lacks an Rb binding domain and functions as an Rb-independent transcriptional repressor [2, 3, 4 and 5]. Instead, <e2>E2F6</e2> has been shown to complex with <e1>Polycomb</e1> (PcG) group proteins [6 and 7], which have a well-established role in gene silencing. Here, we show that E2F6 plays an unexpected and essential",
+    "direct",
+    "15936277"
+   ]
+  ]
+ },
+ "type I PIP5Ks,phosphatidylinositol 3, 4-bisphosphate": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "isozymes catalyze the synthesis of 3-phosphate-containing phosphatidylinositol signaling molecules. Phosphatidylinositol-4-phosphate 5-kinases (PIP5Ks) utilize phosphatidylinositols containing D-3-position phosphates as substrates to form phosphatidylinositol 3,4-bisphosphate. In addition, <e1>type I PIP5Ks</e1> phosphorylate <e2>phosphatidylinositol 3, 4-bisphosphate</e2> to phosphatidylinositol 3,4,5-trisphosphate, while type II kinases have less activity toward this substrate. Remarkably, these kinases can convert phosphatidylinositol 3-phosphate to phosphatidylinositol 3,4,5-trisphosphate in a",
+    "direct",
+    "9211928"
+   ]
+  ]
+ },
+ "proline-rich Akt substrate of 40 kilodaltons,raptor": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The proline-rich Akt substrate of 40 kDa (PRAS40) is a physiological substrate of mammalian target of rapamycin complex 1. The <e1>proline-rich Akt substrate of 40 kilodaltons</e1> (PRAS40) was identified as a <e2>raptor</e2>-binding protein that is phosphorylated directly by mammalian target of rapamycin (mTOR) complex 1 (mTORC1) but not mTORC2 in vitro, predominantly at PRAS40 (Ser(183)).",
+    "direct",
+    "17517883"
+   ]
+  ]
+ },
+ "SRF,Elk-1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The SRF accessory protein Elk-1 contains a growth factor-regulated transcriptional activation domain. The <e2>Elk-1</e2> and <e1>SRF</e1> transcription factors form a ternary complex at the c-fos serum response element (SRE). Growth factor stimulation rapidly induces a reversible change in the",
+    "direct",
+    "8386592"
+   ]
+  ]
+ },
+ "p70S6K,BAD": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "and cell survival signals. The 70-kDa ribosomal protein S6 kinase (p70S6K) is known to regulate cell growth by inducing protein synthesis components. We purified membrane-based <e1>p70S6K</e1> as a kinase responsible for site-specific phosphorylation of <e2>BAD</e2>, which inactivates this proapoptotic molecule. Rapamycin inhibited mitochondrial-based p70S6K, which prevented phosphorylation of Ser-136 on BAD and blocked cell survival induced by insulin-like",
+    "direct",
+    "11493700"
+   ]
+  ]
+ },
+ "TORC1,FKBP-rapamycin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "TOR complexes. TOR Complex 1 (TORC1) contains TOR1 or TOR2, KOG1 (YHR186c), and LST8. TORC2 contains TOR2, AVO1 (YOL078w), AVO2 (YMR068w), AVO3 (YER093c), and LST8. <e2>FKBP-rapamycin</e2> binds <e1>TORC1</e1>, and TORC1 disruption mimics rapamycin treatment, suggesting that TORC1 mediates the rapamycin-sensitive, TOR-shared pathway. FKBP-rapamycin fails to bind TORC2, and TORC2 disruption causes an",
+    "direct",
+    "12408816"
+   ]
+  ]
+ },
+ "GTP,Rac": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "central phosphorylation site in p21-activated kinase regulating autoinhibition and kinase activity. p21-activated kinases (Pak)/Ste20 kinases are regulated in vitro and in vivo by the small <e1>GTP</e1>-binding proteins <e2>Rac</e2> and Cdc42 and lipids, such as sphingosine, which stimulate autophosphorylation and phosphorylation of exogenous substrates. The mechanism of Pak activation by these agents remains",
+    "direct",
+    "10551809"
+   ]
+  ]
+ },
+ "E2F,TopBP1": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "Expression of MCM10 and <e2>TopBP1</e2> is regulated by cell proliferation and UV irradiation via the <e1>E2F</e1> transcription factor. MCM10 and TopBP1 function in the initiation of DNA replication, by regulating the chromatin binding of the DNA polymerase alpha loading",
+    "direct",
+    "15195143"
+   ]
+  ]
+ },
+ "Hog1,Sho1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "suggested that a negative-feedback loop operates early in the pathway and leads to rapid attenuation of Hog1 signaling. Experimental analysis revealed that the membrane-bound osmosensor <e2>Sho1</e2> is phosphorylated by <e1>Hog1</e1> and that phosphorylation occurs on Ser-166. Moreover, Sho1 exists in a homo-oligomeric complex, and phosphorylation by Hog1 promotes a transition from the oligomeric",
+    "direct",
+    "17363249"
+   ]
+  ]
+ },
+ "p21,cyclin E/CDK2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "in degradation of the cyclin-dependent kinase (CDK) inhibitor p21(WAF1) protein in a proteosome-dependent manner. Downstream consequences of lowering p21(WAF1) levels included a proportional loss of <e2>cyclin E/CDK2</e2> complexes bound to <e1>p21</e1>(WAF1). The loss of stable p21(WAF1)/cyclin E/CDK2 complexes coincided with an increase in CDK2-associated kinase activity and cyclin E levels. Both events have the",
+    "direct",
+    "16641284"
+   ]
+  ]
+ },
+ "DNA-dependent protein kinase,NF-kappaB": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Phosphorylation of p50 <e2>NF-kappaB</e2> at a single serine residue by <e1>DNA-dependent protein kinase</e1> is critical for VCAM-1 expression upon TNF treatment. The DNA binding activity of NF-kappaB is critical for VCAM-1 expression during inflammation. DNA-dependent protein kinase",
+    "direct",
+    "20966071"
+   ]
+  ]
+ },
+ "TLRs,TLRs": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "receptor (TLR) subfamily recognize alarm signals that can be derived either from pathogens or the host itself. TLRs possess leucine-rich repeats in their extracellular part. <e1>TLRs</e1> can form dimeric receptor complexes consisting of two different <e2>TLRs</e2> or homodimers in the case of TLR4. The TLR4 receptor complex requires supportive molecules for optimal response to its ligand lipopolysaccharide (LPS). A hallmark",
+    "direct",
+    "12421671"
+   ]
+  ]
+ },
+ "2',3'-glycol,osmate": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The dinucleoside monophosphates, ApU and UpA, react with potassium osmate (VI) and 2,2'-bipyridyl to form the corresponding oxo-osmium (VI) bipyridyl sugar ester in which the <e2>osmate</e2> group is bonded to the terminal <e1>2',3'-glycol</e1>. Osmium (VIII) tetroxide and 2,2'-bipyridyl react with the dinucleosides to form the corresponding oxo-osmium (VI) bipyridyl heterocyclic esters which result from addition of the tetroxide",
+    "direct",
+    "1252411"
+   ]
+  ]
+ }
+}

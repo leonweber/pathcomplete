@@ -1,0 +1,1528 @@
+{
+ "sPGN,CD14": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "2. Here we investigate the mechanism of cellular activation by soluble peptidoglycan (sPGN) and lipoteichoic acid (LTA), main stimulatory components of Gram-positive bacteria. Like LPS, <e1>sPGN</e1> and LTA bind to the glycosylphosphatidylinositol-anchored membrane protein <e2>CD14</e2> and induce activation of the transcription factor NF-kappaB in host cells like macrophages. We show that whole Gram-positive bacteria, sPGN and LTA induce the",
+    "direct",
+    "10364168"
+   ]
+  ]
+ },
+ "nemo-like kinase,Tcf/Lef": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "overcomes basal repression in the prospective caudal neurectoderm by Tcf homologs that act as inhibitors of Wnt target genes. The vertebrate homolog of Drosophila nemo, <e1>nemo-like kinase</e1> (Nlk), can phosphorylate <e2>Tcf/Lef</e2> proteins and inhibit the DNA-binding ability of beta-catenin/Tcf complexes, thereby blocking activation of Wnt targets. By contrast, mutations in a C. elegans homolog show",
+    "direct",
+    "15151990"
+   ]
+  ]
+ },
+ "E2F,NPAT": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "<e2>NPAT</e2> expression is regulated by <e1>E2F</e1> and is essential for cell cycle progression. NPAT is an in vivo substrate of cyclin E-Cdk2 kinase and is thought to play a",
+    "direct",
+    "12665581"
+   ]
+  ]
+ },
+ "cAMP-dependent protein kinase,elongation factor-2 kinase": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Phosphorylation of <e2>elongation factor-2 kinase</e2> on serine 499 by <e1>cAMP-dependent protein kinase</e1> induces Ca2+/calmodulin-independent activity. Elongation factor-2 kinase (eEF-2K) negatively regulates mRNA translation via the phosphorylation and inactivation of elongation factor-2 (eEF-2). We have shown previously",
+    "direct",
+    "11171059"
+   ]
+  ]
+ },
+ "GSK3,TSC1/TSC2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "role of the TSC1/TSC2 proteins on mTOR, we have reported an effect on beta-catenin signaling at the level of the degradation complex in vitro. The <e2>TSC1/TSC2</e2> complex associates with <e1>GSK3</e1> and Axin and promotes beta-catenin degradation to inhibit Wnt-stimulated TCF/LEF-dependent transcription. Here, we show that beta-catenin and its effectors, cyclin D1 and connexin 43,",
+    "direct",
+    "15972957"
+   ]
+  ]
+ },
+ "GSK3,Axin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "proteins on mTOR, we have reported an effect on beta-catenin signaling at the level of the degradation complex in vitro. The TSC1/TSC2 complex associates with <e1>GSK3</e1> and <e2>Axin</e2> and promotes beta-catenin degradation to inhibit Wnt-stimulated TCF/LEF-dependent transcription. Here, we show that beta-catenin and its effectors, cyclin D1 and connexin 43, were",
+    "direct",
+    "15972957"
+   ]
+  ]
+ },
+ "TSC1/TSC2,Axin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "role of the TSC1/TSC2 proteins on mTOR, we have reported an effect on beta-catenin signaling at the level of the degradation complex in vitro. The <e1>TSC1/TSC2</e1> complex associates with GSK3 and <e2>Axin</e2> and promotes beta-catenin degradation to inhibit Wnt-stimulated TCF/LEF-dependent transcription. Here, we show that beta-catenin and its effectors, cyclin D1 and connexin 43, were",
+    "direct",
+    "15972957"
+   ]
+  ]
+ },
+ "E2F,Arf": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "proliferation and the tumor surveillance response. These networks are known to intersect with one another, but the mechanisms are poorly understood. Here, we show that <e1>E2F</e1> directly participates in the transcriptional control of <e2>Arf</e2> in both normal and transformed cells. This occurs in a manner that is significantly different from the regulation of classic E2F-responsive targets. In",
+    "direct",
+    "15175242"
+   ]
+  ]
+ },
+ "HO,Ace2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "genes in vivo. Yeast Ace2 and Swi5 are such activators, with targets we classify as Swi5-only, Ace2-only, or both. We define two unique regulatory modes. <e2>Ace2</e2> and Swi5 both bind in vitro to Swi5-only genes such as <e1>HO</e1>, but only Swi5 binds and activates in vivo. In contrast, Ace2 and Swi5 both bind in vivo to Ace2-only genes, such as CTS1,",
+    "direct",
+    "17898805"
+   ]
+  ]
+ },
+ "MyD88,PI 3-kinase": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "activation on cytokine and chemokine expression and the intracellular mechanisms of inflammatory activation were examined in mouse macrophages. LPS stimulation induced a complex formation between <e2>PI 3-kinase</e2> and myeloid differentiation factor 88 (<e1>MyD88</e1>), which was followed by an induction of IL-1beta, tumor necrosis factor-alpha (TNF-alpha) and macrophage inflammatory protein (MIP)-2. The induction of IL-1beta, but not of",
+    "direct",
+    "12616480"
+   ]
+  ]
+ },
+ "Cdc42Hs,p85": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Activation of phosphoinositide 3-kinase activity by <e1>Cdc42Hs</e1> binding to <e2>p85</e2>. The Ras-like GTPase Cdc42 is essential for cell polarity and bud site assembly in Saccharomyces cerevisiae by regulating cell cycle-dependent reorganization of cortical",
+    "direct",
+    "8034624"
+   ]
+  ]
+ },
+ "phospholipids,arachidonic acid": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Crystal structure of a calcium-phospholipid binding domain from cytosolic phospholipase A2. Cytosolic phospholipase A2 (cPLA2) is a calcium-sensitive 85-kDa enzyme that hydrolyzes <e2>arachidonic acid</e2>-containing membrane <e1>phospholipids</e1> to initiate the biosynthesis of eicosanoids and platelet-activating factor, potent inflammatory mediators. The calcium-dependent activation of the enzyme is mediated by an N-terminal C2 domain,",
+    "direct",
+    "9430701"
+   ]
+  ]
+ },
+ "ataxia telangiectasia mutated,NBS1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Distinct functions of Nijmegen breakage syndrome in ataxia telangiectasia mutated-dependent responses to DNA damage. Phosphorylation of <e2>NBS1</e2>, the product of the gene mutated in Nijmegen breakage syndrome (NBS), by <e1>ataxia telangiectasia mutated</e1> (ATM), the product of the gene mutated in ataxia telangiectasia, is required for activation of the S phase checkpoint in response to ionizing radiation",
+    "direct",
+    "12861053"
+   ]
+  ]
+ },
+ "IkappaBalpha,NFkappaB": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Consequences of fuzziness in the <e2>NFkappaB</e2>/<e1>IkappaBalpha</e1> interaction. This chapter provides a short review of various biophysical experiments that have been applied to the inhibitor of kappa B, IkappaBalpha and its binding",
+    "direct",
+    "22399319"
+   ]
+  ]
+ },
+ "FKBP12-rapamycin-associated protein,CLIP-170": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "The <e1>FKBP12-rapamycin-associated protein</e1> (FRAP) is a <e2>CLIP-170</e2> kinase. CLIP-170/Restin belongs to a family of conserved microtubule (MT)-associated proteins, which are important for MT organization and functions. CLIP-170 is a phosphoprotein and",
+    "direct",
+    "12231510"
+   ]
+  ]
+ },
+ "hamartin,tuberin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "sclerosis complex (TSC) is characterized by the formation of hamartomas in multiple organs resulting from mutations in the TSC1 or TSC2 gene. Their protein products, <e1>hamartin</e1> and <e2>tuberin</e2>, respectively, form a functional complex that affects cell growth, differentiation, and proliferation. Several lines of evidence, including renal tumors derived from TSC2+/- animals, suggest",
+    "direct",
+    "12511557"
+   ]
+  ]
+ },
+ "SKP1/SKP2,CUL-1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Human <e2>CUL-1</e2> associates with the <e1>SKP1/SKP2</e1> complex and regulates p21(CIP1/WAF1) and cyclin D proteins. Deregulation of cell proliferation is a hallmark of cancer. In many transformed cells, the cyclin A/CDK2",
+    "direct",
+    "9736735"
+   ]
+  ]
+ },
+ "APC,ubiquitin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "and irreversibly, ensuring that all chromosome pairs disjoin almost simultaneously. The regulatory mechanisms that generate this switch-like behaviour are unclear. Anaphase is initiated when a <e2>ubiquitin</e2> ligase, the anaphase-promoting complex (<e1>APC</e1>), triggers the destruction of securin, thereby allowing separase, a protease, to disrupt sister-chromatid cohesion. Here we demonstrate that the cyclin-dependent kinase 1 (Cdk1)-dependent phosphorylation",
+    "direct",
+    "18552837"
+   ]
+  ]
+ },
+ "A20-binding inhibitors of NF-kappa B activation,A20": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "finger protein A20 is involved in the negative feedback regulation of NF-kappa B activation in response to tumor necrosis factor (TNF). We previously demonstrated that <e2>A20</e2> can interact with <e1>A20-binding inhibitors of NF-kappa B activation</e1> (ABINs), which have the potential to inhibit TNF-induced activation of NF-kappa B upon overexpression. The ABIN proteins were therefore proposed to mediate the",
+    "direct",
+    "12586352"
+   ]
+  ]
+ },
+ "p21-activated kinase 1,Raf-1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Phosphorylation of <e2>Raf-1</e2> by <e1>p21-activated kinase 1</e1> and Src regulates Raf-1 autoinhibition. Exposure of cells to mitogens or growth factors stimulates Raf-1 activity through a complex mechanism that involves binding",
+    "direct",
+    "12551923"
+   ]
+  ]
+ },
+ "insulin receptor substrate-2,NF-kappaB": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Interaction between nuclear <e1>insulin receptor substrate-2</e1> and <e2>NF-kappaB</e2> in IGF-1 induces response in breast cancer cells. Despite significant homology between IRS-1 and IRS-2, recent studies have revealed distinct functions for these adaptor",
+    "direct",
+    "21042750"
+   ]
+  ]
+ },
+ "MyD88,TLR": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "(TLR)-induced activation of NF-kappaB. It is composed of a C-terminal Toll/IL-1R homology (TIR) domain and an N-terminal death domain (DD), which mediate the interaction of <e1>MyD88</e1> with the IL-1R/<e2>TLR</e2> and the IL-1R-associated kinase (IRAK), respectively. The interaction of MyD88 with IRAK triggers IRAK phosphorylation, which is essential for its activation and downstream signaling ability.",
+    "direct",
+    "11909531"
+   ]
+  ]
+ },
+ "MyD88,IL-1R": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "(TLR)-induced activation of NF-kappaB. It is composed of a C-terminal Toll/IL-1R homology (TIR) domain and an N-terminal death domain (DD), which mediate the interaction of <e1>MyD88</e1> with the <e2>IL-1R</e2>/TLR and the IL-1R-associated kinase (IRAK), respectively. The interaction of MyD88 with IRAK triggers IRAK phosphorylation, which is essential for its activation and downstream signaling",
+    "direct",
+    "11909531"
+   ]
+  ]
+ },
+ "TLR,IL-1R": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "NF-kappaB. It is composed of a C-terminal Toll/IL-1R homology (TIR) domain and an N-terminal death domain (DD), which mediate the interaction of MyD88 with the <e2>IL-1R</e2>/<e1>TLR</e1> and the IL-1R-associated kinase (IRAK), respectively. The interaction of MyD88 with IRAK triggers IRAK phosphorylation, which is essential for its activation and downstream signaling ability.",
+    "direct",
+    "11909531"
+   ]
+  ]
+ },
+ "Rictor,Protor": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Identification of <e2>Protor</e2> as a novel <e1>Rictor</e1>-binding component of mTOR complex-2. The mTOR (mammalian target of rapamycin) protein kinase is an important regulator of cell growth. Two complexes of mTOR have",
+    "direct",
+    "17461779"
+   ]
+  ]
+ },
+ "E2F6,E2F": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "regulation of human E2F6 repressor. E2F6 is believed to repress E2F-responsive genes and therefore serve a role in cell cycle regulation. Analysis of the human <e1>E2F6</e1> promoter region revealed the presence of two putative <e2>E2F</e2> binding sites, both of which were found to be functionally critical because deletion or mutations of these sites abolished promoter activity. Ectopic expression of",
+    "direct",
+    "16107498"
+   ]
+  ]
+ },
+ "RhoA,PLD1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "to be one such target several years ago; more recent work from our laboratory and others has demonstrated that of the two mammalian PLD isozymes, <e2>PLD1</e2> but not PLD2 is activated by <e1>RhoA</e1> and this activation proceeds through direct binding both in vitro and in vivo. In this study, using a series of RhoA mutants, we",
+    "direct",
+    "15993039"
+   ]
+  ]
+ },
+ "ATM,p53": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Activation of the <e1>ATM</e1> kinase by ionizing radiation and phosphorylation of <e2>p53</e2>. The p53 tumor suppressor protein is activated and phosphorylated on serine-15 in response to various DNA damaging agents. The gene product mutated in",
+    "direct",
+    "9733515"
+   ]
+  ]
+ },
+ "Keap1,p65": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Nuclear factor <e2>p65</e2> interacts with <e1>Keap1</e1> to repress the Nrf2-ARE pathway. Keap1 is an inhibitor of Nrf2 involved in Nrf2-dependent antioxidant response. However, the mechanisms on how Keap1 regulates Nrf2-ARE",
+    "direct",
+    "21262351"
+   ]
+  ]
+ },
+ "Mal,Toll/interleukin 1 receptor": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "the cytoplasmic tails of members of the Toll-like receptor/interleukin-1 receptor superfamily. The domain is essential for signaling and is also found in the adaptor proteins <e1>Mal</e1> (MyD88 adaptor-like) and MyD88, which function to couple activation of the receptor to downstream signaling components. Experimental structures of two <e2>Toll/interleukin 1 receptor</e2> domains reveal a alpha-beta-fold similar to that of the bacterial chemotaxis protein CheY, and other evidence suggests that the adaptors can make heterotypic",
+    "direct",
+    "12888566"
+   ]
+  ]
+ },
+ "Akt,tuberous sclerosis complex 2": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "growth by activation of the protein kinases Akt (also known as protein kinase B, PKB) and mammalian target of rapamycin (mTOR). It was reported that <e1>Akt</e1> activates mTOR by phosphorylation and inhibition of <e2>tuberous sclerosis complex 2</e2> (TSC2). However, in recent studies the physiological requirement of Akt phosphorylation of TSC2 for mTOR activation has been questioned. Here, we identify PRAS40",
+    "direct",
+    "17277771"
+   ]
+  ]
+ },
+ "IkappaB kinase,AML1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "of AML1-related leukemia are still elusive. Here, we explored immediate target pathways of AML1 by in vitro synchronous inactivation in hematopoietic cells. We found that <e2>AML1</e2> inhibits NF-kappaB signaling through interaction with <e1>IkappaB kinase</e1> complex in the cytoplasm. Remarkably, AML1 mutants found in myeloid tumors lack the ability to inhibit NF-kappaB signaling, and human cases with AML1-related leukemia",
+    "direct",
+    "22021368"
+   ]
+  ]
+ },
+ "Dkk,Krm": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Krm2 were later identified to be the high-affinity receptors for Dickkopf (Dkk), the inhibitor of Wnt/beta-catenin signalling. The formation of a ternary complex composed of <e2>Krm</e2>, <e1>Dkk</e1>, and Lrp5/6 (the coreceptor of Wnt) inhibits Wnt/beta-catenin signalling. In Xenopus gastrula embryos, Wnt/beta-catenin signalling regulates anterior-posterior patterning, with low-signalling in anterior regions. Inhibition",
+    "direct",
+    "18088386"
+   ]
+  ]
+ },
+ "Dkk,Lrp5/6": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "were later identified to be the high-affinity receptors for Dickkopf (Dkk), the inhibitor of Wnt/beta-catenin signalling. The formation of a ternary complex composed of Krm, <e1>Dkk</e1>, and <e2>Lrp5/6</e2> (the coreceptor of Wnt) inhibits Wnt/beta-catenin signalling. In Xenopus gastrula embryos, Wnt/beta-catenin signalling regulates anterior-posterior patterning, with low-signalling in anterior regions. Inhibition of Krm1/2",
+    "direct",
+    "18088386"
+   ]
+  ]
+ },
+ "Krm,Lrp5/6": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Krm2 were later identified to be the high-affinity receptors for Dickkopf (Dkk), the inhibitor of Wnt/beta-catenin signalling. The formation of a ternary complex composed of <e1>Krm</e1>, Dkk, and <e2>Lrp5/6</e2> (the coreceptor of Wnt) inhibits Wnt/beta-catenin signalling. In Xenopus gastrula embryos, Wnt/beta-catenin signalling regulates anterior-posterior patterning, with low-signalling in anterior regions. Inhibition of Krm1/2",
+    "direct",
+    "18088386"
+   ]
+  ]
+ },
+ "protein kinase Cdelta,biliverdin reductase": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Formation of ternary complex of human <e2>biliverdin reductase</e2>-<e1>protein kinase Cdelta</e1>-ERK2 protein is essential for ERK2-mediated activation of Elk1 protein, nuclear factor-kappaB, and inducible nitric-oxidase synthase (iNOS). Growth factors, insulin, oxidative stress, and cytokines",
+    "direct",
+    "22065579"
+   ]
+  ]
+ },
+ "protein kinase Cdelta,ERK2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Formation of ternary complex of human biliverdin reductase-<e1>protein kinase Cdelta</e1>-<e2>ERK2</e2> protein is essential for ERK2-mediated activation of Elk1 protein, nuclear factor-kappaB, and inducible nitric-oxidase synthase (iNOS). Growth factors, insulin, oxidative stress, and cytokines activate ERK1/2",
+    "direct",
+    "22065579"
+   ]
+  ]
+ },
+ "biliverdin reductase,ERK2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Formation of ternary complex of human <e1>biliverdin reductase</e1>-protein kinase Cdelta-<e2>ERK2</e2> protein is essential for ERK2-mediated activation of Elk1 protein, nuclear factor-kappaB, and inducible nitric-oxidase synthase (iNOS). Growth factors, insulin, oxidative stress, and cytokines activate ERK1/2",
+    "direct",
+    "22065579"
+   ]
+  ]
+ },
+ "TNFAIP3 interacting protein 1,Nef": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "PPARgamma and NF-kappaB regulate the gene promoter activity of their shared repressor, TNIP1. Human <e1>TNFAIP3 interacting protein 1</e1> (TNIP1) has diverse functions including support of HIV replication through its interaction with viral <e2>Nef</e2> and matrix proteins, reduction of TNFalpha-induced signaling through its interaction with NF-kappaB pathway proteins, and corepression of agonist-bound retinoic acid receptors and peroxisome proliferator-activated",
+    "direct",
+    "22001530"
+   ]
+  ]
+ },
+ "p73,p63": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "p63 and p73 transactivate differentiation gene promoters in human keratinocytes. p53 and its two homologues, <e1>p73</e1> and <e2>p63</e2>, share considerable structural similarities, an ability to interact between themselves and to transactivate the same promoters, including for example p21. Furthermore, p73 can",
+    "direct",
+    "10873608"
+   ]
+  ]
+ },
+ "p73,p53": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "p63 and p73 transactivate differentiation gene promoters in human keratinocytes. <e2>p53</e2> and its two homologues, <e1>p73</e1> and p63, share considerable structural similarities, an ability to interact between themselves and to transactivate the same promoters, including for example p21. Furthermore, p73",
+    "direct",
+    "10873608"
+   ]
+  ]
+ },
+ "p63,p53": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "p63 and p73 transactivate differentiation gene promoters in human keratinocytes. <e2>p53</e2> and its two homologues, p73 and <e1>p63</e1>, share considerable structural similarities, an ability to interact between themselves and to transactivate the same promoters, including for example p21. Furthermore, p73 can",
+    "direct",
+    "10873608"
+   ]
+  ]
+ },
+ "p53,TRRAP": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "critical in the p53 pathway because the mdm2 protein marks p53 for proteosome-mediated degradation, thereby providing a negative-feedback loop. Here we show that the ATM-related <e2>TRRAP</e2> protein functionally cooperates with <e1>p53</e1> to activate mdm2 transcription. TRRAP is a component of several multiprotein acetyltransferase complexes implicated in both transcriptional regulation and DNA repair. In support",
+    "direct",
+    "12138177"
+   ]
+  ]
+ },
+ "cyclin,Cdk": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "of the Cdk. Eukaryotic cell cycle progression is controlled by the ordered action of cyclin-dependent kinases, activation of which occurs through the binding of the <e1>cyclin</e1> to the <e2>Cdk</e2> followed by phosphorylation of a conserved threonine in the T-loop of the Cdk by Cdk-activating kinase (CAK). Despite our understanding of the structural",
+    "direct",
+    "11959850"
+   ]
+  ]
+ },
+ "Src,p27": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "<e2>p27</e2> phosphorylation by <e1>Src</e1> regulates inhibition of cyclin E-Cdk2. The kinase inhibitor p27Kip1 regulates the G1 cell cycle phase. Here, we present data indicating that the oncogenic",
+    "direct",
+    "17254967"
+   ]
+  ]
+ },
+ "hepatitis B virus X protein,E2F1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "p53 promoter and overcomes the repressive effect of hepatitis B viral X protein (Hbx) on the p53 promoter. The functional effect of the interaction of <e2>E2F1</e2> and <e1>hepatitis B virus X protein</e1> (HBx) on the promoter of human p53 gene was studied using chloramphenicol acetyl transferase (CAT) assay. E2F1 activated the p53 promoter through E2F1",
+    "direct",
+    "12625370"
+   ]
+  ]
+ },
+ "GLK,SLP-76": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "(TCR); however, the direct activator of PKC-theta is unknown. We report that the kinase GLK (MAP4K3) directly activated PKC-theta during TCR signaling. TCR signaling activated <e1>GLK</e1> by inducing its direct interaction with the upstream adaptor <e2>SLP-76</e2>. GLK-deficient mice had impaired immune responses and were resistant to experimental autoimmune encephalomyelitis. Consistent with that, people with systemic lupus erythematosus had considerable enhanced",
+    "direct",
+    "21983831"
+   ]
+  ]
+ },
+ "TBK1,NSs": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "encoded by the S segment, suppressed the beta interferon (IFN-beta) and NF-kappaB promoter activities, although NF-kappaB activation appears to facilitate SFTSV replication in human monocytes. <e2>NSs</e2> was found to be associated with <e1>TBK1</e1> and may inhibit the activation of downstream IRF and NF-kappaB signaling through this interaction. Interestingly, we demonstrated that the nucleoprotein (N), also encoded by",
+    "direct",
+    "22623799"
+   ]
+  ]
+ },
+ "Cdk4,D-type cyclins": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Cell cycle activation is coordinated by D-type cyclins which are rate limiting and essential for the progression through the G1 phase of the cell cycle. <e2>D-type cyclins</e2> bind to and activate the cyclin-dependent kinases <e1>Cdk4</e1> and Cdk6, which in turn phosphorylate their downstream target, the retinoblastoma protein Rb. Upon Rb phosphorylation, the E2F transcription factors activate the expression of",
+    "direct",
+    "12459251"
+   ]
+  ]
+ },
+ "NF-kappaB,BCR": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "BCR-directed activation of IkappaB kinase (IKK), which normally targets the NF-kappaB inhibitor IkappaBalpha for degradation. Taken together, these findings indicate that BTK couples IKK and <e1>NF-kappaB</e1> to the <e2>BCR</e2>. Interference with this coupling mechanism may contribute to the B cell deficiencies observed in XLA and xid.",
+    "direct",
+    "10811867"
+   ]
+  ]
+ },
+ "NF-kappaB,BTK": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "mutation also interferes with BCR-directed activation of IkappaB kinase (IKK), which normally targets the NF-kappaB inhibitor IkappaBalpha for degradation. Taken together, these findings indicate that <e2>BTK</e2> couples IKK and <e1>NF-kappaB</e1> to the BCR. Interference with this coupling mechanism may contribute to the B cell deficiencies observed in XLA and xid.",
+    "direct",
+    "10811867"
+   ]
+  ]
+ },
+ "BCR,BTK": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "mutation also interferes with BCR-directed activation of IkappaB kinase (IKK), which normally targets the NF-kappaB inhibitor IkappaBalpha for degradation. Taken together, these findings indicate that <e2>BTK</e2> couples IKK and NF-kappaB to the <e1>BCR</e1>. Interference with this coupling mechanism may contribute to the B cell deficiencies observed in XLA and xid.",
+    "direct",
+    "10811867"
+   ]
+  ]
+ },
+ "Gin4,septin": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "emergence and telophase and are immobile during S, G2, and M phases. Immobilization of the septins is dependent on both Cla4, a PAK-like kinase, and <e1>Gin4</e1>, a septin-dependent kinase that can phosphorylate the <e2>septin</e2> Shs1/Sep7. Induction of septin ring dynamics in telophase is triggered by the translocation of Rts1, a kinetochore-associated regulatory subunit of PP2A phosphatase, to the",
+    "direct",
+    "12636916"
+   ]
+  ]
+ },
+ "Fus3,Tec1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "whether signal-specific activation of mating and invasive growth involves regulation of the transcription factor Tec1 by Fus3 and Kss1. We present evidence that, during mating, <e1>Fus3</e1> phosphorylates <e2>Tec1</e2> to downregulate this invasive growth-specific transcription factor and its target genes. This function of Fus3 is essential for correct execution of the mating program",
+    "direct",
+    "15558284"
+   ]
+  ]
+ },
+ "NF-kappaB,IL-33": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The dual function cytokine <e2>IL-33</e2> interacts with the transcription factor <e1>NF-kappaB</e1> to dampen NF-kappaB-stimulated gene transcription. Full-length IL-33 is a member of the IL-1 family of cytokines, which can act in an autocrine or paracrine",
+    "direct",
+    "21734074"
+   ]
+  ]
+ },
+ "MPO,nitrite": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "state conditions by using sequential mixing stopped-flow analysis in the pH range 4-8. At 15 degrees C the rate of formation of the low spin <e1>MPO</e1>-<e2>nitrite</e2> complex is (2.5 +/- 0.2) x 10(4) m(-1) s(-1) at pH 7 and (2.2 +/- 0.7) x 10(6) m(-1) s(-1) at pH 5. The dissociation",
+    "direct",
+    "10777476"
+   ]
+  ]
+ },
+ "Na+-H+ exchanger,Na+": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-transport-of"
+  ],
+  "mentions": [
+   [
+    "Kinetic properties of the plasma membrane Na+-H+ exchanger. The plasma membrane <e1>Na+-H+ exchanger</e1> is a ubiquitous transport system that participates in diverse cell functions involving the cellular uptake of <e2>Na+</e2> or extrusion of H+. It has a tightly coupled 1:1 stoichiometry, has affinity for Li+ and NH+4 in addition to Na+ and H+,",
+    "direct",
+    "2581505"
+   ]
+  ]
+ },
+ "NF-kappaB,NRF": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Mapping of <e2>NRF</e2> binding motifs of <e1>NF-kappaB</e1> p65 subunit. NF-kappaB repressing factor (NRF) is a nuclear transcription factor that binds to a specific DNA sequence in NF-kappaB target promoters. Previous reports",
+    "direct",
+    "21821668"
+   ]
+  ]
+ },
+ "NF-kappaB,p65": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Mapping of NRF binding motifs of <e1>NF-kappaB</e1> <e2>p65</e2> subunit. NF-kappaB repressing factor (NRF) is a nuclear transcription factor that binds to a specific DNA sequence in NF-kappaB target promoters. Previous reports suggested",
+    "direct",
+    "21821668"
+   ]
+  ]
+ },
+ "NRF,p65": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Mapping of <e1>NRF</e1> binding motifs of NF-kappaB <e2>p65</e2> subunit. NF-kappaB repressing factor (NRF) is a nuclear transcription factor that binds to a specific DNA sequence in NF-kappaB target promoters. Previous reports suggested",
+    "direct",
+    "21821668"
+   ]
+  ]
+ },
+ "ROS,AT(1)R": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "contrast, nitric oxide (NO) decreases AT(1)R density through cysteine modification (S-nitrosylation) of a transcriptional factor, nuclear factor kappaB (NF-kappaB). The difference between the effects of <e1>ROS</e1> and NO on <e2>AT(1)R</e2> expression may be caused by the difference between intracellular location of ROS signaling and that of NO signaling, as the agonist-induced S-nitrosylation of NF-kappaB",
+    "direct",
+    "21078404"
+   ]
+  ]
+ },
+ "NO,AT(1)R": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "oxide (NO) decreases AT(1)R density through cysteine modification (S-nitrosylation) of a transcriptional factor, nuclear factor kappaB (NF-kappaB). The difference between the effects of ROS and <e1>NO</e1> on <e2>AT(1)R</e2> expression may be caused by the difference between intracellular location of ROS signaling and that of NO signaling, as the agonist-induced S-nitrosylation of NF-kappaB",
+    "direct",
+    "21078404"
+   ]
+  ]
+ },
+ "Elm1,Gin4": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Direct phosphorylation and activation of a Nim1-related kinase <e2>Gin4</e2> by <e1>Elm1</e1> in budding yeast. In budding yeast, Gin4, a Nim1-related kinase, plays an important role in proper organization of the septin ring at the",
+    "direct",
+    "16861226"
+   ]
+  ]
+ },
+ "LRP5,Frizzled": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "and the apolipoprotein E receptor 2. The LRP5 is a co-receptor of Wnt located on the osteoblast membrane between two other receptors, Frizzled and Kremen. <e2>Frizzled</e2> and <e1>LRP5</e1> bind to Wnt, thereby stabilizing beta-catenin and activating bone formation. When the dickkopf protein (Dkk) binds to Kremen and LRP5, this last undergoes",
+    "direct",
+    "15850991"
+   ]
+  ]
+ },
+ "LRP5,Wnt": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "apolipoprotein E receptor 2. The LRP5 is a co-receptor of Wnt located on the osteoblast membrane between two other receptors, Frizzled and Kremen. Frizzled and <e1>LRP5</e1> bind to <e2>Wnt</e2>, thereby stabilizing beta-catenin and activating bone formation. When the dickkopf protein (Dkk) binds to Kremen and LRP5, this last undergoes internalization and therefore",
+    "direct",
+    "15850991"
+   ]
+  ]
+ },
+ "Frizzled,Wnt": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "and the apolipoprotein E receptor 2. The LRP5 is a co-receptor of Wnt located on the osteoblast membrane between two other receptors, Frizzled and Kremen. <e1>Frizzled</e1> and LRP5 bind to <e2>Wnt</e2>, thereby stabilizing beta-catenin and activating bone formation. When the dickkopf protein (Dkk) binds to Kremen and LRP5, this last undergoes internalization and therefore",
+    "direct",
+    "15850991"
+   ]
+  ]
+ },
+ "sulfonyl,aminoimidazole-4-carboxamide ribonucleotide transformylase/IMP cyclohydrolase": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Crystal structures of human bifunctional enzyme <e2>aminoimidazole-4-carboxamide ribonucleotide transformylase/IMP cyclohydrolase</e2> in complex with potent <e1>sulfonyl</e1>-containing antifolates. Aminoimidazole-4-carboxamide ribonucleotide (AICAR) transformylase/IMP cyclohydrolase (ATIC) is a bifunctional enzyme with folate-dependent AICAR transformylase and IMP cyclohydrolase activities that catalyzes the last two",
+    "direct",
+    "14966129"
+   ]
+  ]
+ },
+ "sulfonyl,antifolates": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Crystal structures of human bifunctional enzyme aminoimidazole-4-carboxamide ribonucleotide transformylase/IMP cyclohydrolase in complex with potent <e1>sulfonyl</e1>-containing <e2>antifolates</e2>. Aminoimidazole-4-carboxamide ribonucleotide (AICAR) transformylase/IMP cyclohydrolase (ATIC) is a bifunctional enzyme with folate-dependent AICAR transformylase and IMP cyclohydrolase activities that catalyzes the last two steps of",
+    "direct",
+    "14966129"
+   ]
+  ]
+ },
+ "aminoimidazole-4-carboxamide ribonucleotide transformylase/IMP cyclohydrolase,antifolates": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Crystal structures of human bifunctional enzyme <e1>aminoimidazole-4-carboxamide ribonucleotide transformylase/IMP cyclohydrolase</e1> in complex with potent sulfonyl-containing <e2>antifolates</e2>. Aminoimidazole-4-carboxamide ribonucleotide (AICAR) transformylase/IMP cyclohydrolase (ATIC) is a bifunctional enzyme with folate-dependent AICAR transformylase and IMP cyclohydrolase activities that catalyzes the last two steps of",
+    "direct",
+    "14966129"
+   ]
+  ]
+ },
+ "beta-catenin,TCF": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "pathway regulates many developmental processes through a complex of beta-catenin and the T-cell factor/lymphoid enhancer factor (TCF/LEF) family of high-mobility-group transcription factors. Wnt stabilizes cytosolic <e1>beta-catenin</e1>, which then binds to <e2>TCF</e2> and activates gene transcription. This signalling cascade is conserved in vertebrates, Drosophila and Caenorhabditis elegans. In C. elegans, the proteins MOM-4 and LIT-1",
+    "direct",
+    "10391247"
+   ]
+  ]
+ },
+ "CDK,cyclins": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "S phase. The 'mitotic or G2 cyclins', which include cyclin A and cyclin B, are involved in the control of G2/M transition and mitosis. The <e2>cyclins</e2> bind to and activate the <e1>CDK</e1>, which leads to phosphorylation (and then inhibition) of the tumor suppressor protein, pRb. pRb controls commitment to progress from the G1 to S",
+    "direct",
+    "11355576"
+   ]
+  ]
+ },
+ "p105,c-Rel": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Identification of complex formation between two intracellular tyrosine kinase substrates: human <e2>c-Rel</e2> and the <e1>p105</e1> precursor of p50 NF-kappa B. Immune complexes of the product of the c-rel protooncogene and of p105, the p50 NF-kappa B precursor, isolated",
+    "direct",
+    "1437141"
+   ]
+  ]
+ },
+ "6,Toll-like receptor 2": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Cooperation of <e2>Toll-like receptor 2</e2> and <e1>6</e1> for cellular activation by soluble tuberculosis factor and Borrelia burgdorferi outer surface protein A lipoprotein: role of Toll-interacting protein and IL-1 receptor signaling",
+    "direct",
+    "11441107"
+   ]
+  ]
+ },
+ "p105,NF-kappa B": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-transport-of"
+  ],
+  "mentions": [
+   [
+    "The NF-kappa B precursor <e1>p105</e1> and the proto-oncogene product Bcl-3 are I kappa B molecules and control nuclear translocation of <e2>NF-kappa B</e2>. We have examined the interaction of the NF-kappa B precursor p105 with NF-kappa B subunits. Similar to an I kappa B molecule, p105 associates",
+    "direct",
+    "8428580"
+   ]
+  ]
+ },
+ "Bcl-3,NF-kappa B": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-transport-of"
+  ],
+  "mentions": [
+   [
+    "The NF-kappa B precursor p105 and the proto-oncogene product <e1>Bcl-3</e1> are I kappa B molecules and control nuclear translocation of <e2>NF-kappa B</e2>. We have examined the interaction of the NF-kappa B precursor p105 with NF-kappa B subunits. Similar to an I kappa B molecule, p105 associates",
+    "direct",
+    "8428580"
+   ]
+  ]
+ },
+ "EXT2,EXT1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The putative tumor suppressors <e2>EXT1</e2> and <e1>EXT2</e1> form a stable complex that accumulates in the Golgi apparatus and catalyzes the synthesis of heparan sulfate. Hereditary multiple exostoses, a dominantly inherited",
+    "direct",
+    "10639137"
+   ]
+  ]
+ },
+ "PTEN,RNA polymerase (Pol) III": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "frequently lost in human cancers, possesses a lipid phosphatase activity that represses phosphatidylinositol 3-kinase (PI3K) signaling, controlling cell growth, proliferation, and survival. The potential for <e1>PTEN</e1> to regulate the synthesis of <e2>RNA polymerase (Pol) III</e2> transcription products, including tRNAs and 5S rRNAs, was evaluated. The expression of PTEN in PTEN-deficient cells repressed RNA Pol III transcription, whereas decreased",
+    "direct",
+    "18391023"
+   ]
+  ]
+ },
+ "IRAK,Tollip": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "through its ability to potently suppress the activity of IL-1 receptor-associated kinase (IRAK) after TLR activation. In addition, we show for the first time that <e2>Tollip</e2> is a bona fide substrate for IRAK and is phosphorylated by <e1>IRAK</e1> upon stimulation with lipopolysaccharide or IL-1. Negative regulation of TLR signaling by Tollip may therefore serve to limit the production of proinflammatory mediators",
+    "direct",
+    "11751856"
+   ]
+  ]
+ },
+ "Mps1p,Spc110p": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Yeast <e1>Mps1p</e1> phosphorylates the spindle pole component <e2>Spc110p</e2> in the N-terminal domain. The yeast spindle pole body (SPB) component Spc110p (Nuf1p) undergoes specific serine/threonine phosphorylation as the mitotic spindle apparatus forms, and",
+    "direct",
+    "11278681"
+   ]
+  ]
+ },
+ "carnitine,acyl-CoA": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "tissues which have limited capacity to metabolize propionyl-CoA. These results also show propionyl-CoA must be formed during the metabolism of alpha-ketoisovalerate and that extra-mitochondrial free <e1>carnitine</e1> rapidly interacts with matrix short-chain aliphatic <e2>acyl-CoA</e2> generated from alpha-keto acids of branched-chain amino acids and pyruvate in the presence and absence of malate.",
+    "direct",
+    "3759988"
+   ]
+  ]
+ },
+ "Mpk1,Rlm1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Regulation of the yeast Rlm1 transcription factor by the Mpk1 cell wall integrity MAP kinase. The <e1>Mpk1</e1> MAP kinase of the Saccharomyces cerevisiae cell wall integrity signalling pathway phosphorylates and activates the <e2>Rlm1</e2> transcription factor in response to cell wall stress. Rlm1 is related to mammalian MEF2 isoforms, and shares a similar DNA-binding specificity. Signalling through",
+    "direct",
+    "12410835"
+   ]
+  ]
+ },
+ "p90 ribosomal S6 kinase (RSK) isoform 1,14-3-3beta": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>14-3-3beta</e2> is a <e1>p90 ribosomal S6 kinase (RSK) isoform 1</e1>-binding protein that negatively regulates RSK kinase activity. p90 ribosomal S6 kinase 1 (RSK1) is a serine/threonine kinase that is activated by extracellular signal-related",
+    "direct",
+    "12618428"
+   ]
+  ]
+ },
+ "Esa1p,Tra1p": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "NuA4, an essential transcription adaptor/histone H4 acetyltransferase complex containing <e1>Esa1p</e1> and the ATM-related cofactor <e2>Tra1p</e2>. Post-translational acetylation of histone H4 N-terminal tail in chromatin has been associated with several nuclear processes including transcription. We report the purification and characterization",
+    "direct",
+    "10487762"
+   ]
+  ]
+ },
+ "Esa1p,histone H4 acetyltransferase": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "NuA4, an essential transcription adaptor/<e2>histone H4 acetyltransferase</e2> complex containing <e1>Esa1p</e1> and the ATM-related cofactor Tra1p. Post-translational acetylation of histone H4 N-terminal tail in chromatin has been associated with several nuclear processes including transcription. We",
+    "direct",
+    "10487762"
+   ]
+  ]
+ },
+ "Tra1p,histone H4 acetyltransferase": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "NuA4, an essential transcription adaptor/<e2>histone H4 acetyltransferase</e2> complex containing Esa1p and the ATM-related cofactor <e1>Tra1p</e1>. Post-translational acetylation of histone H4 N-terminal tail in chromatin has been associated with several nuclear processes including transcription. We report the purification and characterization",
+    "direct",
+    "10487762"
+   ]
+  ]
+ },
+ "A20,ABIN": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The zinc finger protein <e1>A20</e1> inhibits TNF-induced NF-kappaB-dependent gene expression by interfering with an RIP- or TRAF2-mediated transactivation signal and directly binds to a novel NF-kappaB-inhibiting protein <e2>ABIN</e2>. The zinc finger protein A20 is a tumor necrosis factor (TNF)- and interleukin 1 (IL-1)-inducible protein that negatively regulates nuclear factor-kappa B (NF-kappaB)-dependent gene",
+    "direct",
+    "10385526"
+   ]
+  ]
+ },
+ "mTOR,elongation factor 2 kinase": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "A novel <e1>mTOR</e1>-regulated phosphorylation site in <e2>elongation factor 2 kinase</e2> modulates the activity of the kinase and its binding to calmodulin. Eukaryotic elongation factor 2 (eEF2) kinase is an unusual calcium- and calmodulin-dependent",
+    "direct",
+    "15024086"
+   ]
+  ]
+ },
+ "SWI5,HO": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "Parallel pathways of gene regulation: homologous regulators <e1>SWI5</e1> and ACE2 differentially control transcription of <e2>HO</e2> and chitinase. Two independent pathways of transcriptional regulation that show functional homology have been identified in yeast. It has been demonstrated previously that",
+    "direct",
+    "1730413"
+   ]
+  ]
+ },
+ "ACE2,HO": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "Parallel pathways of gene regulation: homologous regulators SWI5 and <e1>ACE2</e1> differentially control transcription of <e2>HO</e2> and chitinase. Two independent pathways of transcriptional regulation that show functional homology have been identified in yeast. It has been demonstrated previously that",
+    "direct",
+    "1730413"
+   ]
+  ]
+ },
+ "SUMO-1,NF-kappaB": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "Purification of <e1>SUMO-1</e1> modified IkappaBalpha and complex formation with <e2>NF-kappaB</e2>. Covalent modification of proteins with SUMO (Small Ubiquitin-like MOdifier) affects many cellular processes, including transcriptional regulation, DNA repair and signal transduction. Although hundreds of",
+    "direct",
+    "21708266"
+   ]
+  ]
+ },
+ "E2F,E2F8": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "of two distinct E2F-related DNA binding domains suggesting that E2F8 and, the recently, identified E2F7 form a subgroup within the E2F family. We show that <e1>E2F</e1> transcription factors bind the <e2>E2F8</e2> promoter in vivo and that expression of E2F8 is being induced at the G1/S transition. Purified recombinant E2F8 binds specifically to a consensus",
+    "direct",
+    "16179649"
+   ]
+  ]
+ },
+ "Bir1p,Aurora B": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "the regulation of septin dynamics during anaphase. Here, we present data that is consistent with there being multiple passenger protein complexes. Our data show that <e1>Bir1p</e1> links together a large passenger complex containing Ndc10p, Sli15p (INCENP), and Ipl1p (<e2>Aurora B</e2>) and that the interaction between Bir1p and Sli15p is specifically involved in regulating septin dynamics during anaphase. Neither conditional alleles nor mutants of BIR1",
+    "direct",
+    "17652458"
+   ]
+  ]
+ },
+ "Bir1p,Ndc10p": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "the regulation of septin dynamics during anaphase. Here, we present data that is consistent with there being multiple passenger protein complexes. Our data show that <e1>Bir1p</e1> links together a large passenger complex containing <e2>Ndc10p</e2>, Sli15p (INCENP), and Ipl1p (Aurora B) and that the interaction between Bir1p and Sli15p is specifically involved in regulating septin dynamics during anaphase. Neither",
+    "direct",
+    "17652458"
+   ]
+  ]
+ },
+ "Bir1p,INCENP": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "the regulation of septin dynamics during anaphase. Here, we present data that is consistent with there being multiple passenger protein complexes. Our data show that <e1>Bir1p</e1> links together a large passenger complex containing Ndc10p, Sli15p (<e2>INCENP</e2>), and Ipl1p (Aurora B) and that the interaction between Bir1p and Sli15p is specifically involved in regulating septin dynamics during anaphase. Neither conditional alleles",
+    "direct",
+    "17652458"
+   ]
+  ]
+ },
+ "Aurora B,Ndc10p": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "we present data that is consistent with there being multiple passenger protein complexes. Our data show that Bir1p links together a large passenger complex containing <e2>Ndc10p</e2>, Sli15p (INCENP), and Ipl1p (<e1>Aurora B</e1>) and that the interaction between Bir1p and Sli15p is specifically involved in regulating septin dynamics during anaphase. Neither conditional alleles nor mutants of BIR1",
+    "direct",
+    "17652458"
+   ]
+  ]
+ },
+ "Aurora B,INCENP": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "data that is consistent with there being multiple passenger protein complexes. Our data show that Bir1p links together a large passenger complex containing Ndc10p, Sli15p (<e2>INCENP</e2>), and Ipl1p (<e1>Aurora B</e1>) and that the interaction between Bir1p and Sli15p is specifically involved in regulating septin dynamics during anaphase. Neither conditional alleles nor mutants of BIR1",
+    "direct",
+    "17652458"
+   ]
+  ]
+ },
+ "Ndc10p,INCENP": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "we present data that is consistent with there being multiple passenger protein complexes. Our data show that Bir1p links together a large passenger complex containing <e1>Ndc10p</e1>, Sli15p (<e2>INCENP</e2>), and Ipl1p (Aurora B) and that the interaction between Bir1p and Sli15p is specifically involved in regulating septin dynamics during anaphase. Neither conditional alleles",
+    "direct",
+    "17652458"
+   ]
+  ]
+ },
+ "tumor necrosis factor receptor,SIVA": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "the mechanism by which p53 induces apoptosis is cell type-dependent. Using DNA microarray analysis, we have found a striking induction of the proapoptotic gene, SIVA. <e2>SIVA</e2> is a proapoptotic protein containing a death domain and interacts with members of the <e1>tumor necrosis factor receptor</e1> family as well as anti-apoptotic Bcl-2 family proteins. SIVA is induced following direct p53 gene delivery, treatment with a DNA-damaging agent camptothecin, and stroke",
+    "direct",
+    "15105421"
+   ]
+  ]
+ },
+ "ras,NF-kappaB": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Regulation of <e2>NF-kappaB</e2> RelA phosphorylation and transcriptional activity by p21(<e1>ras</e1>) and protein kinase Czeta in primary endothelial cells. The activity of the transcription factor NF-kappaB is thought to be regulated mainly through cytoplasmic retention",
+    "direct",
+    "10224130"
+   ]
+  ]
+ },
+ "protein kinase Czeta,NF-kappaB": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Regulation of <e2>NF-kappaB</e2> RelA phosphorylation and transcriptional activity by p21(ras) and <e1>protein kinase Czeta</e1> in primary endothelial cells. The activity of the transcription factor NF-kappaB is thought to be regulated mainly through cytoplasmic retention by IkappaB molecules.",
+    "direct",
+    "10224130"
+   ]
+  ]
+ },
+ "Mec1,Ddc1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "effector kinase. The checkpoint clamp greatly activates the kinase activity of Mec1, but only if the clamp is appropriately loaded upon partial duplex DNA. Activated <e1>Mec1</e1> phosphorylates the <e2>Ddc1</e2> and Mec3 subunits of the clamp, the Rad24 subunit of the loader, and the Rpa1 and Rpa2 subunits of RPA. Phosphorylation of Rad53,",
+    "direct",
+    "17189191"
+   ]
+  ]
+ },
+ "ASK1,thioredoxin": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "p38 MAP kinase pathways and is required for tumor necrosis factor (TNF)-alpha-induced apoptosis; however, the mechanism regulating ASK1 activity is unknown. Through genetic screening for <e1>ASK1</e1>-binding proteins, <e2>thioredoxin</e2> (Trx), a reduction/oxidation (redox)-regulatory protein thought to have anti-apoptotic effects, was identified as an interacting partner of ASK1. Trx associated with the N-terminal portion of",
+    "direct",
+    "9564042"
+   ]
+  ]
+ },
+ "MAP4K3,S6K1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "is stimulated by administration of amino acids, but not growth factors, and this is insensitive to rapamycin, most likely placing MAP4K3 upstream of mTOR. Indeed, <e1>MAP4K3</e1> is required for phosphorylation of known mTOR targets such as <e2>S6K1</e2> (S6 kinase 1), and overexpression of MAP4K3 promotes the rapamycin-sensitive phosphorylation of these same targets. Finally, knockdown of MAP4K3 levels causes a decrease",
+    "direct",
+    "17346240"
+   ]
+  ]
+ },
+ "protein kinase C,Hsp70": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The turn motif is a phosphorylation switch that regulates the binding of <e2>Hsp70</e2> to <e1>protein kinase C</e1>. Heat shock proteins play central roles in ensuring the correct folding and maturation of cellular proteins. Here we show that the heat shock",
+    "direct",
+    "12080070"
+   ]
+  ]
+ },
+ "NF-{kappa}B,activator protein 1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The <e2>activator protein 1</e2> binding motifs within the human cytomegalovirus major immediate-early enhancer are functionally redundant and act in a cooperative manner with the <e1>NF-{kappa}B</e1> sites during acute infection. Human cytomegalovirus (HCMV) infection causes a rapid induction of c-Fos and c-Jun, the major subunits of activator protein 1 (AP-1), which",
+    "direct",
+    "21106746"
+   ]
+  ]
+ },
+ "Nud1p,Spc72p": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "exit. Here, we describe that the core SPB component Nud1p is a key protein that functions in both processes. The astral microtubule organizing function of <e1>Nud1p</e1> is mediated by its interaction with the gamma-tubulin complex binding protein <e2>Spc72p</e2>. This function of Nud1p is distinct from its role in cell-cycle control: Nud1p binds the spindle checkpoint control proteins Bfa1p and Bub2p to the",
+    "direct",
+    "11101520"
+   ]
+  ]
+ },
+ "eukaryotic translation initiation factor 4A,Pdcd4": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "The transformation suppressor <e2>Pdcd4</e2> is a novel <e1>eukaryotic translation initiation factor 4A</e1> binding protein that inhibits translation. Pdcd4 is a novel transformation suppressor that inhibits tumor promoter-induced neoplastic transformation and the activation of AP-1-dependent transcription",
+    "direct",
+    "12482958"
+   ]
+  ]
+ },
+ "E6,p53": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "that is involved in the regulation of the G1/S phase transition by activating cyclin E/Cdk2 and cyclin A/Cdk2 complexes through removal of inhibitory phosphorylations. The <e1>E6</e1> and E7 oncoproteins of the high-risk human papillomaviruses (HPV) interact with and functionally abrogate the <e2>p53</e2> and pRB proteins, respectively. In the present study we have investigated the regulation of the Cdc25A promoter during G1 and S-phases of the",
+    "direct",
+    "11313986"
+   ]
+  ]
+ },
+ "Pkh2,Pkc1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "function. A temperature-sensitive mutant, pkh1(D398G) pkh2, was phenotypically similar to mutants defective in the Pkc1-mitogen-activated protein kinase (MAPK) pathway. Genetic epistasis analyses, the phosphorylation of <e2>Pkc1</e2> by <e1>Pkh2</e1> in vitro, and reduced Pkc1 activity in the pkh1(D398G) pkh2 mutant indicate that Pkh functions upstream of Pkc1. The Pkh2 phosphorylation site in",
+    "direct",
+    "10567559"
+   ]
+  ]
+ },
+ "mTOR,PA": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "our study, mitogenic stimulation of mammalian cells led to a phospholipase D-dependent accumulation of cellular PA, which was required for activation of mTOR downstream effectors. <e2>PA</e2> directly interacted with the domain in <e1>mTOR</e1> that is targeted by rapamycin, and this interaction was positively correlated with mTOR's ability to activate downstream effectors. The involvement of PA in",
+    "direct",
+    "11729323"
+   ]
+  ]
+ },
+ "Mad2,Bub3": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>Bub3</e2> interaction with <e1>Mad2</e1>, Mad3 and Cdc20 is mediated by WD40 repeats and does not require intact kinetochores. The kinetochore checkpoint pathway, involving the Mad1, Mad2, Mad3,",
+    "direct",
+    "11726501"
+   ]
+  ]
+ },
+ "14-3-3 tau,phosphoserine": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "events that are dependent on DNA damage-responsive protein kinases, such as ATM. How ATM phosphorylation leads to E2F1 stabilization is unknown. We now show that <e1>14-3-3 tau</e1>, a <e2>phosphoserine</e2>-binding protein, mediates E2F1 stabilization. 14-3-3 tau interacts with ATM-phosphorylated E2F1 during DNA damage and inhibits E2F1 ubiquitination. Depletion of 14-3-3 tau or E2F1, but not",
+    "direct",
+    "15494392"
+   ]
+  ]
+ },
+ "ASF1,histone H3": {
+  "relations": [
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "Acetylation of lysine 56 of <e2>histone H3</e2> catalyzed by RTT109 and regulated by <e1>ASF1</e1> is required for replisome integrity. In budding yeast, acetylation of histone H3 lysine 56 (H3-K56) is catalyzed by the Rtt109-Vps75 histone acetyltransferase (HAT)",
+    "direct",
+    "17690098"
+   ]
+  ]
+ },
+ "Snf4,Snf1": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Regulation of <e2>Snf1</e2> kinase. Activation requires phosphorylation of threonine 210 by an upstream kinase as well as a distinct step mediated by the <e1>Snf4</e1> subunit. The yeast Snf1 kinase and its metazoan orthologues, the AMP-activated protein kinases, are activated in response to nutrient limitation. Activation requires the",
+    "direct",
+    "11486005"
+   ]
+  ]
+ },
+ "spermidine/spermine N(1) -acetyl-transferase,spermine": {
+  "relations": [
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "Genomic identification and biochemical characterization of a second spermidine/spermine N1-acetyltransferase. In the polyamine back-conversion pathway, <e2>spermine</e2> and spermidine are first acetylated by <e1>spermidine/spermine N(1) -acetyl-transferase</e1> (SSAT-1) and then oxidized by polyamine oxidase to produce spermidine and putrescine respectively. Herein we apply homology-search methods to identify novel sequences belonging to a",
+    "direct",
+    "12803540"
+   ]
+  ]
+ },
+ "mTORC1,PRAS40": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "required for signaling downstream of this complex. Signaling through the mammalian target of rapamycin complex 1 (mTORC1) is positively regulated by amino acids and insulin. <e2>PRAS40</e2> associates with <e1>mTORC1</e1> (which contains raptor) but not mTORC2. PRAS40 interacts with raptor, and this requires an intact TOR-signaling (TOS) motif in PRAS40. Like TOS motif-containing proteins",
+    "direct",
+    "17604271"
+   ]
+  ]
+ },
+ "TNFalpha receptor-associated factor,Tir": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "receptor (Tir) effector has a potent and specific ability to inhibit NF-kappaB activation. Indeed, biochemical, imaging and immunoprecipitation studies reveal a novel inhibitory mechanism whereby <e2>Tir</e2> interaction with cytoplasm-located <e1>TNFalpha receptor-associated factor</e1> (TRAF) adaptor proteins induces their proteasomal-independent degradation. Infection studies support this Tir-TRAF relationship but reveal that Tir, like NleC and NleH, has a non-essential",
+    "direct",
+    "22144899"
+   ]
+  ]
+ },
+ "GSK3,TSC2": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Inoki et al. (2006) report that the kinases GSK3 and AMPK cooperate in the activation of TSC2 to inhibit mTOR activity. Surprisingly, the phosphorylation of <e2>TSC2</e2> by <e1>GSK3</e1> is markedly suppressed by Wnt signaling. This suggests that components of the mTOR pathway may be therapeutic targets for diseases linked to hyperactive",
+    "direct",
+    "16959561"
+   ]
+  ]
+ },
+ "TP53,HLA": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "genotyped 114 cases and 414 newborn controls from Wales (UK) for polymorphisms in TP53 (R72P), its negative regulator MDM2 (single-nucleotide polymorphism SNP309, rs2279744), and selected <e2>HLA</e2> complex genes whose products interact with <e1>TP53</e1>. TP53 R72P showed a risk association with gene dosage effect (P=0.002) resulting in a strong association of homozygous genotype (OR=2.9, 95% CI=1.5-5.6) and no",
+    "direct",
+    "19837266"
+   ]
+  ]
+ },
+ "quercetin,PML": {
+  "relations": [
+   "controls-expression-of"
+  ],
+  "mentions": [
+   [
+    "[Study of the effects of <e1>quercetin</e1> on <e2>PML</e2> gene and protein expression and localization in leukemia cells]. OBJECTIVE: To investigate PML gene and protein expression and localization in leukemia cell lines.",
+    "direct",
+    "12015078"
+   ]
+  ]
+ },
+ "calcineurin,NFAT": {
+  "relations": [
+   "controls-state-change-of",
+   "controls-phosphorylation-of"
+  ],
+  "mentions": [
+   [
+    "Blockade of NFAT activation by the second calcineurin binding site. Activation of <e2>NFAT</e2> transcription factors requires their dephosphorylation by the phosphatase <e1>calcineurin</e1> (CN). NFATs contain two CN binding motifs: PxIxIT and CnBP-B/CNBR2 (which we call LxVP). Here we carry out a detailed comparative analysis of the CN",
+    "direct",
+    "16407284"
+   ]
+  ]
+ },
+ "EZH2,E2F6": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "A novel repressive <e2>E2F6</e2> complex containing the polycomb group protein, EPC1, that interacts with <e1>EZH2</e1> in a proliferation-specific manner. The transcriptional repressor E2F6 has been identified as a component of two distinct polycomb group protein (PcG)-containing complexes, suggesting",
+    "direct",
+    "15536069"
+   ]
+  ]
+ },
+ "E2F,E2F1": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "negative (CHR) control. Chromatin immunoprecipitation assays identify multiple interactions of E2F proteins that include those previously shown to activate and repress transcription. We find that <e2>E2F1</e2>, E2F2, and E2F3 bind to the positive-acting <e1>E2F</e1> site in the cdc2 promoter, whereas E2F4 binds to the negative-acting site. We also find that binding of an activator E2F is dependent on",
+    "direct",
+    "15510213"
+   ]
+  ]
+ },
+ "c-Myc,NEMO": {
+  "relations": [
+   "in-complex-with"
+  ],
+  "mentions": [
+   [
+    "<e2>NEMO</e2> stabilizes <e1>c-Myc</e1> through direct interaction in the nucleus. The transcription factor c-Myc is a cellular oncoprotein generally upregulated in most of human cancers. NF-kappaB essential modulator",
+    "direct",
+    "20970423"
+   ]
+  ]
+ },
+ "p300,-3": {
+  "relations": [
+   "controls-state-change-of"
+  ],
+  "mentions": [
+   [
+    "and -3 belong to a structural and functional subfamily distinct from those of the other E2F family members. Here we report that E2F-1, -2, and <e2>-3</e2>, but not E2F-4, -5, and -6, associate with and are acetylated by <e1>p300</e1> and cAMP-response element-binding protein acetyltransferases. Acetylation occurs at three conserved lysine residues located at the N-terminal boundary of their DNA binding domains. Acetylation",
+    "direct",
+    "10753885"
+   ]
+  ]
+ }
+}
