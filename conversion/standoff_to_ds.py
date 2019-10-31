@@ -4,9 +4,12 @@ from bisect import bisect_right, bisect_left
 from pathlib import Path
 import argparse
 import json
+import scispacy
+import spacy
 
 unmappable = set()
 
+ENTITY_TYPES = {'Gene_or_gene_product'}
 TYPE_MAPPING = {
     'Gene_expression': ['controls-expression-of'],
     'Translation': ['controls-expression-of'],
@@ -32,33 +35,34 @@ def get_span(start, end, token_starts):
     Adapt annotations to token spans
     """
 
-    #token_ends = [len(tokens[0])]
-    #for token in tokens[1:]:
-        #new_end = token_ends[-1] + len(token) + 1
-        #token_ends.append(new_end)
+    # token_ends = [len(tokens[0])]
+    # for token in tokens[1:]:
+    # new_end = token_ends[-1] + len(token) + 1
+    # token_ends.append(new_end)
 
     new_start = bisect_right(token_starts, start) - 1
     new_end = bisect_left(token_starts, end)
 
     return (new_start, new_end)
 
+
 class Theme:
     registry = {}
 
-    def __init__(self, id, start, end, mention):
+    def __init__(self, id, start, end, mention, type):
         self.id = id
         self.start = start
         self.end = end
         self.mention = mention
         self.cause_of = []
         self.theme_of = []
+        self.type = type
 
     def __str__(self):
         return f"{self.id}: {self.mention}"
 
     def __repr__(self):
         return str(self)
-
 
     @staticmethod
     def from_line(line):
@@ -69,7 +73,7 @@ class Theme:
         end = int(end)
         mention = fields[2]
 
-        return Theme(start=start, end=end, id=id, mention=mention)
+        return Theme(start=start, end=end, id=id, mention=mention, type=type)
 
     def register(self):
         self.registry[self.id] = self
@@ -82,7 +86,6 @@ def get_theme_or_event(id):
         return Theme.registry[id]
     else:
         raise ValueError(id)
-
 
 
 class Event:
@@ -173,16 +176,15 @@ class Event:
     def get_regulators(self):
         regulators = []
         for event in self.theme_of:
-            if 'Regulation' in event.type:
+            if 'regulation' in event.type:
                 for cause in event.causes:
                     if isinstance(cause, Theme):
                         regulators.append(cause)
-                    else:
+                    elif isinstance(cause, Event):
                         regulators += cause.get_regulators()
                 regulators += event.get_regulators()
 
         return regulators
-
 
 
 def parse(lines):
@@ -197,7 +199,17 @@ def parse(lines):
             Event.from_line(line).register()
 
 
-def get_mention(e1: Theme, e2: Theme, text: str):
+def get_possible_pairs(themes):
+    possible_pairs = []
+
+    for e1, e2 in itertools.combinations(themes, 2):
+        if abs(e1.start - e2.start) < 300:
+            possible_pairs.append((e1, e2))
+
+    return possible_pairs
+
+
+def get_mention(e1: Theme, e2: Theme, doc):
     if e1.start < e2.start:
         left_ent = e1
         left_ent_tag = 'e1'
@@ -209,28 +221,36 @@ def get_mention(e1: Theme, e2: Theme, text: str):
         right_ent = e1
         right_ent_tag = 'e1'
 
-    new_text = text[:left_ent.start] + f"<{left_ent_tag}>" +\
-               text[left_ent.start:left_ent.end] + f"</{left_ent_tag}>" +\
-               text[left_ent.end:right_ent.start] + f"<{right_ent_tag}>" + \
-               text[right_ent.start:right_ent.end] + f"</{right_ent_tag}>" +\
-               text[right_ent.end:]
 
-    assert new_text.replace("<e1>", "").replace("</e1>", "").replace("<e2>", "").replace("</e2>", "") == text
+    snippet_start = None
+    snippet_end = None
+    for sent in doc.sents:
+        sent_start = sent[0].idx
+        sent_end = sent[-1].idx + len(str(sent[-1]))
+        if sent_end >= left_ent.start >= sent_start:
+            snippet_start = sent_start
 
-    tokens = new_text.split()
-    token_starts = [0]
-    for token in tokens[:-1]:
-        new_start = token_starts[-1] + len(token) + 1
-        token_starts.append(new_start)
+        if sent_end >= right_ent.end >= sent_start: # is sentence after right entity
+            snippet_end = sent_end
 
-    left_span = get_span(left_ent.start, left_ent.end, token_starts)
-    right_span = get_span(right_ent.start, right_ent.end, token_starts)
+    # adapt entity positions to text snippet
+    left_start = left_ent.start - snippet_start
+    left_end = left_ent.end - snippet_start
+    right_start = right_ent.start - snippet_start
+    right_end = right_ent.end - snippet_start
 
-    left_boundary = max(left_span[0] - 25, 0)
-    right_boundary = min(right_span[1] + 25, len(tokens))
-    truncated_tokens = tokens[left_boundary:right_boundary]
+    text = str(doc)[snippet_start:snippet_end]
 
-    return " ".join(truncated_tokens)
+    assert text[left_start:left_end] == left_ent.mention
+    assert text[right_start:right_end] == right_ent.mention
+
+    new_text = text[:left_start] + f"<{left_ent_tag}>" + \
+               text[left_start:left_end] + f"</{left_ent_tag}>" + \
+               text[left_end:right_start] + f"<{right_ent_tag}>" + \
+               text[right_start:right_end] + f"</{right_ent_tag}>" + \
+               text[right_end:]
+
+    return new_text
 
 
 def transform(fname, transformed_data):
@@ -242,8 +262,15 @@ def transform(fname, transformed_data):
         a2 = [l.strip() for l in f]
 
     parse(a1 + a2)
+    doc = nlp(txt)
 
     Event.resolve_all_ids()
+
+    for e1, e2 in get_possible_pairs([t for t in Theme.registry.values() if t.type in ENTITY_TYPES]):
+        transform_pair(e1, e2, relation_types=[], fname=fname, transformed_data=transformed_data,
+                       doc=doc, is_direct=False)
+        transform_pair(e2, e1, relation_types=[], fname=fname, transformed_data=transformed_data,
+                       doc=doc, is_direct=False)
 
     event: Event
     for event_id, event in Event.registry.items():
@@ -256,13 +283,18 @@ def transform(fname, transformed_data):
         else:
             relation_types = TYPE_MAPPING[event.type]
 
-
         if event.type == 'Binding':
             for e1, e2 in itertools.combinations(event.themes, 2):
-                transform_pair(e1, e2, relation_types, fname, transformed_data, txt)
+                if e1.type not in ENTITY_TYPES or e2.type not in ENTITY_TYPES:
+                    continue
+                transform_pair(e1, e2, relation_types, fname, transformed_data, doc, is_direct=True)
+                transform_pair(e2, e1, relation_types, fname, transformed_data, doc, is_direct=True)
         elif event.type == 'Dissociation':
             for e1, e2 in itertools.combinations(event.products, 2):
-                transform_pair(e1, e2, relation_types, fname, transformed_data, txt)
+                if e1.type not in ENTITY_TYPES or e2.type not in ENTITY_TYPES:
+                    continue
+                transform_pair(e1, e2, relation_types, fname, transformed_data, doc, is_direct=True)
+                transform_pair(e1, e1, relation_types, fname, transformed_data, doc, is_direct=True)
         else:
             causes += event.causes
             causes += event.get_regulators()
@@ -271,23 +303,35 @@ def transform(fname, transformed_data):
             cause: Theme
             for theme in themes:
                 for cause in causes:
-                    transform_pair(cause, theme, relation_types, fname, transformed_data, txt)
+                    if theme.type not in ENTITY_TYPES or cause.type not in ENTITY_TYPES:
+                        continue
+                    transform_pair(cause, theme, relation_types, fname, transformed_data, doc, is_direct=True)
 
-        return transformed_data
 
 
-def transform_pair(e1, e2, relation_types, fname, transformed_data, txt):
-    pair = f"{e1.mention},{e2.mention}"
+    return transformed_data
+
+
+def transform_pair(e1, e2, relation_types, fname, transformed_data, doc, is_direct=False):
+    e1_id = e1.mention.replace(',', '').replace('/', '')
+    e2_id = e2.mention.replace(',', '').replace('/', '')
+    pair = f"{e1_id},{e2_id}"
     if pair not in transformed_data:
         transformed_data[pair] = {
             'relations': set(),
-            'mentions': []
+            'mentions': set()
         }
     transformed_data[pair]['relations'].update(relation_types)
-    mention = get_mention(e1=e1, e2=e2, text=txt)
-    transformed_data[pair]['mentions'].append(
-        [mention, "direct", os.path.basename(fname).split("PMID-")[1]]
+    mention = get_mention(e1=e1, e2=e2, doc=doc)
+    if is_direct:
+        transformed_data[pair]['mentions'] = set(m for m in transformed_data[pair]['mentions'] if m[0] != mention)
+        transformed_data[pair]['mentions'].add(
+            (mention, "direct", os.path.basename(fname).split("PMID-")[1])
     )
+    else:
+        transformed_data[pair]['mentions'].add(
+            (mention, "distant", os.path.basename(fname).split("PMID-")[1])
+        )
 
 
 if __name__ == '__main__':
@@ -300,17 +344,18 @@ if __name__ == '__main__':
     fnames = [str(fname.stem) for fname in data.glob('*.txt')]
 
     transformed_data = {}
+    nlp = spacy.load('en_core_sci_sm', disable=['tagger'])
 
     for fname in fnames:
         Event.registry = {}
         Theme.registry = {}
-        transform(str(data/fname), transformed_data)
+        transform(str(data / fname), transformed_data)
 
-    for v in transformed_data.values():
-        v['relations'] = list(v['relations'])
-
+    json_compatible_data = {}
+    for k, v in transformed_data.items():
+        new_v = {'relations': list(v['relations']),
+                 'mentions': [list(m) for m in v['mentions']]}
+        json_compatible_data[k] = new_v
 
     with open(args.out, "w") as f:
-        json.dump(transformed_data, f, indent=1)
-
-    print(unmappable)
+        json.dump(json_compatible_data, f, indent=1)

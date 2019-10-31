@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 class DistantBertDataset(Dataset):
 
-    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False):
+    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False, subsample_negative=0.1):
         self.file = h5py.File(path, 'r', driver='core')
         self.max_bag_size = max_bag_size
         self.max_length = max_length
@@ -19,12 +19,26 @@ class DistantBertDataset(Dataset):
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
         self.labels = self.file['labels'][:]
+
         if ignore_no_mentions:
             filtered_pairs = []
             filtered_labels = []
             filtered_entity_ids = []
             for pair, label, entity_id in zip(self.pairs, self.labels, self.entity_ids):
                 if pair in self.file['token_ids']:
+                    filtered_pairs.append(pair)
+                    filtered_labels.append(label)
+                    filtered_entity_ids.append(entity_id)
+            self.pairs = filtered_pairs
+            self.labels = np.vstack(filtered_labels)
+            self.entity_ids = np.vstack(filtered_entity_ids)
+
+        if subsample_negative < 1.0:
+            filtered_pairs = []
+            filtered_labels = []
+            filtered_entity_ids = []
+            for pair, label, entity_id in zip(self.pairs, self.labels, self.entity_ids):
+                if label.sum() > 0 or np.random.uniform(0, 1) <= subsample_negative:
                     filtered_pairs.append(pair)
                     filtered_labels.append(label)
                     filtered_entity_ids.append(entity_id)
@@ -46,6 +60,7 @@ class DistantBertDataset(Dataset):
         token_ids = self.file.get(f"token_ids/{pair}", np.array([[-1]]))[:]
         attention_masks = self.file.get(f"attention_masks/{pair}", np.array([[-1]]))[:]
         entity_pos = self.file.get(f"entity_positions/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
+        is_direct = self.file.get(f"is_direct/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
         pmids = self.file.get(f"pmids/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
         labels = self.labels[idx]
         entity_ids = self.entity_ids[idx]
@@ -53,6 +68,7 @@ class DistantBertDataset(Dataset):
         token_ids = token_ids[:self.max_bag_size, :self.max_length]
         attention_masks = attention_masks[:self.max_bag_size, :self.max_length]
         entity_pos = entity_pos[:self.max_bag_size]
+        is_direct = is_direct[:self.max_bag_size]
 
 
         sample = {
@@ -61,6 +77,7 @@ class DistantBertDataset(Dataset):
             "entity_pos": torch.from_numpy(entity_pos).long(),
             "entity_ids": torch.from_numpy(entity_ids).long(),
             "labels": torch.from_numpy(labels).long(),
+            "is_direct": torch.from_numpy(is_direct).long(),
             "has_mentions": torch.tensor([token_ids[0][0] >= 0]).bool(),
             "pmids": torch.tensor(pmids).long()
         }

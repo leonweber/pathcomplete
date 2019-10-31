@@ -20,7 +20,6 @@ from model import BagOnly, Complex
 
 logger = logging.getLogger(__name__)
 
-
 MODEL_TYPES = {
     'complex': Complex,
     'bag': BagOnly
@@ -56,14 +55,18 @@ def train(args, train_dataset, model):
             raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
 
-
     global_step = 0
     loss_fun = nn.BCEWithLogitsLoss()
+    direct_loss_fun = nn.BCEWithLogitsLoss()
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
-        tr_loss, logging_loss = 0.0, 0.0
-        y_pred, y_true = deque(maxlen=1000), deque(maxlen=1000)
+        tr_loss = 0.0
+        logging_losses = []
+        logging_direct_losses = []
+        logging_distant_losses = []
+        y_pred, y_true = deque(maxlen=100), deque(maxlen=100)
+        y_pred_prov, y_true_prov = deque(maxlen=100), deque(maxlen=100)
         epoch_iterator = tqdm(enumerate(train_dataloader), desc="Iteration", total=len(train_dataloader))
         for step, batch in epoch_iterator:
             model.train()
@@ -73,22 +76,21 @@ def train(args, train_dataset, model):
             y_pred.append(logits.cpu().detach().numpy())
             y_true.append(batch['labels'].cpu().numpy())
 
-            loss = loss_fun(logits, batch['labels'].float())
-            ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
+            distant_loss = loss_fun(logits, batch['labels'].float())
+            logging_distant_losses.append(distant_loss.item())
 
-            log_dict = {'loss': loss.item(), 'ap': ap}
-            for k, v in meta.items():
-                if hasattr(v, 'detach'):
-                    v = v.detach()
-                if hasattr(v, 'cpu'):
-                    v = v.cpu().numpy()
-                if '_hist' in k:
-                    v = wandb.Histogram(np_histogram=v)
+            # if batch['is_direct'].sum() > 0:
+            # direct_loss = direct_loss_fun(meta['alphas'], batch['is_direct'].float())
+            # logging_direct_losses.append(direct_loss.item())
 
-                log_dict[k] = v
+            y_pred_prov.append(meta['alphas'].cpu().detach().numpy().ravel())
+            y_true_prov.append(batch['is_direct'].cpu().numpy().ravel())
 
-            wandb.log(log_dict, step=global_step)
-            epoch_iterator.set_postfix_str(f"loss: {loss.item()}, ap: {ap}")
+            # lambda_ = 0.5
+            # loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
+            # else:
+            #     loss = distant_loss
+            loss = distant_loss
 
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -99,16 +101,42 @@ def train(args, train_dataset, model):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             tr_loss += loss.item()
+            logging_losses.append(loss.item())
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
+                ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
+                direct_ap = average_precision_score(np.hstack(y_true_prov), np.hstack(y_pred_prov), average='micro')
+                log_dict = {
+                    'loss': np.mean(logging_losses),
+                    # 'direct_loss': np.mean(logging_direct_losses),
+                    'distant_loss': np.mean(logging_distant_losses),
+                    'distant_ap': ap,
+                    'direct_ap': direct_ap,
+                }
+                for k, v in meta.items():
+                    if hasattr(v, 'detach'):
+                        v = v.detach()
+                    if hasattr(v, 'cpu'):
+                        v = v.cpu().numpy()
+                    if '_hist' in k:
+                        v = wandb.Histogram(np_histogram=v)
+
+                    log_dict[k] = v
+
+                wandb.log(log_dict, step=global_step)
+                epoch_iterator.set_postfix_str(f"loss: {log_dict['loss']}, ap: {ap}")
+                logging_losses = []
+                logging_direct_losses = []
+                logging_distant_losses = []
+
         output_dir = args.output_dir / f'checkpoint-{global_step}'
         os.makedirs(output_dir, exist_ok=True)
         model.to('cpu')
-        torch.save(model.state_dict(), output_dir/'weights.th')
+        torch.save(model.state_dict(), output_dir / 'weights.th')
         torch.save(args, os.path.join(output_dir, 'training_args.bin'))
         logger.info("Saving model checkpoint to %s", output_dir)
         model.to(args.device)
@@ -137,13 +165,13 @@ if __name__ == '__main__':
     parser.add_argument("--max_bag_size", default=None, type=int)
     parser.add_argument("--max_length", default=None, type=int)
     parser.add_argument("--tensor_emb_size", default=200, type=int)
+    parser.add_argument("--subsample_negative", default=1.0, type=float)
     parser.add_argument("--model_type", default='complex', choices=MODEL_TYPES.keys())
     parser.add_argument('--ignore_no_mentions', action='store_true')
 
     args = parser.parse_args()
 
     wandb.init(project="distant_paths")
-
 
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
     args.n_gpu = torch.cuda.device_count()
@@ -156,7 +184,8 @@ if __name__ == '__main__':
         args.train,
         max_bag_size=args.max_bag_size,
         max_length=args.max_length,
-        ignore_no_mentions=args.ignore_no_mentions
+        ignore_no_mentions=args.ignore_no_mentions,
+        subsample_negative=args.subsample_negative
     )
     dev_dataset = DistantBertDataset(
         args.dev,

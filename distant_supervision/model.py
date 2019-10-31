@@ -1,3 +1,4 @@
+import math
 from copy import deepcopy
 
 import transformers
@@ -24,16 +25,30 @@ class BagEmbedder(nn.Module):
     def __init__(self, bert, args):
         super(BagEmbedder, self).__init__()
         self.bert = DataParallel(transformers.BertModel.from_pretrained(bert))
-        self.ff_attention = nn.Linear(768, 1)
+        self.key = nn.Linear(768, 64)
+        self.query = nn.Embedding(1, 64)
+        self._init_weights = self.bert.module._init_weights
+
+        self._init_weights(self.key)
+        self._init_weights(self.query)
+        self.bert.apply(self._init_weights)
 
     def forward(self, token_ids, attention_masks, entity_pos, **kwargs):
         x, _ = self.bert(token_ids, attention_masks)
-        x = x[0]
+        x = x[:, 0, ...]
 
-        alphas = torch.sigmoid(self.ff_attention(x))
-        x = torch.max(alphas * x, dim=0)[0]
+        keys = self.key(x)
+        query = self.query(torch.tensor([0]).to(keys.device))
 
-        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': alphas}
+        alphas = (keys @ query.t()) / math.sqrt(64)
+        alphas = torch.softmax(alphas, dim=0)
+        # alphas = torch.sigmoid(self.ff_attention(x))
+        x = (x * alphas).sum(dim=0)
+        # alphas = torch.zeros(5, 1)
+        # x = torch.max(x, dim=0)[0]
+
+        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': alphas.squeeze(1)}
+
         return x, meta
 
 
@@ -42,7 +57,11 @@ class BagOnly(nn.Module):
         super().__init__()
         self.bag_embedder = BagEmbedder(bert, args)
         self.ff_output = nn.Linear(768, args.n_classes)
-        self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
+        self.no_mentions_emb = nn.Embedding(1, 768)
+        self._init_weights = self.bag_embedder._init_weights
+
+        self._init_weights(self.ff_output)
+        self._init_weights(self.no_mentions_emb)
 
     def forward(self, token_ids, attention_masks, entity_pos, has_mentions, **kwargs):
         meta = {}
@@ -51,7 +70,7 @@ class BagOnly(nn.Module):
             x, m = self.bag_embedder(token_ids, attention_masks, entity_pos)
             meta.update(m)
         else:
-            x = self.no_mentions_emb
+            x = self.no_mentions_emb(torch.tensor(0).to(token_ids.device))
         x = self.ff_output(x)
 
         return x, meta

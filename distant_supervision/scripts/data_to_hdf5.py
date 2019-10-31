@@ -18,17 +18,15 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
     all_pmids = []
     n_failed = 0
 
-    for mention in example['mentions']:
+    for mention_fields in example['mentions']:
         e1_start = None
         e1_end = None
         e2_start = None
         e2_end = None
         token_ids = []
 
-        all_directs.append(mention[1] == 'direct')
-        all_pmids.append(int(mention[2].strip()))
 
-        mention = mention[0].lower()
+        mention = mention_fields[0].lower()
         for token in mention.split():
             is_e1_start = '<e1>' in token
             is_e2_start = '<e2>' in token
@@ -48,21 +46,24 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
             if is_e2_end:
                 e2_end = len(token_ids)
 
-        while len(token_ids) + 2 > max_seq_len:
-            left_buffer = min(e1_start, e2_start)
-            right_buffer = min(e1_end, e2_end)
-            if left_buffer > right_buffer:
-                token_ids = token_ids[1:]
-                e1_start -= 1
-                e2_start -= 1
-                e1_end -= 1
-                e2_end -= 1
-            else:
-                token_ids = token_ids[:-1]
-
-        if min(e1_start, e2_start) < 0 or max(e1_end, e2_end) > max_seq_len:
+        if len(token_ids) + 2 > max_seq_len:
             n_failed += 1
             continue
+        # while len(token_ids) + 2 > max_seq_len:
+        #     left_buffer = min(e1_start, e2_start)
+        #     right_buffer = min(e1_end, e2_end)
+        #     if left_buffer > right_buffer:
+        #         token_ids = token_ids[1:]
+        #         e1_start -= 1
+        #         e2_start -= 1
+        #         e1_end -= 1
+        #         e2_end -= 1
+        #     else:
+        #         token_ids = token_ids[:-1]
+        #
+        # if min(e1_start, e2_start) < 0 or max(e1_end, e2_end) > max_seq_len:
+        #     n_failed += 1
+        #     continue
 
         token_ids = tokenizer.convert_tokens_to_ids(['[CLS]']) + token_ids + tokenizer.convert_tokens_to_ids(['[SEP]'])
         e1_start += 1
@@ -76,6 +77,8 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
             token_ids.extend(tokenizer.convert_tokens_to_ids(['[PAD]']) * (max_seq_len - len(token_ids)))
 
         all_token_ids.append(token_ids)
+        all_directs.append(mention_fields[1] == 'direct')
+        all_pmids.append(int(mention_fields[2].strip()))
         all_attention_masks.append(attention_mask)
         all_entity_positions.append([[e1_start, e1_end], [e2_start, e2_end]])
 
@@ -83,7 +86,9 @@ def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
         all_token_ids = np.array(all_token_ids)
         all_entity_positions = np.array(all_entity_positions)
         all_attention_masks = np.array(all_attention_masks)
+        all_directs = np.array(all_directs)
 
+        assert all_token_ids.shape[0] == all_entity_positions.shape[0] == all_attention_masks.shape[0] == all_directs.shape[0]
         return all_token_ids, all_attention_masks, all_entity_positions, all_pmids, all_directs, n_failed
 
     else:
@@ -95,32 +100,49 @@ if __name__ == '__main__':
     parser.add_argument('input')
     parser.add_argument('output')
     parser.add_argument('--tokenizer', required=True)
-    parser.add_argument('--entity_dict', required=True, type=Path)
-    parser.add_argument('--label_dict', required=True, type=Path)
+    parser.add_argument('--entity_dict', type=Path)
+    parser.add_argument('--label_dict', type=Path)
+    parser.add_argument('--max_seq_len', type=int, default=256)
     args = parser.parse_args()
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer)
     tokenizer.add_special_tokens({ 'additional_special_tokens': ['<e1>','</e1>', '<e2>', '</e2>'] })
 
+    with open(args.input) as f:
+        data = json.load(f)
+
     entity_dict = {}
-    with args.entity_dict.open() as f:
-        for line in f:
-            id, item = line.strip().split('\t')
-            entity_dict[item] = int(id)
+    if args.entity_dict:
+        with args.entity_dict.open() as f:
+            for line in f:
+                id, item = line.strip().split('\t')
+                entity_dict[item] = int(id)
+    else:
+        for pair in data:
+            e1, e2 = pair.split(',')
+            if e1 not in entity_dict:
+                entity_dict[e1] = len(entity_dict)
+            if e2 not in entity_dict:
+                entity_dict[e2] = len(entity_dict)
+
     entities = [None for _ in entity_dict]
     for item, id in entity_dict.items():
         entities[id] = item
 
     label_dict = {}
-    with args.label_dict.open() as f:
-        for line in f:
-            id, item = line.strip().split('\t')
-            label_dict[item] = int(id)
+    if args.label_dict:
+        with args.label_dict.open() as f:
+            for line in f:
+                id, item = line.strip().split('\t')
+                label_dict[item] = int(id)
+    else:
+        for i in data.values():
+            for rel in i['relations']:
+                if rel not in label_dict:
+                    label_dict[rel] = len(label_dict)
+
     labels = [None for _ in label_dict]
     for item, id in label_dict.items():
         labels[id] = item
-
-    with open(args.input) as f:
-        data = json.load(f)
 
     label_binarizer = MultiLabelBinarizer(classes=labels)
     labels = []
@@ -130,7 +152,8 @@ if __name__ == '__main__':
         data_it = tqdm(data.items())
         for pair, example in data_it:
             token_ids, attention_masks, entity_positions, pmids, is_direct, n_failed = example_to_features(example,
-                                                                                                           tokenizer)
+                                                                                                           tokenizer,
+                                                                                                           max_seq_len=args.max_seq_len)
 
             if token_ids is not None:
                 f.create_dataset(f"token_ids/{pair}", data=token_ids, dtype='i')
