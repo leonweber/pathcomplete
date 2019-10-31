@@ -7,25 +7,30 @@ from torch.utils.data import Dataset
 class DistantBertDataset(Dataset):
 
     def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False):
-        self.file = h5py.File(path, 'r')
+        self.file = h5py.File(path, 'r', driver='core')
         self.max_bag_size = max_bag_size
         self.max_length = max_length
         self.pairs = []
-        for e1_id, e2_id in self.file['entity_ids']:
-            e1 = self.file['id2entity'][e1_id].decode()
-            e2 = self.file['id2entity'][e2_id].decode()
+        self.entity_ids = self.file['entity_ids'][:]
+        self.id2entity = self.file['id2entity'][:]
+        for e1_id, e2_id in self.entity_ids:
+            e1 = self.id2entity[e1_id].decode()
+            e2 = self.id2entity[e2_id].decode()
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
         self.labels = self.file['labels'][:]
         if ignore_no_mentions:
             filtered_pairs = []
             filtered_labels = []
-            for pair, label in zip(self.pairs, self.labels):
+            filtered_entity_ids = []
+            for pair, label, entity_id in zip(self.pairs, self.labels, self.entity_ids):
                 if pair in self.file['token_ids']:
                     filtered_pairs.append(pair)
                     filtered_labels.append(label)
+                    filtered_entity_ids.append(entity_id)
             self.pairs = filtered_pairs
             self.labels = np.vstack(filtered_labels)
+            self.entity_ids = np.vstack(filtered_entity_ids)
 
         self.n_classes = len(self.file['id2label'])
         self.n_entities = len(self.file['id2entity'])
@@ -43,7 +48,7 @@ class DistantBertDataset(Dataset):
         entity_pos = self.file.get(f"entity_positions/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
         pmids = self.file.get(f"pmids/{pair}", np.array([[-1]]))[:] # bag_size x e1/e2 x start/end
         labels = self.labels[idx]
-        entity_ids = self.file["entity_ids"][idx]
+        entity_ids = self.entity_ids[idx]
 
         token_ids = token_ids[:self.max_bag_size, :self.max_length]
         attention_masks = attention_masks[:self.max_bag_size, :self.max_length]

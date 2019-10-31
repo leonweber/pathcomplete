@@ -5,6 +5,7 @@ import numpy as np
 from torch import nn
 import torch
 from torch.nn import DataParallel
+from transformers import BertPreTrainedModel
 
 
 def aggregate_provenance_predictions(alphas, pmids):
@@ -21,21 +22,13 @@ def aggregate_provenance_predictions(alphas, pmids):
 
 class BagEmbedder(nn.Module):
     def __init__(self, bert, args):
-        super().__init__()
+        super(BagEmbedder, self).__init__()
         self.bert = DataParallel(transformers.BertModel.from_pretrained(bert))
-        self.ff_attention = nn.Linear(768*2, 1)
-
+        self.ff_attention = nn.Linear(768, 1)
 
     def forward(self, token_ids, attention_masks, entity_pos, **kwargs):
         x, _ = self.bert(token_ids, attention_masks)
-        e1_embs = []
-        e2_embs = []
-        for sent_emb, sent_ent_pos in zip(x, entity_pos): # embed starts of entities following https://arxiv.org/abs/1906.03158
-            e1_embs.append(sent_emb[sent_ent_pos[0, 0]])
-            e2_embs.append(sent_emb[sent_ent_pos[1, 0]])
-        e1_embs = torch.stack(e1_embs)
-        e2_embs = torch.stack(e2_embs)
-        x = torch.cat([e1_embs, e2_embs], dim=-1)
+        x = x[0]
 
         alphas = torch.sigmoid(self.ff_attention(x))
         x = torch.max(alphas * x, dim=0)[0]
@@ -48,8 +41,8 @@ class BagOnly(nn.Module):
     def __init__(self, bert, args):
         super().__init__()
         self.bag_embedder = BagEmbedder(bert, args)
-        self.ff_output = nn.Linear(768*2, args.n_classes)
-        self.no_mentions_emb = nn.Parameter(torch.zeros(768*2).uniform_(-0.02, 0.02))
+        self.ff_output = nn.Linear(768, args.n_classes)
+        self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
 
     def forward(self, token_ids, attention_masks, entity_pos, has_mentions, **kwargs):
         meta = {}
@@ -72,7 +65,7 @@ class Complex(nn.Module):
         self.r_re_embedding = nn.Embedding(args.n_classes, self.tensor_emb_size)
         self.r_im_embedding = nn.Embedding(args.n_classes, self.tensor_emb_size)
         self.bag_embedder = BagEmbedder(bert, args)
-        self.no_mentions_emb = nn.Parameter(torch.zeros(768*2).uniform_(-0.02, 0.02))
+        self.no_mentions_emb = nn.Parameter(torch.zeros(768).uniform_(-0.02, 0.02))
         self.ff_gate = nn.Sequential(
             nn.Linear(2 * self.tensor_emb_size, 1),
             nn.Sigmoid()

@@ -26,8 +26,11 @@ def predict(dataset, model, args):
 
         e1, e2 = batch['entity_ids']
 
+
         e1 = dataset.file['id2entity'][e1].decode()
         e2 = dataset.file['id2entity'][e2].decode()
+
+        assert f"{e1},{e2}" in dataset.pairs
 
         provenance = aggregate_provenance_predictions(meta['alphas'], batch['pmids'])
 
