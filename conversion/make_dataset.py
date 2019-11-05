@@ -22,7 +22,16 @@ INTERACTION_TYPES = {
     'interacts-with',
     'neighbor-of'
 }
+import os, sys
 
+class HiddenPrints:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 def subsample_genes(df, size):
     neighbours = defaultdict(list)
@@ -48,13 +57,27 @@ def subsample_genes(df, size):
     return selected_nodes
 
 
+def natural_language_to_uniprot(string, mg):
+    string = string.replace("/", " ").replace("+", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "")
+    with HiddenPrints():
+        res = mg.query(string, size=1, fields='uniprot')['hits']
+    if res and 'uniprot' in res[0]:
+        if 'Swiss-Prot' in res[0]['uniprot']:
+            uniprot = res[0]['uniprot']['Swiss-Prot']
+            return uniprot
+
+    return None
+
+
+
 
 def hgnc_to_uniprot(symbol, mapping, mg):
     try:
         symbol = mapping[symbol]
         return symbol
     except KeyError as ke:
-        res = mg.query('symbol:%s' % symbol, size=1, fields='uniprot')['hits']
+        with HiddenPrints():
+            res = mg.query('symbol:%s' % symbol, size=1, fields='uniprot')['hits']
         if res and 'uniprot' in res[0]:
             if 'Swiss-Prot' in res[0]['uniprot']:
                 uniprot = res[0]['uniprot']['Swiss-Prot']

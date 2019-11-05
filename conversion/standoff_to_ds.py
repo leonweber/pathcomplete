@@ -6,10 +6,11 @@ import argparse
 import json
 import scispacy
 import spacy
+from tqdm import tqdm
 
 unmappable = set()
 
-ENTITY_TYPES = {'Gene_or_gene_product'}
+ENTITY_TYPES = {'Gene_or_gene_product', 'Protein'}
 TYPE_MAPPING = {
     'Gene_expression': ['controls-expression-of'],
     'Translation': ['controls-expression-of'],
@@ -25,8 +26,12 @@ TYPE_MAPPING = {
     'Dehydroxylation': ['controls-state-change-of'],
     'Methylation': ['controls-state-change-of'],
     'Demethylation': ['controls-state-change-of'],
+    'Glycosylation': ['controls-state-change-of'],
+    'Deglycosylation': ['controls-state-change-of'],
     'Binding': ['in-complex-with'],
-    'Dissociation': ['in-complex-with']
+    'Dissociation': ['in-complex-with'],
+    'Protein_modification': ['controls-state-change-of'],
+    'Localization': ['controls-transport-of', 'controls-state-change-of'],
 }
 
 
@@ -142,6 +147,12 @@ class Event:
                 continue
             elif arg.startswith('AtLoc'):
                 continue
+            elif arg.startswith('CSite'):
+                continue
+            elif arg.startswith('Sidechain'):
+                continue
+            elif arg.startswith('Contextgene'):
+                continue
             else:
                 raise ValueError(f"{arg}: {line}")
 
@@ -173,16 +184,29 @@ class Event:
     def register(self):
         self.registry[self.id] = self
 
-    def get_regulators(self):
+    def get_regulators(self, processed_events):
         regulators = []
         for event in self.theme_of:
-            if 'regulation' in event.type:
+            if 'regulation' in event.type.lower() or 'catalysis' in event.type.lower():
                 for cause in event.causes:
                     if isinstance(cause, Theme):
                         regulators.append(cause)
                     elif isinstance(cause, Event):
-                        regulators += cause.get_regulators()
-                regulators += event.get_regulators()
+                        for theme in cause.themes:
+                            if isinstance(theme, Theme):
+                                regulators.append(theme)
+                            elif isinstance(theme, Event):
+                                if theme not in processed_events:
+                                    processed_events.append(theme)
+                                    regulators += theme.get_regulators(processed_events)
+
+                        if cause not in processed_events:
+                            processed_events.append(cause)
+                            regulators += cause.get_regulators(processed_events)
+
+                if event not in processed_events:
+                    processed_events.append(event)
+                    regulators += event.get_regulators(processed_events)
 
         return regulators
 
@@ -241,8 +265,8 @@ def get_mention(e1: Theme, e2: Theme, doc):
 
     text = str(doc)[snippet_start:snippet_end]
 
-    assert text[left_start:left_end] == left_ent.mention
-    assert text[right_start:right_end] == right_ent.mention
+    # assert text[left_start:left_end] == left_ent.mention
+    # assert text[right_start:right_end] == right_ent.mention
 
     new_text = text[:left_start] + f"<{left_ent_tag}>" + \
                text[left_start:left_end] + f"</{left_ent_tag}>" + \
@@ -297,7 +321,7 @@ def transform(fname, transformed_data):
                 transform_pair(e1, e1, relation_types, fname, transformed_data, doc, is_direct=True)
         else:
             causes += event.causes
-            causes += event.get_regulators()
+            causes += event.get_regulators([])
 
             theme: Theme
             cause: Theme
@@ -313,8 +337,9 @@ def transform(fname, transformed_data):
 
 
 def transform_pair(e1, e2, relation_types, fname, transformed_data, doc, is_direct=False):
-    e1_id = e1.mention.replace(',', '').replace('/', '')
-    e2_id = e2.mention.replace(',', '').replace('/', '')
+    e1_id = e1.mention.replace(',', '').replace('/', '').replace(' ', '-').lower()
+    e2_id = e2.mention.replace(',', '').replace('/', '').replace(' ', '-').lower()
+
     pair = f"{e1_id},{e2_id}"
     if pair not in transformed_data:
         transformed_data[pair] = {
@@ -326,12 +351,19 @@ def transform_pair(e1, e2, relation_types, fname, transformed_data, doc, is_dire
     if is_direct:
         transformed_data[pair]['mentions'] = set(m for m in transformed_data[pair]['mentions'] if m[0] != mention)
         transformed_data[pair]['mentions'].add(
-            (mention, "direct", os.path.basename(fname).split("PMID-")[1])
+            (mention, "direct", fname_to_pmid(fname))
     )
     else:
         transformed_data[pair]['mentions'].add(
-            (mention, "distant", os.path.basename(fname).split("PMID-")[1])
+            (mention, "distant", fname_to_pmid(fname))
         )
+
+
+def fname_to_pmid(fname):
+    x = itertools.dropwhile(lambda x: not str.isnumeric(x), str(os.path.basename(fname)))
+    x = itertools.takewhile(lambda x: str.isnumeric(x), x)
+
+    return ''.join(x)
 
 
 if __name__ == '__main__':
@@ -346,7 +378,7 @@ if __name__ == '__main__':
     transformed_data = {}
     nlp = spacy.load('en_core_sci_sm', disable=['tagger'])
 
-    for fname in fnames:
+    for fname in tqdm(fnames):
         Event.registry = {}
         Theme.registry = {}
         transform(str(data / fname), transformed_data)
@@ -357,5 +389,7 @@ if __name__ == '__main__':
                  'mentions': [list(m) for m in v['mentions']]}
         json_compatible_data[k] = new_v
 
+    os.makedirs(args.out.parent, exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(json_compatible_data, f, indent=1)
+    print("Did not transform because of missing mapping: ", unmappable)
