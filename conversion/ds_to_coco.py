@@ -53,7 +53,18 @@ if __name__ == '__main__':
 
     nlp = spacy.load("en_ner_jnlpba_md", disable=["parser"])
     coco_lines = transform(data, nlp)
+    fasttext_lines = []
+    for line in coco_lines:
+        fields = line.split('\t')
+        labels = [f'__label__{l}' for l in fields[6].split()]
+        fasttext_line = f"{' '.join(labels)} {fields[5]}"
+        fasttext_lines.append(fasttext_line)
 
-    with args.output.open('w') as f:
+    with open(str(args.output) + '.coco', 'w') as f:
         for line in coco_lines:
             f.write(line + "\n")
+
+    with open(str(args.output) + '.ft', 'w') as f:
+        for line in fasttext_lines:
+            f.write(line + "\n")
+

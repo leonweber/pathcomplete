@@ -15,8 +15,8 @@ from torch.utils.data import DataLoader, RandomSampler
 from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
-from dataset import DistantBertDataset
-from model import BagOnly, Complex
+from .dataset import DistantBertDataset
+from .model import BagOnly, Complex
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +66,9 @@ def train(args, train_dataset, model):
         logging_direct_losses = []
         logging_distant_losses = []
         y_pred, y_true = deque(maxlen=100), deque(maxlen=100)
-        y_pred_prov, y_true_prov = deque(maxlen=100), deque(maxlen=100)
-        epoch_iterator = tqdm(enumerate(train_dataloader), desc="Iteration", total=len(train_dataloader))
+        direct_aps = []
+        epoch_iterator = enumerate(train_dataloader)
+        pbar = tqdm(total=len(train_dataloader) // args.gradient_accumulation_steps, desc="Batches")
         for step, batch in epoch_iterator:
             model.train()
             batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
@@ -80,17 +81,16 @@ def train(args, train_dataset, model):
             logging_distant_losses.append(distant_loss.item())
 
             # if batch['is_direct'].sum() > 0:
-            # direct_loss = direct_loss_fun(meta['alphas'], batch['is_direct'].float())
-            # logging_direct_losses.append(direct_loss.item())
+            direct_loss = direct_loss_fun(meta['alphas'], batch['is_direct'].float())
+            logging_direct_losses.append(direct_loss.item())
 
-            y_pred_prov.append(meta['alphas'].cpu().detach().numpy().ravel())
-            y_true_prov.append(batch['is_direct'].cpu().numpy().ravel())
+            is_direct = batch['is_direct'].cpu().numpy().ravel()
+            if is_direct.sum() > 0:
+                direct_ap = average_precision_score(is_direct, meta['alphas'].cpu().detach().numpy().ravel(), average='micro')
+                direct_aps.append(direct_ap)
 
-            # lambda_ = 0.5
-            # loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
-            # else:
-            #     loss = distant_loss
-            loss = distant_loss
+            lambda_ = 0.5
+            loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
 
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -107,15 +107,15 @@ def train(args, train_dataset, model):
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
+                pbar.update(1)
 
                 ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
-                direct_ap = average_precision_score(np.hstack(y_true_prov), np.hstack(y_pred_prov), average='micro')
                 log_dict = {
                     'loss': np.mean(logging_losses),
-                    # 'direct_loss': np.mean(logging_direct_losses),
+                    'direct_loss': np.mean(logging_direct_losses),
                     'distant_loss': np.mean(logging_distant_losses),
                     'distant_ap': ap,
-                    'direct_ap': direct_ap,
+                    'direct_map': np.mean(direct_ap),
                 }
                 for k, v in meta.items():
                     if hasattr(v, 'detach'):
@@ -128,18 +128,18 @@ def train(args, train_dataset, model):
                     log_dict[k] = v
 
                 wandb.log(log_dict, step=global_step)
-                epoch_iterator.set_postfix_str(f"loss: {log_dict['loss']}, ap: {ap}")
+                pbar.set_postfix_str(f"loss: {log_dict['loss']}, ap: {ap}")
                 logging_losses = []
                 logging_direct_losses = []
                 logging_distant_losses = []
 
         output_dir = args.output_dir / f'checkpoint-{global_step}'
         os.makedirs(output_dir, exist_ok=True)
-        model.to('cpu')
-        torch.save(model.state_dict(), output_dir / 'weights.th')
-        torch.save(args, os.path.join(output_dir, 'training_args.bin'))
-        logger.info("Saving model checkpoint to %s", output_dir)
-        model.to(args.device)
+        # model.to('cpu')
+        # torch.save(model.state_dict(), output_dir / 'weights.th')
+        # torch.save(args, os.path.join(output_dir, 'training_args.bin'))
+        # logger.info("Saving model checkpoint to %s", output_dir)
+        # model.to(args.device)
 
 
 if __name__ == '__main__':

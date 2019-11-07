@@ -49,6 +49,7 @@ class DistantBertDataset(Dataset):
         self.n_classes = len(self.file['id2label'])
         self.n_entities = len(self.file['id2entity'])
 
+
     def __len__(self):
         return len(self.pairs)
 

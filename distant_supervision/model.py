@@ -25,29 +25,29 @@ class BagEmbedder(nn.Module):
     def __init__(self, bert, args):
         super(BagEmbedder, self).__init__()
         self.bert = DataParallel(transformers.BertModel.from_pretrained(bert))
-        self.key = nn.Linear(768, 64)
-        self.query = nn.Embedding(1, 64)
+        self.key = nn.Linear(768, 1)
         self._init_weights = self.bert.module._init_weights
 
         self._init_weights(self.key)
-        self._init_weights(self.query)
+        # self._init_weights(self.query)
         self.bert.apply(self._init_weights)
 
     def forward(self, token_ids, attention_masks, entity_pos, **kwargs):
-        x, _ = self.bert(token_ids, attention_masks)
-        x = x[:, 0, ...]
+        outputs = self.bert(token_ids, attention_masks)
+        x = outputs[1]
 
-        keys = self.key(x)
-        query = self.query(torch.tensor([0]).to(keys.device))
+        unnorm_alphas = self.key(x)
+        # query = self.query(torch.tensor([0]).to(keys.device))
 
-        alphas = (keys @ query.t()) / math.sqrt(64)
-        alphas = torch.softmax(alphas, dim=0)
-        # alphas = torch.sigmoid(self.ff_attention(x))
-        x = (x * alphas).sum(dim=0)
+        # unnorm_alphas = (keys )) / math.sqrt(64)
+        # alphas = torch.softmax(alphas, dim=0)
+        alphas = torch.sigmoid(unnorm_alphas)
+        x = (x * alphas)
+        x = torch.max(x, dim=0)[0]
         # alphas = torch.zeros(5, 1)
         # x = torch.max(x, dim=0)[0]
 
-        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': alphas.squeeze(1)}
+        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': unnorm_alphas.squeeze(1)}
 
         return x, meta
 
