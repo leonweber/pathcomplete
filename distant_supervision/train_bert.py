@@ -135,11 +135,11 @@ def train(args, train_dataset, model):
 
         output_dir = args.output_dir / f'checkpoint-{global_step}'
         os.makedirs(output_dir, exist_ok=True)
-        # model.to('cpu')
-        # torch.save(model.state_dict(), output_dir / 'weights.th')
-        # torch.save(args, os.path.join(output_dir, 'training_args.bin'))
-        # logger.info("Saving model checkpoint to %s", output_dir)
-        # model.to(args.device)
+        model.to('cpu')
+        torch.save(model.state_dict(), output_dir / 'weights.th')
+        torch.save(args, os.path.join(output_dir, 'training_args.bin'))
+        logger.info("Saving model checkpoint to %s", output_dir)
+        model.to(args.device)
 
 
 if __name__ == '__main__':
