@@ -57,7 +57,7 @@ def train(args, train_dataset, model):
 
     global_step = 0
     loss_fun = nn.BCEWithLogitsLoss()
-    direct_loss_fun = nn.BCEWithLogitsLoss()
+    direct_loss_fun = nn.CrossEntropyLoss()
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
@@ -81,12 +81,12 @@ def train(args, train_dataset, model):
             logging_distant_losses.append(distant_loss.item())
 
             # if batch['is_direct'].sum() > 0:
-            direct_loss = direct_loss_fun(meta['alphas'], batch['is_direct'].float())
+            direct_loss = direct_loss_fun(meta['alphas'], (~(batch['is_direct'].bool())).long() ) # 0 is positive label :/
             logging_direct_losses.append(direct_loss.item())
 
             is_direct = batch['is_direct'].cpu().numpy().ravel()
             if is_direct.sum() > 0:
-                direct_ap = average_precision_score(is_direct, meta['alphas'].cpu().detach().numpy().ravel(), average='micro')
+                direct_ap = average_precision_score(is_direct, meta['alphas'][:, 0].cpu().detach().numpy().ravel(), average='micro')
                 direct_aps.append(direct_ap)
 
             lambda_ = 0.5
@@ -115,7 +115,7 @@ def train(args, train_dataset, model):
                     'direct_loss': np.mean(logging_direct_losses),
                     'distant_loss': np.mean(logging_distant_losses),
                     'distant_ap': ap,
-                    'direct_map': np.mean(direct_ap),
+                    'direct_map': np.mean(direct_aps),
                 }
                 for k, v in meta.items():
                     if hasattr(v, 'detach'):
@@ -128,7 +128,7 @@ def train(args, train_dataset, model):
                     log_dict[k] = v
 
                 wandb.log(log_dict, step=global_step)
-                pbar.set_postfix_str(f"loss: {log_dict['loss']}, ap: {ap}")
+                pbar.set_postfix_str(f"loss: {log_dict['loss']}, ap: {ap}, dmAP: {log_dict['direct_map']}")
                 logging_losses = []
                 logging_direct_losses = []
                 logging_distant_losses = []
@@ -168,13 +168,18 @@ if __name__ == '__main__':
     parser.add_argument("--subsample_negative", default=1.0, type=float)
     parser.add_argument("--model_type", default='complex', choices=MODEL_TYPES.keys())
     parser.add_argument('--ignore_no_mentions', action='store_true')
+    parser.add_argument('--overwrite_output_dir', action='store_true',
+                        help="Overwrite the content of the output directory")
 
     args = parser.parse_args()
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and not args.overwrite_output_dir:
+        raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
 
     wandb.init(project="distant_paths")
 
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
     args.n_gpu = torch.cuda.device_count()
+
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt='%m/%d/%Y %H:%M:%S',
                         level=logging.INFO)

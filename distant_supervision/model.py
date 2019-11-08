@@ -24,30 +24,25 @@ def aggregate_provenance_predictions(alphas, pmids):
 class BagEmbedder(nn.Module):
     def __init__(self, bert, args):
         super(BagEmbedder, self).__init__()
-        self.bert = DataParallel(transformers.BertModel.from_pretrained(bert))
-        self.key = nn.Linear(768, 1)
-        self._init_weights = self.bert.module._init_weights
-
-        self._init_weights(self.key)
-        # self._init_weights(self.query)
-        self.bert.apply(self._init_weights)
+        self.pretrained_classifier_bert = transformers.BertForSequenceClassification.from_pretrained(bert, output_hidden_states=True)
+        self.bert = DataParallel(self.pretrained_classifier_bert.bert)
+        self._init_weights = self.pretrained_classifier_bert._init_weights
+        self.attention_layer = self.pretrained_classifier_bert.classifier
 
     def forward(self, token_ids, attention_masks, entity_pos, **kwargs):
-        outputs = self.bert(token_ids, attention_masks)
+        outputs = self.bert(token_ids, attention_mask=attention_masks)
         x = outputs[1]
+        x = self.pretrained_classifier_bert.dropout(x)
+        unnorm_alphas = self.attention_layer(x) # class 0 is positive :/
 
-        unnorm_alphas = self.key(x)
-        # query = self.query(torch.tensor([0]).to(keys.device))
-
-        # unnorm_alphas = (keys )) / math.sqrt(64)
-        # alphas = torch.softmax(alphas, dim=0)
-        alphas = torch.sigmoid(unnorm_alphas)
-        x = (x * alphas)
+        alphas = torch.softmax(unnorm_alphas, dim=1)[:, 0]
+        # alphas = torch.sigmoid(unnorm_alphas)
+        x = (x * alphas.unsqueeze(1))
         x = torch.max(x, dim=0)[0]
         # alphas = torch.zeros(5, 1)
         # x = torch.max(x, dim=0)[0]
 
-        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': unnorm_alphas.squeeze(1)}
+        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': unnorm_alphas}
 
         return x, meta
 
