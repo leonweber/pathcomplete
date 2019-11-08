@@ -8,15 +8,13 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import numpy as np
 
-from dataset import DistantBertDataset
-from train_bert import MODEL_TYPES
-from model import aggregate_provenance_predictions
+from .dataset import DistantBertDataset
+from .train_bert import MODEL_TYPES
 
-def predict(dataset, model, args):
+def predict(dataset, model, args, data):
     dataloader = DataLoader(dataset,  batch_size=1)
     data_it = tqdm(dataloader, desc="Predicting", total=len(dataset))
     y_pred, y_true = deque(maxlen=1000), deque(maxlen=1000)
-    predictions = defaultdict(dict)
 
     for batch in data_it:
         model.eval()
@@ -32,16 +30,15 @@ def predict(dataset, model, args):
 
         assert f"{e1},{e2}" in dataset.pairs
 
-        provenance = aggregate_provenance_predictions(meta['alphas'], batch['pmids'])
+        prediction = {}
+        prediction['entities'] = [e1, e2]
 
+        prediction['labels'] = []
+        prediction['mentions'] = data[f"{e1},{e2}"]['mentions']
         for i, logit in enumerate(logits):
             rel = dataset.file['id2label'][i].decode()
             score = torch.sigmoid(logit).item()
-            predictions[f"{e1},{rel},{e2}"]['score'] = score
-
-            predictions[f"{e1},{rel},{e2}"]['provenance'] = {}
-            for pmid, score in provenance.items():
-                predictions[f"{e1},{rel},{e2}"]['provenance'][str(pmid)] = score.detach().item()
+            prediction['labels'].append([rel, score])
 
         if 'labels' in batch:
             y_pred.append(logits.cpu().detach().numpy())
@@ -49,7 +46,8 @@ def predict(dataset, model, args):
             ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
             data_it.set_postfix_str(f"ap: {ap}")
 
-    return predictions
+        yield prediction
+
 
 
 
@@ -58,6 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('input', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--model_path', required=True, type=Path)
+    parser.add_argument('--data', required=True, type=Path)
     parser.add_argument('--device', default='cpu')
 
     args = parser.parse_args()
@@ -77,6 +76,7 @@ if __name__ == '__main__':
     predictions = predict(dataset=dataset, model=model, args=train_args)
 
     with args.output.open("w") as f:
-        json.dump(predictions, f)
+        for prediction in predictions:
+            f.write(json.dumps(prediction))
 
 
