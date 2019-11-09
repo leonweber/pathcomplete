@@ -35,6 +35,7 @@ def predict(dataset, model, args, data):
 
         prediction['labels'] = []
         prediction['mentions'] = data[f"{e1},{e2}"]['mentions']
+        prediction['alphas'] = meta['alphas'].tolist()
         for i, logit in enumerate(logits):
             rel = dataset.file['id2label'][i].decode()
             score = torch.sigmoid(logit).item()
@@ -70,13 +71,17 @@ if __name__ == '__main__':
     )
 
     model = MODEL_TYPES[train_args.model_type](train_args.bert, args=train_args)
+    print("Loading model weights...")
     model.load_state_dict(torch.load(args.model_path/'weights.th'))
     model.to(args.device)
 
-    predictions = predict(dataset=dataset, model=model, args=train_args)
+    with args.data.open() as f:
+        data = json.load(f)
+
+    predictions = predict(dataset=dataset, model=model, args=train_args, data=data)
 
     with args.output.open("w") as f:
         for prediction in predictions:
-            f.write(json.dumps(prediction))
+            f.write(json.dumps(prediction) + "\n")
 
 
