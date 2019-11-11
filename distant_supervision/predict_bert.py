@@ -6,10 +6,12 @@ import torch
 from sklearn.metrics import average_precision_score
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import torch
 import numpy as np
 
 from .dataset import DistantBertDataset
 from .train_bert import MODEL_TYPES
+
 
 def predict(dataset, model, args, data):
     dataloader = DataLoader(dataset,  batch_size=1)
@@ -35,7 +37,7 @@ def predict(dataset, model, args, data):
 
         prediction['labels'] = []
         prediction['mentions'] = data[f"{e1},{e2}"]['mentions']
-        prediction['alphas'] = meta['alphas'].tolist()
+        prediction['alphas'] = torch.softmax(meta['alphas'], axis=1)[:, 0].tolist()
         for i, logit in enumerate(logits):
             rel = dataset.file['id2label'][i].decode()
             score = torch.sigmoid(logit).item()

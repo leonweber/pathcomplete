@@ -168,6 +168,7 @@ if __name__ == '__main__':
     parser.add_argument("--subsample_negative", default=1.0, type=float)
     parser.add_argument("--model_type", default='complex', choices=MODEL_TYPES.keys())
     parser.add_argument('--ignore_no_mentions', action='store_true')
+    parser.add_argument('--init_from', type=Path)
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
 
@@ -203,6 +204,8 @@ if __name__ == '__main__':
 
     model = MODEL_TYPES[args.model_type](args.bert, args=args)
     model.to(args.device)
+    if args.init_from:
+        model.load_state_dict(torch.load(args.init_from/'weights.th'))
 
     wandb.watch(model)
 
