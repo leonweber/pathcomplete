@@ -4,13 +4,14 @@ from collections import deque, defaultdict
 from pathlib import Path
 import torch
 from sklearn.metrics import average_precision_score
+from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torch
 import numpy as np
 
 from .dataset import DistantBertDataset
-from .train_bert import MODEL_TYPES
+from .model import BertForDistantSupervision
 
 
 def predict(dataset, model, args, data):
@@ -20,7 +21,7 @@ def predict(dataset, model, args, data):
 
     for batch in data_it:
         model.eval()
-        batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
+        batch = {k: v.squeeze(0).to('cuda') for k, v in batch.items()}
         with torch.no_grad():
             logits, meta = model(**batch)
 
@@ -63,24 +64,25 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cpu')
 
     args = parser.parse_args()
-    train_args = torch.load(args.model_path/'training_args.bin')
 
     dataset = DistantBertDataset(
         args.input,
-        max_bag_size=train_args.max_bag_size,
-        max_length=train_args.max_length,
-        ignore_no_mentions=train_args.ignore_no_mentions
+        # max_bag_size=train_args.max_bag_size,
+        # max_length=train_args.max_length,
+        # ignore_no_mentions=train_args.ignore_no_mentions
+        max_bag_size=100,
+        max_length=None,
+        ignore_no_mentions=True
     )
 
-    model = MODEL_TYPES[train_args.model_type](train_args.bert, args=train_args)
-    print("Loading model weights...")
-    model.load_state_dict(torch.load(args.model_path/'weights.th'))
+    model = BertForDistantSupervision.from_pretrained(args.model_path)
+    model.parallel_bert = nn.DataParallel(model.bert)
     model.to(args.device)
 
     with args.data.open() as f:
         data = json.load(f)
 
-    predictions = predict(dataset=dataset, model=model, args=train_args, data=data)
+    predictions = predict(dataset=dataset, model=model, args=None, data=data)
 
     with args.output.open("w") as f:
         for prediction in predictions:
