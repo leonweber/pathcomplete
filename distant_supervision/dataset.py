@@ -19,6 +19,7 @@ class DistantBertDataset(Dataset):
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
         self.labels = self.file['labels'][:]
+        self.pairs = self.pairs[:32]
 
         if ignore_no_mentions:
             filtered_pairs = []
