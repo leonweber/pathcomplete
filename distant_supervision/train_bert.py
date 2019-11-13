@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from transformers import BertConfig
 from sklearn.metrics import average_precision_score
 from torch import nn
 import wandb
@@ -16,14 +17,9 @@ from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
 from .dataset import DistantBertDataset
-from .model import BagOnly, Complex
+from .model import BertForDistantSupervision
 
 logger = logging.getLogger(__name__)
-
-MODEL_TYPES = {
-    'complex': Complex,
-    'bag': BagOnly
-}
 
 
 def set_seed(args):
@@ -35,6 +31,8 @@ def set_seed(args):
 
 
 def train(args, train_dataset, model):
+    model.train()
+    model.parallel_bert = nn.DataParallel(model.bert)
     train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=1)
     t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
@@ -80,17 +78,18 @@ def train(args, train_dataset, model):
             distant_loss = loss_fun(logits, batch['labels'].float())
             logging_distant_losses.append(distant_loss.item())
 
-            # if batch['is_direct'].sum() > 0:
-            direct_loss = direct_loss_fun(meta['alphas'], (~(batch['is_direct'].bool())).long() ) # 0 is positive label :/
-            logging_direct_losses.append(direct_loss.item())
+            # direct_loss = direct_loss_fun(meta['alphas'], direct_labels)
+            # logging_direct_losses.append(direct_loss.item())
 
             is_direct = batch['is_direct'].cpu().numpy().ravel()
             if is_direct.sum() > 0:
-                direct_ap = average_precision_score(is_direct, meta['alphas'][:, 0].cpu().detach().numpy().ravel(), average='micro')
+                direct_ap = average_precision_score(batch['is_direct'].cpu().numpy(), meta['alphas'].cpu().detach().numpy().ravel(),
+                                                    average='micro')
                 direct_aps.append(direct_ap)
 
-            lambda_ = 0.5
-            loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
+            # lambda_ = 0.0
+            # loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
+            loss = distant_loss
 
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -135,11 +134,10 @@ def train(args, train_dataset, model):
 
         output_dir = args.output_dir / f'checkpoint-{global_step}'
         os.makedirs(output_dir, exist_ok=True)
-        # model.to('cpu')
-        # torch.save(model.state_dict(), output_dir / 'weights.th')
-        # torch.save(args, os.path.join(output_dir, 'training_args.bin'))
-        # logger.info("Saving model checkpoint to %s", output_dir)
-        # model.to(args.device)
+        logger.info("Saving model checkpoint to %s", output_dir)
+        model_to_save = model.module if hasattr(model,
+                                                'module') else model  # Take care of distributed/parallel training
+        model_to_save.save_pretrained(args.output_dir)
 
 
 if __name__ == '__main__':
@@ -166,14 +164,16 @@ if __name__ == '__main__':
     parser.add_argument("--max_length", default=None, type=int)
     parser.add_argument("--tensor_emb_size", default=200, type=int)
     parser.add_argument("--subsample_negative", default=1.0, type=float)
-    parser.add_argument("--model_type", default='complex', choices=MODEL_TYPES.keys())
     parser.add_argument('--ignore_no_mentions', action='store_true')
+    parser.add_argument('--init_from', type=Path)
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
 
     args = parser.parse_args()
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and not args.overwrite_output_dir:
-        raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
+        raise ValueError(
+            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
+                args.output_dir))
 
     wandb.init(project="distant_paths")
 
@@ -198,13 +198,13 @@ if __name__ == '__main__':
         max_length=args.max_length,
         ignore_no_mentions=args.ignore_no_mentions
     )
-    args.n_entities = train_dataset.n_entities
-    args.n_classes = train_dataset.n_classes
 
-    model = MODEL_TYPES[args.model_type](args.bert, args=args)
+    config = BertConfig.from_pretrained(args.bert, num_labels=train_dataset.n_classes )
+
+    model = BertForDistantSupervision.from_pretrained(args.bert,
+                                                      config=config
+                                                      )
     model.to(args.device)
-
     wandb.watch(model)
-
     wandb.config.update(args)
     train(args, train_dataset=train_dataset, model=model)
