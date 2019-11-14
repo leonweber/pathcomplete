@@ -9,6 +9,7 @@ from sklearn.metrics import average_precision_score
 
 
 def dhyper(desired, white, black, draws):
+    # prob. to draw `desired` white balls from `white` + `black` balls in with `draws`
     return stats.hypergeom.pmf(desired, white+black, white, draws)
 
 
@@ -39,6 +40,8 @@ if __name__ == '__main__':
     y_score = []
     prov_aps = []
     prov_random_aps = []
+    n_snippets = 0
+    n_pos_snippets = 0
     with args.preds.open() as f:
         lines = f.readlines()
     for line in tqdm(lines):
@@ -51,12 +54,14 @@ if __name__ == '__main__':
         if sum(y_prov):
             prov_aps.append(average_precision_score(y_prov, pred['alphas']))
             prov_random_aps.append(random_ap(sum(y_prov), len(y_prov)))
+            n_snippets += len(y_prov)
+            n_pos_snippets += sum(y_prov)
 
 
 
 
     print('rel AP:', average_precision_score(y_true, y_score, average='micro'), '(random baseline:', np.mean(y_true), ')')
-    print('prov mAP:', np.mean(prov_aps), '(random baseline:', np.mean(prov_random_aps), ')')
+    print('prov mAP:', np.mean(prov_aps), '( N:', n_snippets, ', random baseline:', np.mean(prov_random_aps), ')')
 
 
 

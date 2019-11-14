@@ -101,7 +101,8 @@ class RelationInstancesReader(DatasetReader):
 
                 mentions = set(m[0] for m in pair_data['mentions'])
 
-                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type='distant')
+
+                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type=pair_data['supervision_type'])
                 if inst is not None:
                     yield inst
 

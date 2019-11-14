@@ -18,7 +18,10 @@
 from __future__ import absolute_import, division, print_function
 
 import argparse
+import copy
 import glob
+import itertools
+import json
 import logging
 import os
 import random
@@ -28,47 +31,199 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from sklearn.metrics import average_precision_score, f1_score
+from sklearn.metrics import f1_score
+from torch import nn
+from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
-
-
 from tqdm import tqdm, trange
-
+from transformers import AdamW, WarmupLinearSchedule, is_tf_available
 from transformers import (WEIGHTS_NAME, BertConfig,
-                          BertForSequenceClassification, BertTokenizer,
+                          BertTokenizer,
                           RobertaConfig,
-                          RobertaForSequenceClassification,
-                          RobertaTokenizer,
-                          XLMConfig, XLMForSequenceClassification,
-                          XLMTokenizer, XLNetConfig,
-                          XLNetForSequenceClassification,
-                          XLNetTokenizer,
+                          XLMConfig, XLNetConfig,
                           DistilBertConfig,
-                          DistilBertForSequenceClassification,
-                          DistilBertTokenizer, DataProcessor, InputExample)
-
-from transformers import AdamW, WarmupLinearSchedule
-
-from transformers import glue_compute_metrics as compute_metrics
-from transformers import glue_output_modes as output_modes
-from transformers import glue_processors as processors
-from transformers import glue_convert_examples_to_features as convert_examples_to_features
+                          DataProcessor, BertPreTrainedModel, BertModel)
 from transformers.data.metrics import simple_accuracy
+
+from conversion.standoff_to_ds import TYPE_MAPPING
 
 logger = logging.getLogger(__name__)
 
-ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig, 
+ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig,
                                                                                 RobertaConfig, DistilBertConfig)), ())
 
+def convert_examples_to_features(examples, tokenizer,
+                                      max_length=512,
+                                      task=None,
+                                      label_list=None,
+                                      output_mode=None,
+                                      pad_on_left=False,
+                                      pad_token=0,
+                                      pad_token_segment_id=0,
+                                      mask_padding_with_zero=True):
+    """
+    Loads a data file into a list of `InputBatch`s
+    """
+    is_tf_dataset = False
+    label_list = label_list or []
+
+    label_map = {label: i for i, label in enumerate(label_list)}
+
+    features = []
+    for (ex_index, example) in enumerate(examples):
+        if ex_index % 10000 == 0:
+            logger.info("Writing example %d" % (ex_index))
+        if is_tf_dataset:
+            example = InputExample(example['idx'].numpy(),
+                                   example['sentence1'].numpy().decode('utf-8'),
+                                   example['sentence2'].numpy().decode('utf-8'),
+                                   str(example['label'].numpy()))
+
+        inputs = tokenizer.encode_plus(
+            example.text_a,
+            example.text_b,
+            add_special_tokens=True,
+            max_length=max_length,
+            truncation_strategy='only_first'  # We're truncating the first sequence in priority
+        )
+        input_ids, token_type_ids = inputs["input_ids"], inputs["token_type_ids"]
+
+        # The mask has 1 for real tokens and 0 for padding tokens. Only real
+        # tokens are attended to.
+        attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+
+        # Zero-pad up to the sequence length.
+        padding_length = max_length - len(input_ids)
+        if pad_on_left:
+            input_ids = ([pad_token] * padding_length) + input_ids
+            attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
+            token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+        else:
+            input_ids = input_ids + ([pad_token] * padding_length)
+            attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+            token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+
+        assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
+        assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(len(attention_mask), max_length)
+        assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(len(token_type_ids), max_length)
+
+        labels = np.zeros(len(label_map))
+        if example.labels:
+            for label in example.labels:
+                if label != 'nan':
+                    labels[label_map[label]] = 1
+
+
+        # if ex_index < 5:
+        #     logger.info("*** Example ***")
+        #     logger.info("guid: %s" % (example.guid))
+        #     logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+        #     logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
+        #     logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
+        #     logger.info("label: %s (id = %s)" % (example.labels, labels))
+
+        features.append(
+            InputFeatures(input_ids=input_ids,
+                          attention_mask=attention_mask,
+                          token_type_ids=token_type_ids,
+                          labels=labels))
+
+    return features
+
+
+class BertForSequenceMultilabelClassification(BertPreTrainedModel):
+    def __init__(self, config):
+        super(BertForSequenceMultilabelClassification, self).__init__(config)
+        self.num_labels = config.num_labels
+
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
+
+        self.init_weights()
+
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None,
+                position_ids=None, head_mask=None, labels=None):
+
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids,
+                            head_mask=head_mask)
+
+        pooled_output = outputs[1]
+
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+
+        outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
+
+        if labels is not None:
+            loss_fct = BCEWithLogitsLoss()
+            loss = loss_fct(logits, labels.float())
+            outputs = (loss,) + outputs
+
+        return outputs  # (loss), logits, (hidden_states), (attentions)
+
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
-    'xlnet': (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer),
-    'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
-    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
-    'distilbert': (DistilBertConfig, DistilBertForSequenceClassification, DistilBertTokenizer)
+    'bert': (BertConfig, BertForSequenceMultilabelClassification, BertTokenizer),
 }
+
+class InputExample(object):
+    """A single training/test example for simple sequence classification."""
+    def __init__(self, guid, text_a, text_b=None, labels=None):
+        """Constructs a InputExample.
+
+        Args:
+            guid: Unique id for the example.
+            text_a: string. The untokenized text of the first sequence. For single
+            sequence tasks, only this sequence must be specified.
+            text_b: (Optional) string. The untokenized text of the second sequence.
+            Only must be specified for sequence pair tasks.
+            label: (Optional) string. The label of the example. This should be
+            specified for train and dev examples, but not for test examples.
+        """
+        self.guid = guid
+        self.text_a = text_a
+        self.text_b = text_b
+        self.labels = labels
+
+    def __repr__(self):
+        return str(self.to_json_string())
+
+    def to_dict(self):
+        """Serializes this instance to a Python dictionary."""
+        output = copy.deepcopy(self.__dict__)
+        return output
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+
+
+class InputFeatures(object):
+    """A single set of features of data."""
+
+    def __init__(self, input_ids, attention_mask, token_type_ids, labels):
+        self.input_ids = input_ids
+        self.attention_mask = attention_mask
+        self.token_type_ids = token_type_ids
+        self.labels = labels
+
+    def __repr__(self):
+        return str(self.to_json_string())
+
+    def to_dict(self):
+        """Serializes this instance to a Python dictionary."""
+        output = copy.deepcopy(self.__dict__)
+        return output
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+
 
 
 class BioNLPProcessor(DataProcessor):
@@ -77,26 +232,24 @@ class BioNLPProcessor(DataProcessor):
         df = pd.read_csv(Path(data_dir)/'dev.csv')
         return self._create_examples(df, 'dev')
 
-    def get_labels(self):
-        return ['true', 'false']
+    @staticmethod
+    def get_labels():
+        return sorted(set(itertools.chain(*TYPE_MAPPING.values())))
 
-    def get_train_examples(self, data_dir, undersample_neg):
+    def get_train_examples(self, data_dir):
         df = pd.read_csv(Path(data_dir)/'train.csv')
-        df_true = df[df['label']]
-        df_false = df[~df['label']].sample(int(len(df_true) * undersample_neg))
-        df = pd.concat([df_true, df_false], axis=0)
-
         return self._create_examples(df, 'train')
 
-    def _create_examples(self, df: pd.DataFrame, set_type):
+    @staticmethod
+    def _create_examples(df: pd.DataFrame, set_type):
         """Creates examples for the training and dev sets."""
         examples = []
         for (i, row) in df.iterrows():
             guid = "%s-%s" % (set_type, i)
             text_a = row['text']
-            label = str(row['label']).lower()
+            labels = str(row['labels']).lower().split(',')
             examples.append(
-                InputExample(guid=guid, text_a=text_a, label=label))
+                InputExample(guid=guid, text_a=text_a, labels=labels))
         return examples
 
 
@@ -265,6 +418,11 @@ def evaluate(args, model, tokenizer, prefix=""):
     nb_eval_steps = 0
     preds = None
     out_label_ids = None
+    output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
+    if os.path.exists(output_eval_file):
+        return
+
+
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
         model.eval()
         batch = tuple(t.to(args.device) for t in batch)
@@ -281,23 +439,19 @@ def evaluate(args, model, tokenizer, prefix=""):
             eval_loss += tmp_eval_loss.mean().item()
         nb_eval_steps += 1
         if preds is None:
-            preds = logits.detach().cpu().numpy()
+            preds = torch.sigmoid(logits).detach().cpu().numpy()
             out_label_ids = inputs['labels'].detach().cpu().numpy()
         else:
-            preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+            preds = np.append(preds, torch.sigmoid(logits).detach().cpu().numpy(), axis=0)
             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
     eval_loss = eval_loss / nb_eval_steps
-    if args.output_mode == "classification":
-        preds = np.argmax(preds, axis=1)
-    elif args.output_mode == "regression":
-        preds = np.squeeze(preds)
+    preds = preds >= 0.5
 
-    result = {'acc': simple_accuracy(preds, out_label_ids)}
-    result = {'f1': f1_score(out_label_ids, preds, pos_label=0)}
+    result = {'acc': simple_accuracy(preds, out_label_ids),
+              'f1': f1_score(out_label_ids, preds, average='micro')}
     results.update(result)
 
-    output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
     with open(output_eval_file, "w") as writer:
         logger.info("***** Eval results {} *****".format(prefix))
         for key in sorted(result.keys()):
@@ -307,18 +461,17 @@ def evaluate(args, model, tokenizer, prefix=""):
     return results
 
 
-def load_and_cache_examples(args, task, tokenizer, evaluate=False, undersample_neg=None):
+def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     if args.local_rank not in [-1, 0] and not evaluate:
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     processor = BioNLPProcessor()
     output_mode = 'classification'
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}_{}'.format(
         'dev' if evaluate else 'train',
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length),
-        str(args.undersample_neg),
         str(task)))
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
@@ -329,7 +482,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, undersample_n
         if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
             # HACK(label indices are swapped in RoBERTa pretrained model)
             label_list[1], label_list[2] = label_list[2], label_list[1] 
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir, undersample_neg=undersample_neg)
+        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -350,10 +503,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, undersample_n
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-    if output_mode == "classification":
-        all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
-    elif output_mode == "regression":
-        all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
+    all_labels = torch.tensor([f.labels for f in features], dtype=torch.long)
 
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
@@ -411,8 +561,6 @@ def main():
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
     parser.add_argument("--warmup_steps", default=0, type=int,
                         help="Linear warmup over warmup_steps.")
-    parser.add_argument("--undersample_neg", default=1.0, type=float,
-                        help="Undersample negative class to `undersample_neg` * pos = neg")
 
     parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
@@ -483,12 +631,12 @@ def main():
         assert "TPU_NAME" in os.environ
         assert "XRT_TPU_CONFIG" in os.environ
 
-        import torch_xla
         import torch_xla.core.xla_model as xm
         args.device = xm.xla_device()
         args.xla_model = xm
 
     # Setup logging
+
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt = '%m/%d/%Y %H:%M:%S',
                         level = logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
@@ -531,7 +679,7 @@ def main():
 
     # Training
     if args.do_train:
-        train_dataset = load_and_cache_examples(args, 'BioNLP', tokenizer, evaluate=False, undersample_neg=args.undersample_neg)
+        train_dataset = load_and_cache_examples(args, 'BioNLP', tokenizer, evaluate=False)
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
@@ -570,10 +718,15 @@ def main():
         for checkpoint in checkpoints:
             global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
             prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else ""
-            
-            model = model_class.from_pretrained(checkpoint)
+
+            try:
+                model = model_class.from_pretrained(checkpoint)
+            except OSError:
+                continue
             model.to(args.device)
             result = evaluate(args, model, tokenizer, prefix=prefix)
+            if not result:
+                continue
             result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
             results.update(result)
 
