@@ -13,8 +13,8 @@ import torch
 import numpy as np
 from transformers import WEIGHTS_NAME
 
-from dataset import DistantBertDataset
-from model import BertForDistantSupervision
+from .dataset import DistantBertDataset
+from .model import BertForDistantSupervision
 
 
 def predict(dataset, model, data=None):
@@ -102,7 +102,7 @@ if __name__ == '__main__':
         model.to(args.device)
         with (Path(checkpoint).parent / 'dev_preds.txt').open('w') as f:
 
-            for prediction, ap in predict(dataset=dataset, model=model, args=None, data=data):
+            for prediction, ap in predict(dataset=dataset, model=model, data=data):
                 f.write(json.dumps(prediction) + "\n")
             if ap > best_ap[1]:
                 best_ap = (checkpoint, ap)

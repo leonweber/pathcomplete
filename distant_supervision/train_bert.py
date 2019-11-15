@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader, RandomSampler, ConcatDataset
 from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
-from predict_bert import predict
+from .predict_bert import predict
 from .dataset import DistantBertDataset
 from .model import BertForDistantSupervision
 
@@ -32,6 +32,11 @@ def set_seed(args):
 
 
 def train(args, train_dataset, model, direct_dataset=None):
+    model.train()
+    if args.n_gpu > 1 and not hasattr(model.bert, 'module'):
+        model.bert = nn.DataParallel(model.bert)
+    model.to(args.device)
+
     if direct_dataset:
         train_dataset = ConcatDataset([train_dataset, direct_dataset])
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
@@ -121,10 +126,10 @@ def train(args, train_dataset, model, direct_dataset=None):
                 ap = average_precision_score(np.vstack(y_true), np.vstack(y_pred), average='micro')
                 log_dict = {
                     'loss': np.mean(logging_losses),
-                    'direct_loss': np.mean(logging_direct_losses),
+                    'direct_loss': np.mean(logging_direct_losses) if logging_direct_losses else None,
                     'distant_loss': np.mean(logging_distant_losses),
                     'distant_ap': ap,
-                    'direct_map': np.mean(direct_aps),
+                    'direct_map': np.mean(direct_aps) if direct_aps else None,
                 }
                 for k, v in meta.items():
                     if hasattr(v, 'detach'):
@@ -145,9 +150,10 @@ def train(args, train_dataset, model, direct_dataset=None):
                 logging_distant_losses = []
 
         # Evaluation
+        val_ap = None
         for _, val_ap in predict(dev_dataset, model): # predict yields prediction and current ap => exhaust iterator
             pass
-        pbar.set_postfix_str(f"loss: {log_dict['loss']}, ap: {log_dict['distant_ap']}, val ap: {val_ap}, dmAP: {log_dict['direct_map']}")
+        print("Validation AP: " + str(val_ap))
         if not args.disable_wandb:
             wandb.log({'val_distant_ap': val_ap}, step=global_step)
 
