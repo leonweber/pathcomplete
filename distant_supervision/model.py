@@ -1,12 +1,6 @@
-import math
-from copy import deepcopy
-
-import transformers
-import numpy as np
 from torch import nn
 import torch
-from torch.nn import DataParallel
-from transformers import BertPreTrainedModel
+from transformers import BertPreTrainedModel, BertModel
 
 
 def aggregate_provenance_predictions(alphas, pmids):
@@ -22,28 +16,30 @@ def aggregate_provenance_predictions(alphas, pmids):
 
 
 class BertForDistantSupervision(BertPreTrainedModel):
-    def __init__(self, config, **kwargs):
-        super(BertForDistantSupervision, self).__init__(config)
-        self.bert = transformers.BertModel(config)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-        self.attention = nn.Linear(config.hidden_size, 1)
+    def __init__(self, config, *inputs, **kwargs):
+        super().__init__(config, *inputs, **kwargs)
+        self.num_labels = config.num_labels
+
+        self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.parallel_bert = None
+        self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
 
         self.init_weights()
 
     def forward(self, token_ids, attention_masks, entity_pos, **kwargs):
-        outputs = self.parallel_bert(token_ids, attention_mask=attention_masks)
-        x = outputs[1]
+        x = self.bert(token_ids, attention_mask=attention_masks)
+        pooled_output = x[1]
 
-        unnorm_alphas = self.attention(x)
+        pooled_output = self.dropout(pooled_output)
 
-        alphas = torch.sigmoid(unnorm_alphas)
-        x = torch.max(x * alphas, dim=0)[0]
+        logits = self.classifier(pooled_output)
+        meta = {'alphas': torch.max(logits, dim=1)[0]}
 
-        meta = {'alphas_hist': np.histogram(alphas.detach().cpu().numpy()), 'alphas': unnorm_alphas}
+        if logits.size(0) > 5:
+            logits = logits.topk(5, dim=0)[0]
 
-        x = self.classifier(x)
+        x = torch.logsumexp(logits, dim=0)
+
 
         return x, meta
 

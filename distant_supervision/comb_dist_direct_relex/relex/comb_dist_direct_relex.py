@@ -156,6 +156,14 @@ class CombDistDirectRelex(Model):
             sent_labels_masked_goal = sent_labels_mask * sent_labels.float()
             sent_loss = torch.nn.functional.binary_cross_entropy(sent_labels_masked_pred, sent_labels_masked_goal)
 
+        bag_mask = mask.sum(dim=2) > 0
+        unpadded_alphas = []
+        for alpha, bag_m in zip(alphas, bag_mask):
+            if bag_m.sum() == 0:
+                unpadded_alphas.append(np.array([]))
+            else:
+                unpadded_alphas.append(alpha.cpu().detach().numpy()[bag_m.cpu().numpy()])
+
         # apply a small FF to the attention weights
         alphas = self.ff_before_alpha(alphas)
 
@@ -204,13 +212,6 @@ class CombDistDirectRelex(Model):
 
         logits = self.ff(x)  # batch_size x self.num_classes
 
-        bag_mask = mask.sum(dim=2) > 0
-        unpadded_alphas = []
-        for alpha, bag_m in zip(alphas, bag_mask):
-            if bag_m.sum() == 0:
-                unpadded_alphas.append(np.array([]))
-            else:
-                unpadded_alphas.append(alpha.cpu().detach().numpy()[bag_m.cpu().numpy()])
 
         output_dict = {'logits': logits, 'alphas': unpadded_alphas}  # sigmoid is applied in the loss function and the metric class, not here
 

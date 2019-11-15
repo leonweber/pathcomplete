@@ -12,10 +12,11 @@ from sklearn.metrics import average_precision_score
 from torch import nn
 import wandb
 
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler, ConcatDataset
 from tqdm import trange, tqdm
 from transformers import AdamW, WarmupLinearSchedule
 
+from predict_bert import predict
 from .dataset import DistantBertDataset
 from .model import BertForDistantSupervision
 
@@ -30,11 +31,10 @@ def set_seed(args):
         torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, model):
-    model.train()
-    model.parallel_bert = nn.DataParallel(model.bert)
-    train_sampler = RandomSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=1)
+def train(args, train_dataset, model, direct_dataset=None):
+    if direct_dataset:
+        train_dataset = ConcatDataset([train_dataset, direct_dataset])
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     # Prepare optimizer and schedule (linear warmup and decay)
@@ -55,7 +55,7 @@ def train(args, train_dataset, model):
 
     global_step = 0
     loss_fun = nn.BCEWithLogitsLoss()
-    direct_loss_fun = nn.CrossEntropyLoss()
+    direct_loss_fun = nn.BCEWithLogitsLoss()
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
@@ -67,8 +67,13 @@ def train(args, train_dataset, model):
         direct_aps = []
         epoch_iterator = enumerate(train_dataloader)
         pbar = tqdm(total=len(train_dataloader) // args.gradient_accumulation_steps, desc="Batches")
+        log_dict = None
         for step, batch in epoch_iterator:
             model.train()
+            if args.n_gpu > 1 and not hasattr(model.bert, 'module'):
+                model.bert = nn.DataParallel(model.bert)
+            model.to(args.device)
+
             batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
             logits, meta = model(**batch)
 
@@ -78,8 +83,11 @@ def train(args, train_dataset, model):
             distant_loss = loss_fun(logits, batch['labels'].float())
             logging_distant_losses.append(distant_loss.item())
 
-            # direct_loss = direct_loss_fun(meta['alphas'], direct_labels)
-            # logging_direct_losses.append(direct_loss.item())
+            if batch['has_direct'].item():
+                direct_loss = direct_loss_fun(meta['alphas'], batch['is_direct'].float())
+                logging_direct_losses.append(direct_loss.item())
+            else:
+                direct_loss = None
 
             is_direct = batch['is_direct'].cpu().numpy().ravel()
             if is_direct.sum() > 0:
@@ -87,9 +95,11 @@ def train(args, train_dataset, model):
                                                     average='micro')
                 direct_aps.append(direct_ap)
 
-            # lambda_ = 0.0
-            # loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
-            loss = distant_loss
+            if direct_loss:
+                lambda_ = 0.5
+                loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
+            else:
+                loss = distant_loss
 
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -121,29 +131,49 @@ def train(args, train_dataset, model):
                         v = v.detach()
                     if hasattr(v, 'cpu'):
                         v = v.cpu().numpy()
-                    if '_hist' in k:
-                        v = wandb.Histogram(np_histogram=v)
+                    if not args.disable_wandb:
+                        if '_hist' in k:
+                            v = wandb.Histogram(np_histogram=v)
 
                     log_dict[k] = v
 
-                wandb.log(log_dict, step=global_step)
+                if not args.disable_wandb:
+                    wandb.log(log_dict, step=global_step)
                 pbar.set_postfix_str(f"loss: {log_dict['loss']}, ap: {ap}, dmAP: {log_dict['direct_map']}")
                 logging_losses = []
                 logging_direct_losses = []
                 logging_distant_losses = []
 
+        # Evaluation
+        for _, val_ap in predict(dev_dataset, model): # predict yields prediction and current ap => exhaust iterator
+            pass
+        pbar.set_postfix_str(f"loss: {log_dict['loss']}, ap: {log_dict['distant_ap']}, val ap: {val_ap}, dmAP: {log_dict['direct_map']}")
+        if not args.disable_wandb:
+            wandb.log({'val_distant_ap': val_ap}, step=global_step)
+
+
+        # Saving
+        output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
         output_dir = args.output_dir / f'checkpoint-{global_step}'
         os.makedirs(output_dir, exist_ok=True)
         logger.info("Saving model checkpoint to %s", output_dir)
-        model_to_save = model.module if hasattr(model,
-                                                'module') else model  # Take care of distributed/parallel training
-        model_to_save.save_pretrained(args.output_dir)
+        model.to('cpu')
+        if hasattr(model.bert, 'module'):
+            model.bert = model.bert.module
+        model.save_pretrained(output_dir)
+        model.save_pretrained(args.output_dir)
+        torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
+
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bert', required=True)
     parser.add_argument('--train', required=True)
+    parser.add_argument('--direct_data', default=None, type=Path)
     parser.add_argument('--dev', required=True)
     parser.add_argument('--seed', default=5005, type=int)
     parser.add_argument('--no_cuda', action='store_true')
@@ -168,6 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--init_from', type=Path)
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
+    parser.add_argument('--disable_wandb', action='store_true')
 
     args = parser.parse_args()
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and not args.overwrite_output_dir:
@@ -175,7 +206,8 @@ if __name__ == '__main__':
             "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
                 args.output_dir))
 
-    wandb.init(project="distant_paths")
+    if not args.disable_wandb:
+        wandb.init(project="distant_paths")
 
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
     args.n_gpu = torch.cuda.device_count()
@@ -190,21 +222,33 @@ if __name__ == '__main__':
         max_bag_size=args.max_bag_size,
         max_length=args.max_length,
         ignore_no_mentions=args.ignore_no_mentions,
-        subsample_negative=args.subsample_negative
+        subsample_negative=args.subsample_negative,
+        has_direct=False
     )
     dev_dataset = DistantBertDataset(
         args.dev,
         max_bag_size=args.max_bag_size,
         max_length=args.max_length,
-        ignore_no_mentions=args.ignore_no_mentions
+        ignore_no_mentions=args.ignore_no_mentions,
+        has_direct=False
     )
+    if args.direct_data:
+        direct_dataset = DistantBertDataset(
+            args.direct_data,
+            max_bag_size=args.max_bag_size,
+            max_length=args.max_length,
+            ignore_no_mentions=args.ignore_no_mentions,
+            has_direct=True
+        )
+    else:
+        direct_dataset = None
 
     config = BertConfig.from_pretrained(args.bert, num_labels=train_dataset.n_classes )
 
     model = BertForDistantSupervision.from_pretrained(args.bert,
                                                       config=config
                                                       )
-    model.to(args.device)
-    wandb.watch(model)
-    wandb.config.update(args)
-    train(args, train_dataset=train_dataset, model=model)
+    if not args.disable_wandb:
+        wandb.watch(model)
+        wandb.config.update(args)
+    train(args, train_dataset=train_dataset, model=model, direct_dataset=direct_dataset)

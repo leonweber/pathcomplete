@@ -6,7 +6,8 @@ from torch.utils.data import Dataset
 
 class DistantBertDataset(Dataset):
 
-    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False, subsample_negative=0.1):
+    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False, subsample_negative=0.1,
+                 has_direct=False):
         self.file = h5py.File(path, 'r', driver='core')
         self.max_bag_size = max_bag_size
         self.max_length = max_length
@@ -19,6 +20,7 @@ class DistantBertDataset(Dataset):
             self.pairs.append(f"{e1},{e2}")
         self.pairs = np.array(self.pairs)
         self.labels = self.file['labels'][:]
+        self.has_direct = has_direct
 
         if ignore_no_mentions:
             filtered_pairs = []
@@ -49,6 +51,8 @@ class DistantBertDataset(Dataset):
         self.n_classes = len(self.file['id2label'])
         self.n_entities = len(self.file['id2entity'])
 
+        self.pairs = self.pairs[:32]
+
 
     def __len__(self):
         return len(self.pairs)
@@ -72,6 +76,8 @@ class DistantBertDataset(Dataset):
         is_direct = is_direct[:self.max_bag_size]
 
 
+
+
         sample = {
             "token_ids": torch.from_numpy(token_ids).long(),
             "attention_masks": torch.from_numpy(attention_masks).long(),
@@ -80,7 +86,8 @@ class DistantBertDataset(Dataset):
             "labels": torch.from_numpy(labels).long(),
             "is_direct": torch.from_numpy(is_direct).long(),
             "has_mentions": torch.tensor([token_ids[0][0] >= 0]).bool(),
-            "pmids": torch.tensor(pmids).long()
+            "pmids": torch.tensor(pmids).long(),
+            "has_direct": torch.tensor(self.has_direct)
         }
 
         return sample

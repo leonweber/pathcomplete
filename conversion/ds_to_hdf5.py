@@ -9,6 +9,8 @@ import h5py
 import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
 
+from distant_supervision.run_bionlp import BioNLPProcessor
+
 
 def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
     all_token_ids = []
@@ -101,7 +103,6 @@ if __name__ == '__main__':
     parser.add_argument('output')
     parser.add_argument('--tokenizer', required=True)
     parser.add_argument('--entity_dict', type=Path)
-    parser.add_argument('--label_dict', type=Path)
     parser.add_argument('--max_seq_len', type=int, default=256)
     args = parser.parse_args()
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer)
@@ -128,21 +129,8 @@ if __name__ == '__main__':
     for item, id in entity_dict.items():
         entities[id] = item
 
-    label_dict = {}
-    if args.label_dict:
-        with args.label_dict.open() as f:
-            for line in f:
-                id, item = line.strip().split('\t')
-                label_dict[item] = int(id)
-    else:
-        for i in data.values():
-            for rel in i['relations']:
-                if rel not in label_dict:
-                    label_dict[rel] = len(label_dict)
+    labels = BioNLPProcessor.get_labels()
 
-    labels = [None for _ in label_dict]
-    for item, id in label_dict.items():
-        labels[id] = item
 
     label_binarizer = MultiLabelBinarizer(classes=labels)
     labels = []
