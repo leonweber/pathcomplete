@@ -1,13 +1,17 @@
+import logging
+
 import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+logger = logging.getLogger(__name__)
+
 
 class DistantBertDataset(Dataset):
 
-    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False, subsample_negative=0.1,
-                 has_direct=False):
+    def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False, subsample_negative=1.0,
+                 has_direct=False, pair_blacklist=None):
         self.file = h5py.File(path, 'r', driver='core')
         self.max_bag_size = max_bag_size
         self.max_length = max_length
@@ -21,6 +25,22 @@ class DistantBertDataset(Dataset):
         self.pairs = np.array(self.pairs)
         self.labels = self.file['labels'][:]
         self.has_direct = has_direct
+
+        if pair_blacklist:
+            filtered_pairs = []
+            filtered_labels = []
+            filtered_entity_ids = []
+            for pair, label, entity_id in zip(self.pairs, self.labels, self.entity_ids):
+                if pair not in pair_blacklist:
+                    filtered_pairs.append(pair)
+                    filtered_labels.append(label)
+                    filtered_entity_ids.append(entity_id)
+            n_removed = len(self.pairs) - len(filtered_pairs)
+            self.pairs = filtered_pairs
+            self.labels = np.vstack(filtered_labels)
+            self.entity_ids = np.vstack(filtered_entity_ids)
+            logger.info(f"Removed {n_removed} of {n_removed + len(self.pairs)} pairs due to blacklisting.")
+
 
         if ignore_no_mentions:
             filtered_pairs = []

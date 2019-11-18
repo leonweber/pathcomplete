@@ -1,16 +1,15 @@
 {
-  "random_seed":  std.parseInt(std.extVar("SEED")),
-  "pytorch_seed": std.parseInt(std.extVar("PYTORCH_SEED")),
-  "numpy_seed": std.parseInt(std.extVar("NUMPY_SEED")),
+  "random_seed":  5005,
+  "pytorch_seed": 5005,
+  "numpy_seed": 5005,
   "dataset_reader": {
     "type": "relation_instances",
     "lazy": false,
-    "max_bag_size": std.parseInt(std.extVar("max_bag_size")),
-    "negative_exampels_percentage": std.parseInt(std.extVar("negative_exampels_percentage")),
-    "with_direct_supervision": std.extVar("with_direct_supervision")
+    "max_bag_size": 100,
+    "negative_exampels_percentage": 100
   },
-  "train_data_path": "../data/BioNLP/train.json",
-  "validation_data_path": "../data/BioNLP/dev.json",
+  "train_data_path": "data/BioNLP-ST_2013/train.json",
+  "validation_data_path": "data/BioNLP-ST_2013/dev.json",
   "evaluate_on_test": false,
   "model": {
     "type": "comb_dist_direct_relex",
@@ -24,21 +23,21 @@
         }
       }
     },
-    "cnn_size": std.parseInt(std.extVar("cnn_size")),  //TODO: replace with seq_encoder
-    "dropout_weight": std.extVar("dropout_weight"),
-    "with_entity_embeddings": std.extVar("with_entity_embeddings"),
-    "sent_loss_weight": std.extVar("sent_loss_weight"),
-    "attention_weight_fn": std.extVar("attention_weight_fn"),
-    "attention_aggregation_fn": std.extVar("attention_aggregation_fn")
+    "cnn_size": 100,
+    "dropout_weight": 0.1,
+    "with_entity_embeddings": true,
+    "sent_loss_weight": 2,
+    "attention_weight_fn": "softmax",
+    "attention_aggregation_fn": "avg"
   },
   "iterator": {
     "type": "bucket",
     "sorting_keys": [["is_direct_supervision_bag", "num_tokens"], ["mentions", "list_num_tokens"]],
-    "batch_size": std.parseInt(std.extVar("batch_size")),
+    "batch_size": 16,
     "cache_instances": true
   },
   "trainer": {
-    "num_epochs": std.parseInt(std.extVar("num_epochs")),
+    "num_epochs": 100,
     "cuda_device": [0,1,2,3],
     "grad_clipping": 5.0,
     "patience": 3,

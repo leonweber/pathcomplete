@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import os
 import random
@@ -94,15 +95,13 @@ def train(args, train_dataset, model, direct_dataset=None):
             else:
                 direct_loss = None
 
-            is_direct = batch['is_direct'].cpu().numpy().ravel()
-            if is_direct.sum() > 0:
+            if batch['has_direct'].item():
                 direct_ap = average_precision_score(batch['is_direct'].cpu().numpy(), meta['alphas'].cpu().detach().numpy().ravel(),
                                                     average='micro')
                 direct_aps.append(direct_ap)
 
             if direct_loss:
-                lambda_ = 0.5
-                loss = lambda_ * direct_loss + (1 - lambda_) * distant_loss
+                loss = args.direct_weight * (direct_loss/2 + distant_loss/2)
             else:
                 loss = distant_loss
 
@@ -153,7 +152,9 @@ def train(args, train_dataset, model, direct_dataset=None):
         val_ap = None
         for _, val_ap in predict(dev_dataset, model): # predict yields prediction and current ap => exhaust iterator
             pass
+        print()
         print("Validation AP: " + str(val_ap))
+        print()
         if not args.disable_wandb:
             wandb.log({'val_distant_ap': val_ap}, step=global_step)
 
@@ -180,6 +181,7 @@ if __name__ == '__main__':
     parser.add_argument('--bert', required=True)
     parser.add_argument('--train', required=True)
     parser.add_argument('--direct_data', default=None, type=Path)
+    parser.add_argument('--pair_blacklist', default=None, type=Path, nargs='*')
     parser.add_argument('--dev', required=True)
     parser.add_argument('--seed', default=5005, type=int)
     parser.add_argument('--no_cuda', action='store_true')
@@ -192,6 +194,7 @@ if __name__ == '__main__':
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--warmup_steps", default=0, type=int,
                         help="Linear warmup over warmup_steps.")
+    parser.add_argument("--direct_weight", default=0.0, type=float)
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float,
@@ -223,6 +226,12 @@ if __name__ == '__main__':
                         level=logging.INFO)
     logger.warning(f"n_gpu: {args.n_gpu}, 16-bits training: {args.fp16}")
 
+    blacklisted_pairs = set()
+    if args.pair_blacklist:
+        for path in args.pair_blacklist:
+            with path.open() as f:
+                blacklisted_pairs.update(json.load(f))
+
     train_dataset = DistantBertDataset(
         args.train,
         max_bag_size=args.max_bag_size,
@@ -244,7 +253,9 @@ if __name__ == '__main__':
             max_bag_size=args.max_bag_size,
             max_length=args.max_length,
             ignore_no_mentions=args.ignore_no_mentions,
-            has_direct=True
+            has_direct=True,
+            pair_blacklist = blacklisted_pairs,
+            subsample_negative=0.0
         )
     else:
         direct_dataset = None

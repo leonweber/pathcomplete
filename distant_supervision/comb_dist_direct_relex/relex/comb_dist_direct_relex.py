@@ -162,7 +162,7 @@ class CombDistDirectRelex(Model):
             if bag_m.sum() == 0:
                 unpadded_alphas.append(np.array([]))
             else:
-                unpadded_alphas.append(alpha.cpu().detach().numpy()[bag_m.cpu().numpy()])
+                unpadded_alphas.append(alpha.cpu().detach().numpy()[bag_m.cpu().numpy()].squeeze(1))
 
         # apply a small FF to the attention weights
         alphas = self.ff_before_alpha(alphas)
@@ -211,7 +211,6 @@ class CombDistDirectRelex(Model):
             x = torch.cat([x, e1_e2_mult], dim=1)
 
         logits = self.ff(x)  # batch_size x self.num_classes
-
 
         output_dict = {'logits': logits, 'alphas': unpadded_alphas}  # sigmoid is applied in the loss function and the metric class, not here
 

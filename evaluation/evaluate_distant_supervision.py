@@ -42,10 +42,12 @@ if __name__ == '__main__':
     prov_random_aps = []
     n_snippets = 0
     n_pos_snippets = 0
+    predicted_pairs = set()
     with args.preds.open() as f:
         lines = f.readlines()
     for line in tqdm(lines):
         pred = json.loads(line.strip())
+        predicted_pairs.add(','.join(pred['entities']))
         ann = anns[','.join(pred['entities'])]
         for label, score in pred['labels']:
             y_score.append(score)
@@ -60,6 +62,8 @@ if __name__ == '__main__':
 
 
 
+
+    assert len(set(anns) - predicted_pairs) == 0
     print('rel AP:', average_precision_score(y_true, y_score, average='micro'), '(random baseline:', np.mean(y_true), ')')
     print('prov mAP:', np.mean(prov_aps), '( N:', n_snippets, ', random baseline:', np.mean(prov_random_aps), ')')
 

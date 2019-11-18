@@ -7,6 +7,5 @@ python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2011/all.json
 
 python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/train.json distant_supervision/data/BioNLP-ST_2013/train.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
 python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/dev.json distant_supervision/data/BioNLP-ST_2013/dev.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
-python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/test.json distant_supervision/data/BioNLP-ST_2013/dev.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
 python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/test.json distant_supervision/data/BioNLP-ST_2013/test.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
 python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/all.json distant_supervision/data/BioNLP-ST_2013/all.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
