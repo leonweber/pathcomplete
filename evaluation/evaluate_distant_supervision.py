@@ -54,16 +54,15 @@ if __name__ == '__main__':
             y_true.append(label in ann['relations'])
         y_prov = [m[1] == 'direct' for m in ann['mentions']]
         if sum(y_prov):
-            prov_aps.append(average_precision_score(y_prov, pred['alphas']))
+            try:
+                prov_aps.append(average_precision_score(y_prov, pred['alphas']))
+            except ValueError:
+                prov_aps.append(0)
             prov_random_aps.append(random_ap(sum(y_prov), len(y_prov)))
             n_snippets += len(y_prov)
             n_pos_snippets += sum(y_prov)
 
-
-
-
-
-    assert len(set(anns) - predicted_pairs) == 0
+    assert len(set(anns).symmetric_difference(predicted_pairs)) == 0
     print('rel AP:', average_precision_score(y_true, y_score, average='micro'), '(random baseline:', np.mean(y_true), ')')
     print('prov mAP:', np.mean(prov_aps), '( N:', n_snippets, ', random baseline:', np.mean(prov_random_aps), ')')
 

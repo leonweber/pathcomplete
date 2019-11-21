@@ -21,7 +21,7 @@ def predict(dataset, model, data=None):
     model.eval()
     dataloader = DataLoader(dataset,  batch_size=1)
     data_it = tqdm(dataloader, desc="Predicting", total=len(dataset))
-    y_pred, y_true = deque(maxlen=1000), deque(maxlen=1000)
+    y_pred, y_true = deque(), deque()
 
     for batch in data_it:
         model.eval()
@@ -100,7 +100,7 @@ if __name__ == '__main__':
         model = BertForDistantSupervision.from_pretrained(checkpoint)
         model.parallel_bert = nn.DataParallel(model.bert)
         model.to(args.device)
-        with (Path(checkpoint).parent / 'dev_preds.txt').open('w') as f:
+        with (Path(checkpoint) / 'dev_preds.txt').open('w') as f:
 
             for prediction, ap in predict(dataset=dataset, model=model, data=data):
                 f.write(json.dumps(prediction) + "\n")
