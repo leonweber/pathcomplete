@@ -62,7 +62,7 @@ if __name__ == '__main__':
             n_snippets += len(y_prov)
             n_pos_snippets += sum(y_prov)
 
-    assert len(set(anns).symmetric_difference(predicted_pairs)) == 0
+    # assert len(set(anns).symmetric_difference(predicted_pairs)) == 0
     print('rel AP:', average_precision_score(y_true, y_score, average='micro'), '(random baseline:', np.mean(y_true), ')')
     print('prov mAP:', np.mean(prov_aps), '( N:', n_snippets, ', random baseline:', np.mean(prov_random_aps), ')')
 

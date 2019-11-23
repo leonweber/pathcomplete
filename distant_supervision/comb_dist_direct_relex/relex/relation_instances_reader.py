@@ -163,8 +163,7 @@ class RelationInstancesReader(DatasetReader):
             except ValueError:
                 # ignore mentions with wrong entity tags
                 self._failed_mentions_count += 1
-                if self._failed_mentions_count % 1000 == 0:
-                    log.error('Number of failed mentions: %d', self._failed_mentions_count)
+                print('Number of failed mentions: %d', self._failed_mentions_count)
 
         if len(fields_list) == 0:
             return None  # instance with zero mentions (because all mentions failed)

@@ -26,7 +26,7 @@ class MultilabelAveragePrecision(Metric):
     AP - Fast_AP < 10/number_of_bins
     """
 
-    def __init__(self, bins=1000, recall_thr = 0.40) -> None:
+    def __init__(self, bins=1000, recall_thr = 1.0) -> None:
         """Args:
             bins: number of threshold bins for the fast computation of AP
             recall_thr: compute AP (or AUC) for recall values [0:recall_thr]

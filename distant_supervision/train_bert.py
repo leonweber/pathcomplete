@@ -32,14 +32,14 @@ def set_seed(args):
         torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, model, direct_dataset=None):
+def train(args, train_dataset, model, direct_datasets=None):
     model.train()
     if args.n_gpu > 1 and not hasattr(model.bert, 'module'):
         model.bert = nn.DataParallel(model.bert)
     model.to(args.device)
 
-    if direct_dataset:
-        train_dataset = ConcatDataset([train_dataset, direct_dataset])
+    if direct_datasets:
+        train_dataset = ConcatDataset([train_dataset] + direct_datasets)
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bert', required=True)
     parser.add_argument('--train', required=True)
-    parser.add_argument('--direct_data', default=None, type=Path)
+    parser.add_argument('--direct_data', default=None, type=Path, nargs='*')
     parser.add_argument('--pair_blacklist', default=None, type=Path, nargs='*')
     parser.add_argument('--dev', required=True)
     parser.add_argument('--seed', default=5005, type=int)
@@ -208,6 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
     parser.add_argument('--disable_wandb', action='store_true')
+    parser.add_argument('--test', action='store_true')
 
     args = parser.parse_args()
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and not args.overwrite_output_dir:
@@ -238,27 +239,32 @@ if __name__ == '__main__':
         max_length=args.max_length,
         ignore_no_mentions=args.ignore_no_mentions,
         subsample_negative=args.subsample_negative,
-        has_direct=False
+        has_direct=False,
+        test=args.test
     )
     dev_dataset = DistantBertDataset(
         args.dev,
         max_bag_size=args.max_bag_size,
         max_length=args.max_length,
         ignore_no_mentions=args.ignore_no_mentions,
-        has_direct=False
+        has_direct=False,
+        test=args.test
     )
     if args.direct_data:
-        direct_dataset = DistantBertDataset(
-            args.direct_data,
-            max_bag_size=args.max_bag_size,
-            max_length=args.max_length,
-            ignore_no_mentions=args.ignore_no_mentions,
-            has_direct=True,
-            pair_blacklist = blacklisted_pairs,
-            subsample_negative=0.0
-        )
+        direct_datasets = []
+        for direct_data in args.direct_data:
+            direct_datasets.append(DistantBertDataset(
+                direct_data,
+                max_bag_size=args.max_bag_size,
+                max_length=args.max_length,
+                ignore_no_mentions=args.ignore_no_mentions,
+                has_direct=True,
+                pair_blacklist = blacklisted_pairs,
+                subsample_negative=0.0,
+                test=args.test
+            ))
     else:
-        direct_dataset = None
+        direct_datasets = []
 
     config = BertConfig.from_pretrained(args.bert, num_labels=train_dataset.n_classes )
 
@@ -268,4 +274,4 @@ if __name__ == '__main__':
     if not args.disable_wandb:
         wandb.watch(model)
         wandb.config.update(args)
-    train(args, train_dataset=train_dataset, model=model, direct_dataset=direct_dataset)
+    train(args, train_dataset=train_dataset, model=model, direct_datasets=direct_datasets)

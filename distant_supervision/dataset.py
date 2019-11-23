@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class DistantBertDataset(Dataset):
 
     def __init__(self, path, max_bag_size=None, max_length=512, ignore_no_mentions=False, subsample_negative=1.0,
-                 has_direct=False, pair_blacklist=None):
+                 has_direct=False, pair_blacklist=None, test=False):
         self.file = h5py.File(path, 'r', driver='core')
         self.max_bag_size = max_bag_size
         self.max_length = max_length
@@ -70,6 +70,19 @@ class DistantBertDataset(Dataset):
 
         self.n_classes = len(self.file['id2label'])
         self.n_entities = len(self.file['id2entity'])
+
+        if test:
+            filtered_pairs = []
+            filtered_labels = []
+            filtered_entity_ids = []
+            for pair, label, entity_id in zip(self.pairs, self.labels, self.entity_ids):
+                if np.random.uniform(0, 1) <= 0.1:
+                    filtered_pairs.append(pair)
+                    filtered_labels.append(label)
+                    filtered_entity_ids.append(entity_id)
+            self.pairs = filtered_pairs
+            self.labels = np.vstack(filtered_labels)
+            self.entity_ids = np.vstack(filtered_entity_ids)
 
 
     def __len__(self):

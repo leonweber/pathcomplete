@@ -43,13 +43,16 @@ def predict(dataset, model, data=None):
         prediction['labels'] = []
         prediction['true_labels'] = []
         prediction['alphas'] = torch.sigmoid(meta['alphas']).tolist()
+        alphas_by_rel = torch.sigmoid(meta['alphas_by_rel'])
         if data:
             prediction['mentions'] = data[f"{e1},{e2}"]['mentions']
         ap = None
+        prediction['alphas_by_rel'] = {}
         for i, logit in enumerate(logits):
             rel = dataset.file['id2label'][i].decode()
             score = torch.sigmoid(logit).item()
             prediction['labels'].append([rel, score])
+            prediction['alphas_by_rel'][rel] = alphas_by_rel[:, i].tolist()
 
         if 'labels' in batch:
             y_pred.append(logits.cpu().detach().numpy())

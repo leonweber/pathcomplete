@@ -10,6 +10,8 @@
 #python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/test.json distant_supervision/data/BioNLP-ST_2013/test.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
 #python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-ST_2013/all.json distant_supervision/data/BioNLP-ST_2013/all.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
 
-python -m conversion.ds_to_hdf5 distant_supervision/data/PathwayCommons11.pid.hgnc.txt/train.json distant_supervision/data/PathwayCommons11.pid.hgnc.txt/train.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
-python -m conversion.ds_to_hdf5 distant_supervision/data/PathwayCommons11.pid.hgnc.txt/dev.json distant_supervision/data/PathwayCommons11.pid.hgnc.txt/dev.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
-python -m conversion.ds_to_hdf5 distant_supervision/data/PathwayCommons11.pid.hgnc.txt/test.json distant_supervision/data/PathwayCommons11.pid.hgnc.txt/test.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
+#python -m conversion.ds_to_hdf5 distant_supervision/data/PathwayCommons11.pid.hgnc.txt/train.json distant_supervision/data/PathwayCommons11.pid.hgnc.txt/train.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
+#python -m conversion.ds_to_hdf5 distant_supervision/data/PathwayCommons11.pid.hgnc.txt/dev.json distant_supervision/data/PathwayCommons11.pid.hgnc.txt/dev.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
+#python -m conversion.ds_to_hdf5 distant_supervision/data/PathwayCommons11.pid.hgnc.txt/test.json distant_supervision/data/PathwayCommons11.pid.hgnc.txt/test.hdf5 --tokenizer ~/data/scibert_scivocab_uncased
+
+python -m conversion.ds_to_hdf5 distant_supervision/data/BioNLP-STs/all.json distant_supervision/data/BioNLP-STs/all.hdf5 --tokenizer ~/data/scibert_scivocab_uncased

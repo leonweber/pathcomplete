@@ -33,10 +33,7 @@ class BertForDistantSupervision(BertPreTrainedModel):
         pooled_output = self.dropout(pooled_output)
 
         logits = self.classifier(pooled_output)
-        meta = {'alphas': torch.max(logits, dim=1)[0]}
-
-        if logits.size(0) > 5:
-            logits = logits.topk(5, dim=0)[0]
+        meta = {'alphas': torch.max(logits, dim=1)[0], 'alphas_by_rel': logits}
 
         x = torch.logsumexp(logits, dim=0)
 

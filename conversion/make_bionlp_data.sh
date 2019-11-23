@@ -44,18 +44,18 @@
 #python conversion/combine_bionlp_ds_data.py distant_supervision/data/BioNLP-ST*2013* distant_supervision/data/BioNLP-ST_2013
 #python conversion/combine_bionlp_ds_data.py distant_supervision/data/BioNLP-ST*2011* distant_supervision/data/BioNLP-ST_2011
 #
-#mkdir -p distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/
-#python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2011/train.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/train.json --direct_data distant_supervision/data/BioNLP-ST_2013/all.json
-#python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2011/dev.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/dev.json
-#python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2011/test.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/test.json
+mkdir -p distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/
+python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2011/train.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/train.json --direct_data distant_supervision/data/BioNLP-ST_2013/all.json --pair_blacklist distant_supervision/data/BioNLP-ST_2011/dev.json distant_supervision/data/BioNLP-ST_2011/test.json
+python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2011/dev.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/dev.json
+python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2011/test.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2011/test.json
+
+mkdir -p distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/
+python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2013/train.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/train.json --direct_data distant_supervision/data/BioNLP-ST_2011/all.json --pair_blacklist distant_supervision/data/BioNLP-ST_2013/dev.json distant_supervision/data/BioNLP-ST_2013/test.json
+python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2013/dev.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/dev.json
+python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2013/test.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/test.json
+
+#python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2013/train.json distant_supervision/data/BioNLP-ST_2013/train.csv
+#python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2013/dev.json distant_supervision/data/BioNLP-ST_2013/dev.csv
 #
-#mkdir -p distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/
-#python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2013/train.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/train.json --direct_data distant_supervision/data/BioNLP-ST_2011/all.json
-#python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2013/dev.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/dev.json
-#python -m conversion.ds_to_comb_dist_relex distant_supervision/data/BioNLP-ST_2013/test.json distant_supervision/comb_dist_direct_relex/data/BioNLP-ST_2013/test.json
-
-python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2013/train.json distant_supervision/data/BioNLP-ST_2013/train.csv
-python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2013/dev.json distant_supervision/data/BioNLP-ST_2013/dev.csv
-
-python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2011/train.json distant_supervision/data/BioNLP-ST_2011/train.csv
-python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2011/dev.json distant_supervision/data/BioNLP-ST_2011/dev.csv
+#python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2011/train.json distant_supervision/data/BioNLP-ST_2011/train.csv
+#python -m conversion.distant_supervision_to_text_classification distant_supervision/data/BioNLP-ST_2011/dev.json distant_supervision/data/BioNLP-ST_2011/dev.csv
