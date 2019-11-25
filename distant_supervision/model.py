@@ -1,6 +1,7 @@
 from torch import nn
 import torch
 from transformers import BertPreTrainedModel, BertModel
+import numpy as np
 
 
 def aggregate_provenance_predictions(alphas, pmids):
@@ -33,11 +34,13 @@ class BertForDistantSupervision(BertPreTrainedModel):
         pooled_output = self.dropout(pooled_output)
 
         logits = self.classifier(pooled_output)
-        meta = {'alphas': torch.max(logits, dim=1)[0], 'alphas_by_rel': logits}
+        alphas = torch.max(logits, dim=1)[0]
+        meta = {
+            'alphas': alphas,
+            'alphas_by_rel': logits,
+            'alphas_hist': np.histogram(alphas.detach().cpu().numpy())
+        }
 
         x = torch.logsumexp(logits, dim=0)
 
-
         return x, meta
-
-

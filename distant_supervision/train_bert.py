@@ -39,7 +39,11 @@ def train(args, train_dataset, model, direct_datasets=None):
     model.to(args.device)
 
     if direct_datasets:
-        train_dataset = ConcatDataset([train_dataset] + direct_datasets)
+        direct_data = ConcatDataset(direct_datasets)
+        direct_dataloader = DataLoader(direct_data, batch_size=1 ,shuffle=True)
+        direct_iterator = iter(direct_dataloader)
+    else:
+        direct_iterator = None
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
@@ -65,7 +69,6 @@ def train(args, train_dataset, model, direct_datasets=None):
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch")
     for _ in train_iterator:
-        tr_loss = 0.0
         logging_losses = []
         logging_direct_losses = []
         logging_distant_losses = []
@@ -73,13 +76,12 @@ def train(args, train_dataset, model, direct_datasets=None):
         direct_aps = []
         epoch_iterator = enumerate(train_dataloader)
         pbar = tqdm(total=len(train_dataloader) // args.gradient_accumulation_steps, desc="Batches")
-        log_dict = None
-        for step, batch in epoch_iterator:
-            model.train()
-            if args.n_gpu > 1 and not hasattr(model.bert, 'module'):
-                model.bert = nn.DataParallel(model.bert)
-            model.to(args.device)
+        model.train()
+        if args.n_gpu > 1 and not hasattr(model.bert, 'module'):
+            model.bert = nn.DataParallel(model.bert)
+        model.to(args.device)
 
+        for step, batch in epoch_iterator:
             batch = {k: v.squeeze(0).to(args.device) for k, v in batch.items()}
             logits, meta = model(**batch)
 
@@ -87,34 +89,49 @@ def train(args, train_dataset, model, direct_datasets=None):
             y_true.append(batch['labels'].cpu().numpy())
 
             distant_loss = loss_fun(logits, batch['labels'].float())
-            logging_distant_losses.append(distant_loss.item())
-
-            if batch['has_direct'].item():
-                direct_loss = direct_loss_fun(meta['alphas'], batch['is_direct'].float())
-                logging_direct_losses.append(direct_loss.item())
-            else:
-                direct_loss = None
-
-            if batch['has_direct'].item():
-                direct_ap = average_precision_score(batch['is_direct'].cpu().numpy(), meta['alphas'].cpu().detach().numpy().ravel(),
-                                                    average='micro')
-                direct_aps.append(direct_ap)
-
-            if direct_loss:
-                loss = args.direct_weight * (direct_loss/2 + distant_loss/2)
-            else:
-                loss = distant_loss
+            if direct_iterator:
+                distant_loss = (1 - args.direct_weight) * distant_loss
 
             if args.fp16:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                with amp.scale_loss(distant_loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
                 torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
             else:
-                loss.backward()
+                distant_loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-            tr_loss += loss.item()
-            logging_losses.append(loss.item())
+            logging_distant_losses.append(distant_loss.item())
+
+            if direct_iterator:
+                try:
+                    direct_batch = next(direct_iterator)
+                except StopIteration:
+                    direct_iterator = iter(direct_dataloader)
+                    direct_batch = next(direct_iterator)
+                direct_batch = {k: v.squeeze(0).to(args.device) for k, v in direct_batch.items()}
+                direct_logits, direct_meta = model(**direct_batch)
+                direct_loss = direct_loss_fun(direct_meta['alphas'], direct_batch['is_direct'].float())
+                direct_loss = direct_loss + loss_fun(direct_logits, direct_batch['labels'].float())
+                direct_loss = args.direct_weight * direct_loss
+                logging_direct_losses.append(direct_loss.item())
+                direct_ap = average_precision_score(direct_batch['is_direct'].cpu().numpy(), direct_meta['alphas'].cpu().detach().numpy().ravel(),
+                                                    average='micro')
+                if not np.isnan(direct_ap):
+                    direct_aps.append(direct_ap)
+
+                if args.fp16:
+                    with amp.scale_loss(direct_loss, optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
+                else:
+                    direct_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            else:
+                direct_loss = 0
+
+
+            loss = (distant_loss + direct_loss).item()
+            logging_losses.append(loss)
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
@@ -147,6 +164,7 @@ def train(args, train_dataset, model, direct_datasets=None):
                 logging_losses = []
                 logging_direct_losses = []
                 logging_distant_losses = []
+                direct_aps = []
 
         # Evaluation
         val_ap = None
