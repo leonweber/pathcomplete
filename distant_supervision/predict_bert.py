@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 from collections import deque, defaultdict
 from glob import glob
 from pathlib import Path
@@ -15,6 +16,13 @@ from transformers import WEIGHTS_NAME
 
 from .dataset import DistantBertDataset
 from .model import BertForDistantSupervision
+
+
+
+def natural_sort(l):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ]
+    return sorted(l, key = alphanum_key)
 
 
 def predict(dataset, model, data=None):
@@ -96,7 +104,7 @@ if __name__ == '__main__':
     with args.data.open() as f:
         data = json.load(f)
 
-    checkpoints = list(os.path.dirname(c) for c in sorted(glob(str(args.model_path / '**' / WEIGHTS_NAME), recursive=True)))
+    checkpoints = list(os.path.dirname(c) for c in natural_sort(glob(str(args.model_path / '**' / WEIGHTS_NAME), recursive=True))[::-1])
 
     best_ap = (None, 0)
     for checkpoint in checkpoints:
