@@ -99,10 +99,8 @@ class RelationInstancesReader(DatasetReader):
                 e1, e2 = pair.split(',')
                 rels = set(pair_data['relations'])
 
-                mentions = set(m[0] for m in pair_data['mentions'])
 
-
-                inst = self.text_to_instance(e1, e2, rels, mentions, is_predict=False, supervision_type=pair_data['supervision_type'])
+                inst = self.text_to_instance(e1, e2, rels, pair_data['mentions'], is_predict=False, supervision_type=pair_data['supervision_type'])
                 if inst is not None:
                     yield inst
 
@@ -120,8 +118,8 @@ class RelationInstancesReader(DatasetReader):
 
     @overrides
     def text_to_instance(self, e1: str, e2: str,  # pylint: disable=arguments-differ
-                         rels: Set[str],
-                         mentions: Set[str],
+                         rels: Set[List],
+                         mentions: List[List[str]],
                          is_predict: bool,
                          supervision_type: str) -> Instance:
         """Construct an instance given text input.
@@ -135,6 +133,9 @@ class RelationInstancesReader(DatasetReader):
         if (e1, e2) in self._pairs and supervision_type == 'distant' and not is_predict:
             assert False, "input file is not sorted, check entities %s, %s" % (e1, e2)
         self._pairs.add((e1, e2))
+
+        text_mentions = [m[0] for m in mentions]
+
 
         for rel in rels:
             self._inst_counts[rel] += 1  # keep track of number of instances in each relation type for logging
@@ -151,7 +152,7 @@ class RelationInstancesReader(DatasetReader):
             rels_str = ", ".join(sorted(list(rels)))
             self._relation_coocur[rels_str] += 1
 
-        filtered_mentions = list(mentions)[:self.max_bag_size]  # limit number of mentions per bag
+        filtered_mentions = list(text_mentions)[:self.max_bag_size]  # limit number of mentions per bag
 
         fields_list = []
         for m in filtered_mentions:
@@ -195,8 +196,9 @@ class RelationInstancesReader(DatasetReader):
                  }
         if self.with_metadata:
             metadata = {
-                "mentions": list(mentions),
+                "mentions": mentions,
                 "entities": [e1, e2],
+                "relations": list(rels)
             }
             fields["metadata"] = MetadataField(metadata)
         return Instance(fields)

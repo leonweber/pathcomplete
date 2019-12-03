@@ -10,8 +10,8 @@ from allennlp.commands import main
 sys.argv = [
     "allennlp",  # command name, not used by main
     "predict",
-    "runs/run02/model.tar.gz",
-    "../data/BioNLP/dev.json",
+    "runs/run001/model.tar.gz",
+    "data/BioNLP-ST_2011/dev.json",
     "--include-package", "relex",
     "--cuda-device", "0",
     "--batch-size", "4",

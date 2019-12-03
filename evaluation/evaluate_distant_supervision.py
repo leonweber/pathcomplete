@@ -26,6 +26,7 @@ def random_ap(n_relevant, n_total):
 
 
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--anns', required=True, type=Path)
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     with args.anns.open() as f:
-        anns = json.load(f)
+        anns = {k: v for k, v in json.load(f).items() if v['mentions']}
 
     y_true = []
     y_score = []
@@ -62,8 +63,12 @@ if __name__ == '__main__':
             n_snippets += len(y_prov)
             n_pos_snippets += sum(y_prov)
 
-    # assert len(set(anns).symmetric_difference(predicted_pairs)) == 0
-    print('rel AP:', average_precision_score(y_true, y_score, average='micro'), '(random baseline:', np.mean(y_true), ')')
+    assert predicted_pairs.issubset(set(anns))
+    max_recall = len(predicted_pairs)/len(anns)
+    ap = average_precision_score(y_true, y_score, average='micro') * max_recall
+
+    print('max recall:', max_recall)
+    print('rel AP:', ap, '(random baseline:', np.mean(y_true), ')')
     print('prov mAP:', np.mean(prov_aps), '( N:', n_snippets, ', random baseline:', np.mean(prov_random_aps), ')')
 
 

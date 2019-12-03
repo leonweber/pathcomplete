@@ -12,6 +12,8 @@ def transform(data, direct_data):
             k = k + '_direct'
 
         v['mentions'] = [m for m in v['mentions'] if m[1] == 'direct']
+        if 'precedes-catalysis-of' in v['relations']:
+            del v['relations']['precedes-catalysis-of']
         if v['mentions']:
             v['supervision_type'] = 'direct'
             transformed_data[k] = v
