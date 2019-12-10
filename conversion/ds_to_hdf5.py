@@ -106,7 +106,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_seq_len', type=int, default=256)
     args = parser.parse_args()
     tokenizer = BertTokenizer.from_pretrained(args.tokenizer)
-    tokenizer.add_special_tokens({ 'additional_special_tokens': ['<e1>','</e1>', '<e2>', '</e2>'] })
+    tokenizer.add_special_tokens({ 'additional_special_tokens': ['<e1>','</e1>', '<e2>', '</e2>'] +
+                                                                [f'<protein{i}/>' for i in range(47)]})
 
     with open(args.input) as f:
         data = json.load(f)

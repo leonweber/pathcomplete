@@ -100,7 +100,7 @@ class RelationInstancesReader(DatasetReader):
                 rels = set(pair_data['relations'])
 
 
-                inst = self.text_to_instance(e1, e2, rels, pair_data['mentions'], is_predict=False, supervision_type=pair_data['supervision_type'])
+                inst = self.text_to_instance(e1, e2, rels, pair_data['mentions'], is_predict=False, supervision_type=pair_data.get('supervision_type', 'distant'))
                 if inst is not None:
                     yield inst
 

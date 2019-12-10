@@ -2,7 +2,6 @@ import argparse
 import json
 from collections import defaultdict
 
-import requests
 from tqdm import tqdm
 
 import pandas as pd
@@ -11,6 +10,7 @@ import itertools
 import numpy as np
 import re
 
+from conversion.util import hgnc_to_uniprot
 
 INTERACTION_TYPES = {
     'controls-state-change-of',
@@ -55,53 +55,6 @@ def subsample_genes(df, size):
             selected_nodes.add(random_neighbour)
     
     return selected_nodes
-
-
-def natural_language_to_uniprot(string, mg):
-    string = string.replace("/", " ").replace("+", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "")
-    with HiddenPrints():
-        res = mg.query(string, size=1, fields='uniprot')['hits']
-    if res and 'uniprot' in res[0]:
-        if 'Swiss-Prot' in res[0]['uniprot']:
-            uniprot = res[0]['uniprot']['Swiss-Prot']
-            return uniprot
-
-    return None
-
-
-
-
-def hgnc_to_uniprot(symbol, mapping, mg):
-    try:
-        symbol = mapping[symbol]
-        return symbol
-    except KeyError as ke:
-        with HiddenPrints():
-            res = mg.query('symbol:%s' % symbol, size=1, fields='uniprot')['hits']
-        if res and 'uniprot' in res[0]:
-            if 'Swiss-Prot' in res[0]['uniprot']:
-                uniprot = res[0]['uniprot']['Swiss-Prot']
-                return [uniprot]
-
-        print("Couldn't find %s" % symbol)
-        return None
-
-def geneid_to_uniprot(symbol, mg):
-    try:
-        res = mg.query('%s' % symbol, size=1, fields='uniprot')['hits']
-    except requests.exceptions.HTTPError:
-        print("Couldn't find %s" % symbol)
-        return None
-    if res and 'uniprot' in res[0]:
-        if 'Swiss-Prot' in res[0]['uniprot']:
-            uniprot = res[0]['uniprot']['Swiss-Prot']
-            if isinstance(uniprot, list):
-                return uniprot
-            else:
-                return [uniprot]
-
-    print("Couldn't find %s" % symbol)
-    return None
 
 
 def to_interactions(df: pd.DataFrame, mg, subsample=1.0):

@@ -50,5 +50,5 @@ class RelationExtractionPredictor(Predictor):
         for out, instance in zip(outputs, instances):
             out['entities'] = list(instance['metadata']['entities'])
             out['mentions'] = list(instance['metadata']['mentions'])
-            out['relations'] = list(instance['metadata']['relations'])
+            out['true_labels'] = list(instance['metadata']['relations'])
         return sanitize(outputs)

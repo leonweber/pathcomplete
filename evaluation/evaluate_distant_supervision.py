@@ -57,7 +57,7 @@ if __name__ == '__main__':
         if sum(y_prov):
             try:
                 prov_aps.append(average_precision_score(y_prov, pred['alphas']))
-            except ValueError:
+            except (ValueError, KeyError):
                 prov_aps.append(0)
             prov_random_aps.append(random_ap(sum(y_prov), len(y_prov)))
             n_snippets += len(y_prov)
