@@ -14,14 +14,15 @@ def transform(data):
     all_entities = []
     all_labels = []
     for k, v in data.items():
-        # entities = []
-        # for mention, _, _ in v['mentions']:
-        #     e1 = mention[mention.find('<e1>'):mention.find('</e1>')]
-        #     e2 = mention[mention.find('<e2>'):mention.find('</e2>')]
-        #
-        #     entities.append(e1)
-        #     entities.append(e2)
-        all_entities.append(" ".join(itertools.chain(*v['masked_entities'])))
+        entities = []
+        for mention, _, _ in v['mentions']:
+            e1 = mention[mention.find('<e1>'):mention.find('</e1>')]
+            e2 = mention[mention.find('<e2>'):mention.find('</e2>')]
+
+            entities.append(e1)
+            entities.append(e2)
+        # all_entities.append(" ".join(itertools.chain(*v['masked_entities'])))
+        all_entities.append(" ".join(entities)) 
         all_labels.append([r for r in v['relations'] if r != 'NA'])
 
     return all_entities, all_labels
