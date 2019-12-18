@@ -8,8 +8,8 @@
     "max_bag_size": 100,
     "negative_exampels_percentage": 100
   },
-  "train_data_path": "data/PathwayCommons11.pid.hgnc.txt/train_masked.json",
-  "validation_data_path": "data/PathwayCommons11.pid.hgnc.txt/dev_masked.json",
+  "train_data_path": "data/BioNLP-ST_2013/train_masked.json",
+  "validation_data_path": "data/BioNLP-ST_2013/dev_masked.json",
   "evaluate_on_test": false,
   "model": {
     "type": "comb_dist_direct_relex",
@@ -26,7 +26,7 @@
     "cnn_size": 100,
     "dropout_weight": 0.0,
     "with_entity_embeddings": true,
-    "sent_loss_weight": 2,
+    "sent_loss_weight": 1,
     "attention_weight_fn": "sigmoid",
     "attention_aggregation_fn": "max"
   },

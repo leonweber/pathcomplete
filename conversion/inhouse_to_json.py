@@ -64,10 +64,11 @@ def convert(lines):
                     relations[f"{a},in-complex-with,{b}"] = []
                     relations[f"{b},in-complex-with,{a}"] = []
 
-    for a, b in itertools.combinations(proteins, 2):
-        pair = tuple(sorted([a, b]))
-        if pair not in pairs:
-            relations[f"{a},NA,{b}"] = []
+    for a in proteins:
+        for b in proteins:
+            pair = tuple(sorted([a, b]))
+            if pair not in pairs:
+                relations[f"{a},NA,{b}"] = []
 
     return relations
 

@@ -81,6 +81,7 @@ def predict(dataset, model, data=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input', type=Path)
+    parser.add_argument('output',type=Path)
     parser.add_argument('--model_path', required=True, type=Path)
     parser.add_argument('--data', required=True, type=Path)
     parser.add_argument('--device', default='cpu')
@@ -111,7 +112,7 @@ if __name__ == '__main__':
         model = BertForDistantSupervision.from_pretrained(checkpoint)
         model.parallel_bert = nn.DataParallel(model.bert)
         model.to(args.device)
-        with (Path(checkpoint) / 'dev_preds.txt').open('w') as f:
+        with args.output.open('w') as f:
 
             for prediction, ap in predict(dataset=dataset, model=model, data=data):
                 f.write(json.dumps(prediction) + "\n")
