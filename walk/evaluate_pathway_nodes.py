@@ -3,17 +3,17 @@ import json
 
 from pathlib import Path
 
-def evaluate(anns, preds):
+def evaluate(true_nodes, pred_nodes):
+    true_nodes = set(true_nodes)
+    pred_nodes = set(pred_nodes)
+
     tps = 0
     fps = 0
     fns = 0
-    for pw_name in anns:
-        true_nodes = set(anns[pw_name]['allowed'])
-        pred_nodes = set(preds.get(pw_name, []))
 
-        tps += len(true_nodes & pred_nodes)
-        fps += len(pred_nodes - true_nodes)
-        fns += len(true_nodes - pred_nodes)
+    tps += len(true_nodes & pred_nodes)
+    fps += len(pred_nodes - true_nodes)
+    fns += len(true_nodes - pred_nodes)
 
     try:
         p = tps / (tps + fps)
