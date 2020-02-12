@@ -11,6 +11,36 @@ import pandas as pd
 from sklearn.metrics.ranking import precision_recall_curve
 
 
+def ranking_precision_score(y_true, y_score, k=10):
+    """Precision at rank k
+    Parameters
+    ----------
+    y_true : array-like, shape = [n_samples]
+        Ground truth (true relevance labels).
+    y_score : array-like, shape = [n_samples]
+        Predicted scores.
+    k : int
+        Rank.
+    Returns
+    -------
+    precision @k : float
+    """
+    unique_y = np.unique(y_true)
+
+    if len(unique_y) > 2:
+        raise ValueError("Only supported for two relevance levels.")
+
+    pos_label = unique_y[1]
+    n_pos = np.sum(y_true == pos_label)
+
+    order = np.argsort(y_score)[::-1]
+    y_true = np.take(y_true, order[:k])
+    n_relevant = np.sum(y_true == pos_label)
+
+    # Divide by min(n_pos, k) such that the best achievable score is always 1.0.
+    return float(n_relevant) / min(n_pos, k)
+
+
 def augment_preds(preds):
     augmented_preds = dict(preds)
     for pred in preds:
@@ -57,6 +87,10 @@ def evaluate_relations(anns, preds, baseline=None):
     proba_scores = [preds[rel]["score"] for rel in preds]
     y_true = [int(rel in true_relations) for rel in preds]
 
+    p_at_10 = ranking_precision_score(y_true=y_true, y_score=proba_scores, k=10)
+    p_at_50 = ranking_precision_score(y_true=y_true, y_score=proba_scores, k=50)
+    p_at_100 = ranking_precision_score(y_true=y_true, y_score=proba_scores, k=100)
+
     max_recall = len(true_relations & set(preds)) / len(true_relations)
 
     prec_vals, rec_vals, _ = precision_recall_curve(y_true, proba_scores)
@@ -70,6 +104,7 @@ def evaluate_relations(anns, preds, baseline=None):
     if baseline and preds:
         y_true = [int(rel in true_relations) for rel in preds if rel not in baseline]
         proba_scores = [preds[rel]["score"] for rel in preds if rel not in baseline]
+        new_support = len([rel for rel in preds if rel not in baseline])
 
         new_prec_vals, new_rec_vals, _ = precision_recall_curve(y_true, proba_scores)
         new_ap = np.sum(np.diff(np.insert(new_rec_vals[::-1], 0, 0)) * new_prec_vals[::-1])
@@ -80,19 +115,24 @@ def evaluate_relations(anns, preds, baseline=None):
         new_prec_vals = None
         new_rec_vals = None
         new_ap = None
+        new_support = None
 
-    provenance_ap = evaluate_provenance(anns, preds)
+    # provenance_ap = evaluate_provenance(anns, preds)
 
 
     result = {
         'support': len(true_relations),
         'ap': ap,
-        'provenance_ap': provenance_ap,
+        # 'provenance_ap': provenance_ap,
         'new_ap': new_ap,
         'prec_vals': prec_vals,
         'rec_vals': rec_vals,
         'new_prec_vals': new_prec_vals,
         'new_rec_vals': new_rec_vals,
+        'new_support': new_support,
+        'p@10': p_at_10,
+        'p@50': p_at_50,
+        'p@100': p_at_100,
     }
 
     return result
@@ -125,7 +165,6 @@ if __name__ == '__main__':
 
     with open(args.preds) as f:
         preds = {k.replace(" ", ""): v for k,v in json.load(f).items()}
-        preds = {k: v for k, v in preds.items() if k in anns}
         if args.filter:
             with open(args.filter) as f:
                 filter = json.load(f)

@@ -6,14 +6,16 @@ def transform(data, direct_data):
     transformed_data = {}
     for k, v in data.items():
         v['supervision_type'] = 'distant'
+        if 'catalysis-precedes' in v['relations']:
+            v['relations'].remove('catalysis-precedes')
         transformed_data[k] = v
     for k, v in direct_data.items():
         if k in transformed_data:
             k = k + '_direct'
 
         v['mentions'] = [m for m in v['mentions'] if m[1] == 'direct']
-        if 'precedes-catalysis-of' in v['relations']:
-            del v['relations']['precedes-catalysis-of']
+        if 'catalysis-precedes' in v['relations']:
+            v['relations'].remove('catalysis-precedes')
         if v['mentions']:
             v['supervision_type'] = 'direct'
             transformed_data[k] = v

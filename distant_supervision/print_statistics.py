@@ -1,6 +1,9 @@
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
+from pprint import pprint
+
 import seaborn as sns
 import numpy as np
 
@@ -12,6 +15,8 @@ def print_statistics(data):
     n_pos_mentions = []
     n_neg_mentions = []
     n_rels = []
+    relation_count = defaultdict(int)
+    proteins = set()
 
 
     for k, v in data.items():
@@ -19,10 +24,14 @@ def print_statistics(data):
             if not v['mentions']:
                 continue
 
+            proteins.update(k.split(","))
             n_rels.append(len(v['relations']))
             if v['relations'] and v['relations'][0] != 'NA':
                 n_pos_mentions.append(len(v['mentions']))
                 n_pos += 1
+                for rel in v['relations']:
+                    relation_count[rel] += 1
+                    relation_count['all'] += 1
             else:
                 n_neg_mentions.append(len(v['mentions']))
                 n_neg += 1
@@ -32,6 +41,7 @@ def print_statistics(data):
 
     print("Positive pairs:", n_pos)
     print("Negative pairs:", n_neg)
+    print("Unique proteins:", len(proteins))
     # sns.set()
     # pos_mention_plot = sns.boxplot(n_pos_mentions).get_figure()
     # neg_mention_plot = sns.boxplot(n_neg_mentions).get_figure()
@@ -40,6 +50,7 @@ def print_statistics(data):
     print(f"Positive mentions: {np.mean(n_pos_mentions)} +/- {np.std(n_pos_mentions)}")
     print(f"Negative mentions: {np.mean(n_neg_mentions)} +/- {np.std(n_neg_mentions)}")
     print(f"Relations: {np.mean(n_rels)} +/- {np.std(n_rels)}")
+    pprint(relation_count)
 
 
 

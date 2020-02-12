@@ -23,16 +23,21 @@ if __name__ == '__main__':
             triple_blacklist.update(json.load(f))
 
     with args.input.open() as f, args.output.open('w') as f_out:
-        for line in f:
-            pred = json.loads(line)
+        anns = json.load(f)
 
-            new_preds = []
-            for label, score in pred['labels']:
-                if f"{pred['entities'][0]},{label},{pred['entities'][1]}" not in triple_blacklist:
-                    new_preds.append([label, score])
-            pred['labels'] = new_preds
+        new_anns = {}
 
-            if ','.join(pred['entities']) not in pair_blacklist:
-                f_out.write(line)
+        for k, v in anns.items():
+            e1, e2 = k.split(",")
+            if k in pair_blacklist:
+                continue
 
+            new_relations = []
+            for rel in v['relations']:
+                if f"{e1},{rel},{e2}" not in triple_blacklist:
+                    new_relations.append(rel)
 
+            v['relations'] = new_relations
+            new_anns[k] = v
+
+        json.dump(new_anns, f_out)

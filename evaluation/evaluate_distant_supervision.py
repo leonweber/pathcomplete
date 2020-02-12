@@ -84,8 +84,9 @@ def evaluate(anns, preds):
             n_snippets += len(y_prov)
             n_pos_snippets += sum(y_prov)
 
-    assert predicted_pairs.issubset(set(anns))
-    max_recall = len(predicted_pairs) / len(anns)
+    pos_anns = set(k for k,v in anns.items() if v['relations'] and not 'NA' == v['relations'][0])
+    max_recall = len(predicted_pairs) / len(pos_anns | predicted_pairs)
+    print(max_recall)
     ap = average_precision_score(y_true, y_score, average='micro') * max_recall
     precision, recall, thresholds = precision_recall_curve(y_true, y_score)
 
@@ -93,11 +94,11 @@ def evaluate(anns, preds):
     recall = recall * max_recall
 
     df_all = pd.DataFrame({
-        'precision': precision,
-        'recall': recall,
-        'thresholds': thresholds
+        'Precision': precision,
+        'Recall': recall,
+        'Thresholds': thresholds
     })
-    df_all['relation'] = 'all'
+    df_all['Relation'] = 'all'
 
     for rel in y_true_by_relation:
         y_true = y_true_by_relation[rel]
@@ -107,11 +108,11 @@ def evaluate(anns, preds):
         thresholds = np.array([0] + thresholds.tolist())
 
         df = pd.DataFrame({
-            'precision': precision,
-            'recall': recall,
-            'thresholds': thresholds
+            'Precision': precision,
+            'Recall': recall,
+            'Thresholds': thresholds
         })
-        df['relation'] = rel
+        df['Relation'] = rel
         df_all = pd.concat([df_all, df])
 
     return ap, prov_aps, df_all
@@ -121,6 +122,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--anns', required=True, type=Path)
     parser.add_argument('--preds', required=True, type=Path)
+    parser.add_argument('--include_random', action='store_true')
 
     args = parser.parse_args()
 
@@ -131,7 +133,12 @@ if __name__ == '__main__':
         preds = f.readlines()
 
     ap, prov_aps, df = evaluate(anns, preds)
-    random_ap, random_prov_aps = evaluate_random_baseline(anns, preds)
+    if args.include_random:
+        random_ap, random_prov_aps = evaluate_random_baseline(anns, preds)
+        print('rel AP:', ap, '(random baseline:', random_ap, ')')
+        print('prov mAP:', np.mean(prov_aps), '(random baseline:', np.mean(random_prov_aps), ')')
+    else:
+        print('rel AP:', ap)
+        print('prov mAP:', np.mean(prov_aps))
 
-    print('rel AP:', ap, '(random baseline:', random_ap, ')')
-    print('prov mAP:', np.mean(prov_aps), '(random baseline:', np.mean(random_prov_aps), ')')
+

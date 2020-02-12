@@ -64,6 +64,7 @@ def train(args, train_dataset, model, direct_datasets=None):
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
 
     global_step = 0
+    best_val_ap = 0
     loss_fun = nn.BCEWithLogitsLoss()
     direct_loss_fun = nn.BCEWithLogitsLoss()
     model.zero_grad()
@@ -189,8 +190,11 @@ def train(args, train_dataset, model, direct_datasets=None):
         if hasattr(model.bert, 'module'):
             model.bert = model.bert.module
         model.save_pretrained(output_dir)
-        model.save_pretrained(args.output_dir)
-        torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
+
+        if val_ap > best_val_ap:
+            model.save_pretrained(args.output_dir)
+            torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
+            best_val_ap = val_ap
 
 
 

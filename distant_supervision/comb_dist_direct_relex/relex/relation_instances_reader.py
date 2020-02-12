@@ -100,7 +100,9 @@ class RelationInstancesReader(DatasetReader):
                 rels = set(pair_data['relations'])
 
 
-                inst = self.text_to_instance(e1, e2, rels, pair_data['mentions'], is_predict=False, supervision_type=pair_data.get('supervision_type', 'distant'))
+                masked_entities = pair_data.get('masked_entities', None)
+                inst = self.text_to_instance(e1, e2, rels, pair_data['mentions'], is_predict=False, supervision_type=pair_data.get('supervision_type', 'distant'),
+                                             masked_entities=masked_entities)
                 if inst is not None:
                     yield inst
 
@@ -121,7 +123,8 @@ class RelationInstancesReader(DatasetReader):
                          rels: Set[List],
                          mentions: List[List[str]],
                          is_predict: bool,
-                         supervision_type: str) -> Instance:
+                         supervision_type: str,
+                         masked_entities: List[List[str]] = None) -> Instance:
         """Construct an instance given text input.
 
         is_predict: True if this is being called for prediction not training
@@ -200,6 +203,8 @@ class RelationInstancesReader(DatasetReader):
                 "entities": [e1, e2],
                 "relations": list(rels)
             }
+            if masked_entities:
+                metadata["masked_entities"] = masked_entities
             fields["metadata"] = MetadataField(metadata)
         return Instance(fields)
 

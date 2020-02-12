@@ -7,7 +7,9 @@ import json
 import scispacy
 import spacy
 from tqdm import tqdm
+from mygene import MyGeneInfo
 
+from .util import natural_language_to_uniprot
 unmappable = set()
 
 ENTITY_TYPES = {'Gene_or_gene_product', 'Protein'}
@@ -277,7 +279,7 @@ def get_mention(e1: Theme, e2: Theme, doc):
     return new_text
 
 
-def transform(fname, transformed_data):
+def transform(fname, transformed_data, mg):
     with open(fname + '.txt') as f:
         txt = f.read().strip()
     with open(fname + '.a1') as f:
@@ -292,9 +294,9 @@ def transform(fname, transformed_data):
 
     for e1, e2 in get_possible_pairs([t for t in Theme.registry.values() if t.type in ENTITY_TYPES]):
         transform_pair(e1, e2, relation_types=[], fname=fname, transformed_data=transformed_data,
-                       doc=doc, is_direct=False)
+                       doc=doc, is_direct=False, mg=mg)
         transform_pair(e2, e1, relation_types=[], fname=fname, transformed_data=transformed_data,
-                       doc=doc, is_direct=False)
+                       doc=doc, is_direct=False, mg=mg)
 
     event: Event
     for event_id, event in Event.registry.items():
@@ -336,9 +338,9 @@ def transform(fname, transformed_data):
     return transformed_data
 
 
-def transform_pair(e1, e2, relation_types, fname, transformed_data, doc, is_direct=False):
-    e1_id = e1.mention.replace(',', '').replace('/', '').replace(' ', '-').lower()
-    e2_id = e2.mention.replace(',', '').replace('/', '').replace(' ', '-').lower()
+def transform_pair(e1, e2, relation_types, fname, transformed_data, doc, mg, is_direct=False):
+    e1_id = natural_language_to_uniprot(e1.mention, mg)
+    e2_id = natural_language_to_uniprot(e2.mention, mg)
 
     pair = f"{e1_id},{e2_id}"
     if pair not in transformed_data:
@@ -377,11 +379,12 @@ if __name__ == '__main__':
 
     transformed_data = {}
     nlp = spacy.load('en_core_sci_sm', disable=['tagger'])
+    mg = MyGeneInfo()
 
     for fname in tqdm(fnames):
         Event.registry = {}
         Theme.registry = {}
-        transform(str(data / fname), transformed_data)
+        transform(str(data / fname), transformed_data, mg=mg)
 
     json_compatible_data = {}
     for k, v in transformed_data.items():

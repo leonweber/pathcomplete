@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from utils import datadir
+from util import datadir
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

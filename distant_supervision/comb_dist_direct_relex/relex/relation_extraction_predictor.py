@@ -36,11 +36,37 @@ class RelationExtractionPredictor(Predictor):
     #
     #     return result
 
+    @staticmethod
+    def replace_masks(text, masked_entities):
+        new_tokens = []
+        i = 0
+        for token in text.split():
+            if '<protein' in token:
+                if '<e1>' in token:
+                    new_tokens.append('<e1>' + masked_entities[i] + '</e1>')
+                elif '<e2>' in token:
+                    new_tokens.append('<e2>' + masked_entities[i] + '</e2>')
+                else:
+                    new_tokens.append(masked_entities[i])
+                i += 1
+            else:
+                new_tokens.append(token)
+
+        return " ".join(new_tokens)
+
+
     @overrides
     def predict_instance(self, instance: Instance) -> JsonDict:
         out = self._model.forward_on_instance(instance)
         out['entities'] = list(instance['metadata']['entities'])
-        out['mentions'] = list(instance['metadata']['mentions'])
+        # if 'masked_entities' in instance['metadata']:
+        #     mentions = []
+        #     for m, es in zip(instance['metadata']['mentions'], instance['metadata']['masked_entities']):
+        #         new_m = self.replace_masks(m[0], es)
+        #         mentions.append([new_m, m[1], m[2]])
+        # else:
+        mentions = list(instance['metadata']['mentions'])
+        out['mentions'] = mentions
         out['relations'] = list(instance['metadata']['relations'])
 
         return sanitize(out)
@@ -49,6 +75,13 @@ class RelationExtractionPredictor(Predictor):
         outputs = self._model.forward_on_instances(instances)
         for out, instance in zip(outputs, instances):
             out['entities'] = list(instance['metadata']['entities'])
-            out['mentions'] = list(instance['metadata']['mentions'])
+            # if 'masked_entities' in instance['metadata']:
+            #     mentions = []
+            #     for m, es in zip(instance['metadata']['mentions'], instance['metadata']['masked_entities']):
+            #         new_m = self.replace_masks(m[0], es)
+            #         mentions.append([new_m, m[1], m[2]])
+            # else:
+            mentions = list(instance['metadata']['mentions'])
+            out['mentions'] = mentions
             out['true_labels'] = list(instance['metadata']['relations'])
         return sanitize(outputs)

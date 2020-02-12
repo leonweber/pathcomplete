@@ -105,7 +105,8 @@ if __name__ == '__main__':
     with args.data.open() as f:
         data = json.load(f)
 
-    checkpoints = list(os.path.dirname(c) for c in natural_sort(glob(str(args.model_path / '**' / WEIGHTS_NAME), recursive=True))[::-1])
+    # checkpoints = list(os.path.dirname(c) for c in natural_sort(glob(str(args.model_path / '**' / WEIGHTS_NAME), recursive=True))[::-1])
+    checkpoints = [str(args.model_path)]
 
     best_ap = (None, 0)
     for checkpoint in checkpoints:

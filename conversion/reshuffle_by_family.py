@@ -3,7 +3,7 @@ import json
 
 from pathlib import Path
 
-from conversion.utils import load_homologene, TAX_IDS, load_homologene_uf
+from util import TAX_IDS, load_homologene_uf, load_homologene
 
 
 def reshuffle(train, dev, test, homologene):
