@@ -4,7 +4,7 @@ from math import ceil
 
 from pathlib import Path
 from tqdm import tqdm
-from transformers import BertTokenizer
+from tokenizers import BertWordPieceTokenizer
 import h5py
 import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -12,7 +12,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from distant_supervision.run_bionlp import BioNLPProcessor
 
 
-def example_to_features(example, tokenizer: BertTokenizer, max_seq_len=256):
+def example_to_features(example, tokenizer: BertWordPieceTokenizer, max_seq_len=256):
     all_token_ids = []
     all_entity_positions = []
     all_attention_masks = []
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     parser.add_argument('--entity_dict', type=Path)
     parser.add_argument('--max_seq_len', type=int, default=256)
     args = parser.parse_args()
-    tokenizer = BertTokenizer.from_pretrained(args.tokenizer)
+    tokenizer = BertWordPieceTokenizer(args.tokenizer)
     tokenizer.add_special_tokens({ 'additional_special_tokens': ['<e1>','</e1>', '<e2>', '</e2>'] +
                                                                 [f'<protein{i}/>' for i in range(47)]})
 

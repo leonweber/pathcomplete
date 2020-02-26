@@ -32,7 +32,8 @@ def get_year_of_pmids(pmids):
     last_time = 0
 
     for pmid_chunk in tqdm(list(chunks(pmids, 100))):
-        data = {'db': 'pubmed', 'id': ','.join(pmid_chunk), 'retmode': 'json',  'api_key': '1c4a5020d6fc48a6649feecaafd3a3017909'}
+        raise ValueError("Put your api key here and delete this line")
+        data = {'db': 'pubmed', 'id': ','.join(pmid_chunk), 'retmode': 'json',  'api_key': ''}
         elapsed_time = time.time() - last_time
         sleepy_time =  1/8 - elapsed_time
         if sleepy_time > 0:

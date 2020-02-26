@@ -36,6 +36,9 @@ TYPE_MAPPING = {
     'Localization': ['controls-transport-of', 'controls-state-change-of'],
 }
 
+MODIFIER_MAPPING = {'Negation': 'not', 'Speculation': 'maybe'}
+
+
 
 def get_span(start, end, token_starts):
     """
@@ -55,6 +58,7 @@ def get_span(start, end, token_starts):
 
 class Theme:
     registry = {}
+    _resolved = False
 
     def __init__(self, id, start, end, mention, type):
         self.id = id
@@ -97,11 +101,23 @@ def get_theme_or_event(id):
 
 class Event:
     registry = {}
+    _resolved = False
 
     @classmethod
     def resolve_all_ids(cls):
+        if cls._resolved or Theme._resolved:
+            raise ValueError('Resolving a second time. Did you forget to reset?')
         for event in cls.registry.values():
             event.resolve_ids()
+        cls._resolved = True
+        Theme._resolved = True
+
+    @classmethod
+    def reset(cls):
+        cls.registry = {}
+        Theme.registry = {}
+        cls._resolved = False
+        Theme._resolved = False
 
     def __init__(self, id, themes, causes, products, mention, type):
         self.id = id
@@ -114,6 +130,7 @@ class Event:
 
         self.mention = mention
         self.type = type
+        self.modifiers = set()
 
     def __str__(self):
         return f"{self.id}:{self.type} Themes: {self.themes} Causes: {self.causes}"
@@ -213,6 +230,7 @@ class Event:
         return regulators
 
 
+
 def parse(lines):
     for line in lines:
         line = line.strip()
@@ -225,11 +243,11 @@ def parse(lines):
             Event.from_line(line).register()
 
 
-def get_possible_pairs(themes):
+def get_possible_pairs(themes, dist=300):
     possible_pairs = []
 
     for e1, e2 in itertools.combinations(themes, 2):
-        if abs(e1.start - e2.start) < 300:
+        if abs(e1.start - e2.start) < dist:
             possible_pairs.append((e1, e2))
 
     return possible_pairs
@@ -278,6 +296,18 @@ def get_mention(e1: Theme, e2: Theme, doc):
 
     return new_text
 
+def add_modifiers(a2):
+    for line in a2:
+        line = line.strip()
+        if not line:
+            continue
+
+        if line.startswith('M'):
+            modifier_type, modified_event = line.split('\t')[1].split()
+
+            e = get_theme_or_event(modified_event)
+            e.modifiers.add(modifier_type)
+
 
 def transform(fname, transformed_data, mg):
     with open(fname + '.txt') as f:
@@ -290,7 +320,10 @@ def transform(fname, transformed_data, mg):
     parse(a1 + a2)
     doc = nlp(txt)
 
+    Event.reset()
     Event.resolve_all_ids()
+
+    add_modifiers(a2)
 
     for e1, e2 in get_possible_pairs([t for t in Theme.registry.values() if t.type in ENTITY_TYPES]):
         transform_pair(e1, e2, relation_types=[], fname=fname, transformed_data=transformed_data,
@@ -308,6 +341,7 @@ def transform(fname, transformed_data, mg):
             continue
         else:
             relation_types = TYPE_MAPPING[event.type]
+
 
         if event.type == 'Binding':
             for e1, e2 in itertools.combinations(event.themes, 2):

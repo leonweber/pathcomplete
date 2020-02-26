@@ -39,7 +39,7 @@ def hgnc_to_uniprot(symbol, mapping, mg):
                 return [uniprot]
 
         print("Couldn't find %s" % symbol)
-        return None
+        return []
 
 
 def natural_language_to_uniprot(string, mg):

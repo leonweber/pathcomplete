@@ -5,7 +5,7 @@
 #wget https://string-db.org/mapping_files/uniprot/human.uniprot_2_string.2018.tsv.gz && \
 # gunzip human.uniprot_2_string.2018.tsv.gz && mv human.uniprot_2_string.2018.tsv data/
 python -m conversion.string_to_uniprot --links data/9606.protein.links.v11.0.txt \
- --mapping data/human.uniprot_2_string.2018.tsv --out data/string_v11_human_highconf.tsv
+ --mapping data/human.uniprot_2_string.2018.tsv --out data/string_v11_human_highconf.tsv --threshold 700
 
 
 
