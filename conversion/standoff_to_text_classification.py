@@ -13,12 +13,15 @@ from .standoff_to_ds import parse, Event, Theme, TYPE_MAPPING, ENTITY_TYPES, get
     MODIFIER_MAPPING, get_possible_pairs
 
 
-def add_example(e1, e2, rel_type, fname, doc, examples):
+def add_example(e1, e2, rel_type, fname, doc, examples, skip_duplicate=False):
     mention = get_mention(e1=e1, e2=e2, doc=doc).replace('\t', ' ').replace('\n', ' ').strip()
+    if skip_duplicate and mention in examples['mention_set']:
+        return None
 
     examples['text'].append(mention)
     examples['labels'].append(rel_type)
     examples['pmid'].append(fname_to_pmid(fname))
+    examples['mention_set'].add(mention)
 
     return None
 
@@ -38,6 +41,7 @@ def transform(fname, nlp):
 
     add_modifiers(a2)
     examples = defaultdict(list)
+    examples['mention_set'] = set()
 
     event: Event
     for event_id, event in Event.registry.items():
@@ -73,8 +77,8 @@ def transform(fname, nlp):
                     add_example(e1=theme, e2=cause, rel_type=relation_type + '_r', fname=fname, doc=doc, examples=examples)
 
     for e1, e2 in get_possible_pairs([t for t in Theme.registry.values() if t.type in ENTITY_TYPES], dist=50):
-        add_example(e1=e1, e2=e2, rel_type='No', fname=fname, doc=doc, examples=examples)
-        add_example(e1=e2, e2=e1, rel_type='No', fname=fname, doc=doc, examples=examples)
+        add_example(e1=e1, e2=e2, rel_type='No', fname=fname, doc=doc, examples=examples, skip_duplicate=True)
+        add_example(e1=e2, e2=e1, rel_type='No', fname=fname, doc=doc, examples=examples, skip_duplicate=True)
 
 
     return examples
@@ -94,7 +98,8 @@ if __name__ == '__main__':
 
     for fname in tqdm(fnames):
         for k, v in transform(fname, nlp=nlp).items():
-            examples[k].extend(v)
+            if k != 'mention_set':
+                examples[k].extend(v)
 
     df = pd.DataFrame(examples)
     df.to_csv(args.output)
