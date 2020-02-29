@@ -262,7 +262,7 @@ def objective(trial: optuna.Trial):
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         os.path.join(MODEL_DIR, 'trial_{}'.format(trial.number)), monitor='accuracy')
     early_stopping = PyTorchLightningPruningCallback(trial, monitor='f1')
-    logger = DictLogger(trial.number, MLFlowLogger('embeddings'))
+    logger = DictLogger(trial.number, MLFlowLogger('eval_embeddings'))
     trial.n_rel_types = len(train_dataset.rel_dict)
     trial.train_dataset = train_dataset
     trial.dev_dataset = dev_dataset

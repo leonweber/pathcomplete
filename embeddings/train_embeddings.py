@@ -1,5 +1,6 @@
 import argparse
 import itertools
+import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -30,7 +31,7 @@ def split_label(label):
 
 class BioNLPMatchingDataset(Dataset):
     def __init__(self, df, tokenizer):
-        self.df = df.sample(1000)
+        # df = df.sample(1000)
         self.input_ids = []
         self.e1_starts = []
         self.e2_starts = []
@@ -104,10 +105,11 @@ class BioNLPMatchingDataset(Dataset):
 
 
 class SentenceMatcher(pl.LightningModule):
-    def __init__(self, dataset, bert_path):
+    def __init__(self, dataset, bert_path, batch_size=2):
         super().__init__()
         self.data = dataset
 
+        self.batch_size = batch_size
         self.bert = BertModel.from_pretrained(bert_path)
         self.output_layer = nn.Linear(768*3*2, 1)
         self.loss_fun = nn.TripletMarginLoss()
@@ -153,7 +155,7 @@ class SentenceMatcher(pl.LightningModule):
 
     @pl.data_loader
     def train_dataloader(self):
-        return DataLoader(self.data, shuffle=True, batch_size=2)
+        return DataLoader(self.data, shuffle=True, batch_size=self.batch_size)
 
 
 
@@ -161,15 +163,29 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', required=True, type=Path)
-    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--output_dir', required=True, type=Path)
     parser.add_argument('--bert', required=True)
+    parser.add_argument('--batch_size', default=2, type=int)
+    parser.add_argument('--gpus', default=1, type=int)
+    parser.add_argument('--epochs', default=5, type=int)
+    parser.add_argument('--overwrite_output_dir', action='store_true',
+                        help="Overwrite the content of the output directory")
     args = parser.parse_args()
-    logger = MLFlowLogger('embeddings')
+    logger = MLFlowLogger('train_embeddings')
+
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and not args.overwrite_output_dir:
+        raise ValueError(
+            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
+                args.output_dir))
+
+    if not args.output_dir.exists():
+        os.makedirs(args.output_dir, exist_ok=True)
 
     tokenizer = BertTokenizerFast.from_pretrained(args.bert)
     tokenizer.add_special_tokens({'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>']})
     dataset = BioNLPMatchingDataset(pd.read_csv(args.data), tokenizer=tokenizer)
-    model = SentenceMatcher(dataset, args.bert)
-    trainer = pl.Trainer(early_stop_callback=None, logger=logger, gpus=1, max_epochs=1, checkpoint_callback=None)
+    model = SentenceMatcher(dataset, args.bert, batch_size=args.batch_size)
+    trainer = pl.Trainer(early_stop_callback=None, logger=logger, gpus=args.gpus, max_epochs=args.epochs, checkpoint_callback=None,
+                         )
     trainer.fit(model)
-    pass
+    model.bert.cpu().save_pretrained(args.output_dir)
