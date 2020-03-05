@@ -18,7 +18,7 @@ import optuna
 import wandb
 
 from .dataset import BioNLPClassificationDataset, BERTEntityEmbedder, \
-    BERTTokenizerEmbedder
+    BERTTokenizerEmbedder, MyElmoEmbedder
 
 DIR = Path(__file__).parent
 MODEL_DIR = DIR / 'results'
@@ -27,10 +27,11 @@ EPOCHS = 100
 
 
 class SimpleClassifier(nn.Module):
-    def __init__(self, trial, n_classes, embedding_size=768 * 2):
+    def __init__(self, trial: optuna.Trial, n_classes, embedding_size=768 * 2):
         super().__init__()
         self.rel_output = nn.Linear(embedding_size, n_classes)
-        self.dropout = nn.Dropout(trial.suggest_uniform('dropout', 0.0, 0.7))
+        # self.dropout = nn.Dropout(trial.suggest_uniform('dropout', 0.0, 0.7))
+        self.dropout = nn.Dropout(trial.suggest_categorical('dropout', [0, 0.2, 0.5]))
 
     def forward(self, x):
         x = self.dropout(x)
@@ -76,13 +77,17 @@ def objective(trial: optuna.Trial):
     train_batch_size = 64
     dev_batch_size = 512
     train_loader, dev_loader = get_data_loaders(train_batch_size, dev_batch_size)
-    model = ModelType(trial=trial, n_classes=len(train_dataset.rel_dict))
+    model = SimpleClassifier(trial=trial, n_classes=len(train_dataset.rel_dict),
+                             embedding_size=train_dataset.embedding_size)
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
 
     optimizer = AdamW(model.parameters(),
-                      lr=trial.suggest_categorical('lr', [3e-4]))
+                      # lr=trial.suggest_loguniform('lr', 3e-6, 3e-3),
+                      # weight_decay=trial.suggest_uniform('l2', 0, 1),
+                      weight_decay=0.1
+                      )
 
     loss_fn = nn.CrossEntropyLoss(
         weight=torch.from_numpy(
@@ -106,6 +111,13 @@ def objective(trial: optuna.Trial):
         'f1': F1Macro(labels=pos_rel_labels)}, device=device)
     pruning_evaluator.add_event_handler(Events.COMPLETED, pruning_handler)
 
+    def score_function(engine):
+        return engine.state.metrics['f1']
+
+    early_stopping = ignite.handlers.EarlyStopping(patience=5, score_function=score_function,
+                                                   trainer=trainer)
+    pruning_evaluator.add_event_handler(Events.COMPLETED, early_stopping)
+
     if not args.disable_wandb:
         @trainer.on(Events.EPOCH_COMPLETED)
         def log_results(engine):
@@ -127,8 +139,8 @@ if __name__ == '__main__':
     parser.add_argument('--train_data', required=True, type=Path)
     parser.add_argument('--dev_data', required=True, type=Path)
     parser.add_argument('--embedder', required=True)
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--trials', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--trials', type=int, default=3)
     parser.add_argument('--multiply', action='store_true')
     parser.add_argument('--disable_wandb', action='store_true')
     args = parser.parse_args()
@@ -136,7 +148,8 @@ if __name__ == '__main__':
 
     if embedder == 'BERTEntity':
         embedder = BERTEntityEmbedder(embedder_model_path, multiply=bool(args.multiply))
-        ModelType = SimpleClassifier
+    elif embedder == "ELMO":
+        embedder = MyElmoEmbedder(embedder_model_path)
     else:
         raise ValueError(embedder)
 
@@ -147,8 +160,10 @@ if __name__ == '__main__':
                                               mod_dict=train_dataset.mod_dict,
                                               rel_dict=train_dataset.rel_dict)
     del embedder
-    pruner = optuna.pruners.HyperbandPruner()
-    study = optuna.create_study(direction='maximize', pruner=pruner)
+    # pruner = optuna.pruners.HyperbandPruner()
+    pruner = optuna.pruners.NopPruner()
+    sampler = optuna.samplers.RandomSampler()
+    study = optuna.create_study(direction='maximize', pruner=pruner, sampler=sampler)
     study.optimize(objective, n_trials=args.trials)
 
     trial = study.best_trial
