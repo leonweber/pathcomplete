@@ -18,7 +18,7 @@ import optuna
 import wandb
 
 from .dataset import BioNLPClassificationDataset, BERTEntityEmbedder, \
-    BERTTokenizerEmbedder
+    BERTTokenizerEmbedder, MyElmoEmbedder
 
 DIR = Path(__file__).parent
 MODEL_DIR = DIR / 'results'
@@ -76,13 +76,16 @@ def objective(trial: optuna.Trial):
     train_batch_size = 64
     dev_batch_size = 512
     train_loader, dev_loader = get_data_loaders(train_batch_size, dev_batch_size)
-    model = ModelType(trial=trial, n_classes=len(train_dataset.rel_dict))
+    model = SimpleClassifier(trial=trial, n_classes=len(train_dataset.rel_dict),
+                             embedding_size=train_dataset.embedding_size)
     device = "cpu"
     if torch.cuda.is_available():
         device = "cuda"
 
     optimizer = AdamW(model.parameters(),
-                      lr=trial.suggest_categorical('lr', [3e-4]))
+                      lr=trial.suggest_loguniform('lr', 3e-6, 3e-3),
+                      weight_decay=trial.suggest_uniform('l2', 0, 1)
+                      )
 
     loss_fn = nn.CrossEntropyLoss(
         weight=torch.from_numpy(
@@ -136,7 +139,8 @@ if __name__ == '__main__':
 
     if embedder == 'BERTEntity':
         embedder = BERTEntityEmbedder(embedder_model_path, multiply=bool(args.multiply))
-        ModelType = SimpleClassifier
+    elif embedder == "ELMO":
+        embedder = MyElmoEmbedder(embedder_model_path)
     else:
         raise ValueError(embedder)
 
