@@ -73,7 +73,7 @@ class BERTEntityEmbedder:
                 e1_starts = []
                 e2_starts = []
                 for text in chunk:
-                    bert_input = self.tokenizer.encode_plus(text, max_length=368,
+                    bert_input = self.tokenizer.encode_plus(text, max_length=256,
                                                             pad_to_max_length=True,
                                                             add_special_tokens=True)
                     subword_tokens = self.tokenizer.convert_ids_to_tokens(
@@ -130,7 +130,7 @@ class BERTCLSEmbedder:
         for chunk in tqdm(list(chunks(texts, batch_size))):
             input_ids = []
             for text in chunk:
-                input_id = self.tokenizer.encode(text, max_length=368,
+                input_id = self.tokenizer.encode(text, max_length=256,
                                                  pad_to_max_length=True)
                 input_ids.append(input_id)
             input_ids = torch.tensor(input_ids).long().cuda()
@@ -151,7 +151,7 @@ class BERTTokenizerEmbedder:
     def embed(self, texts):
         input_ids = []
         for text in texts:
-            input_id = self.tokenizer.encode_plus(text, max_length=368,
+            input_id = self.tokenizer.encode_plus(text, max_length=256,
                                                   pad_to_max_length=True,
                                                   add_special_tokens=True)
             input_ids.append(input_id)
@@ -208,7 +208,7 @@ class BioNLPMatchingDataset(Dataset):
         self.curr_dist_matrix = None
 
         for text, label in zip(df.text, df.labels):
-            bert_inputs = tokenizer.encode_plus(text, max_length=368,
+            bert_inputs = tokenizer.encode_plus(text, max_length=256,
                                                 pad_to_max_length=True,
                                                 add_special_tokens=True)
             subword_tokens = tokenizer.convert_ids_to_tokens(bert_inputs['input_ids'],
@@ -256,7 +256,6 @@ class BioNLPMatchingDataset(Dataset):
         self.curr_attention_mask = self.attention_mask
         self.curr_e1_starts = self.e1_starts
         self.curr_e2_starts = self.e2_starts
-
 
     def __getitem__(self, idx):
         label = self.curr_labels[idx]
@@ -314,7 +313,6 @@ class BioNLPMatchingDataset(Dataset):
         self.curr_e1_starts = self.e1_starts[curr_indices]
         self.curr_e2_starts = self.e2_starts[curr_indices]
 
-
     def update_dist_matrix(self, model):
         model = nn.DataParallel(model)
         embs = []
@@ -324,8 +322,8 @@ class BioNLPMatchingDataset(Dataset):
                 e1_starts = self.curr_e1_starts[batch]
                 e2_starts = self.curr_e2_starts[batch]
                 x = model(input_ids=self.curr_input_ids[batch].cuda(),
-                               attention_mask=self.attention_mask[
-                                   batch].cuda())[0]
+                          attention_mask=self.attention_mask[
+                              batch].cuda())[0]
                 e1_emb = x[torch.arange(len(batch)), e1_starts]
                 e2_emb = x[torch.arange(len(batch)), e2_starts]
                 emb = torch.cat([e1_emb, e2_emb], dim=1)
@@ -361,7 +359,7 @@ class BioNLPBertClassDataset(Dataset):
             if rel not in self.rel_vocab:
                 self.rel_vocab[rel] = len(self.rel_vocab)
 
-            bert_inputs = tokenizer.encode_plus(text, max_length=368,
+            bert_inputs = tokenizer.encode_plus(text, max_length=256,
                                                 pad_to_max_length=True,
                                                 add_special_tokens=True)
             subword_tokens = tokenizer.convert_ids_to_tokens(bert_inputs['input_ids'],
@@ -400,3 +398,63 @@ class BioNLPBertClassDataset(Dataset):
 
     def __len__(self):
         return len(self.labels)
+
+
+class MTBDataset(Dataset):
+    def __init__(self, path, tokenizer, test=False):
+        self.input_ids1 = []
+        self.attention_mask1 = []
+
+        self.input_ids2 = []
+        self.attention_mask2 = []
+
+        self.labels = []
+        e1_id = tokenizer.convert_tokens_to_ids('<e1>')
+        e2_id = tokenizer.convert_tokens_to_ids('<e2>')
+
+        with open(path) as f:
+            for line in f:
+                fields = line.strip().split('\t')
+                if not fields:
+                    continue
+                text1, text2, label = fields
+                bert_inputs1 = tokenizer.encode_plus(text1, max_length=256,
+                                                     pad_to_max_length=True,
+                                                     add_special_tokens=True)
+
+                bert_inputs2 = tokenizer.encode_plus(text2, max_length=256,
+                                                     pad_to_max_length=True,
+                                                     add_special_tokens=True)
+
+                if not (e1_id in bert_inputs1['input_ids'] and
+                        e2_id in bert_inputs1['input_ids'] and
+                        e1_id in bert_inputs2['input_ids'] and
+                        e2_id in bert_inputs2['input_ids']):
+                    continue  # make sure <e1> and <e2> tokens are present in both truncated texts
+
+                self.input_ids1.append(bert_inputs1['input_ids'])
+                self.attention_mask1.append(bert_inputs1['attention_mask'])
+
+                self.input_ids2.append(bert_inputs2['input_ids'])
+                self.attention_mask2.append(bert_inputs2['attention_mask'])
+
+                self.labels.append(int(label))
+
+        self.input_ids1 = torch.tensor(self.input_ids1).long()
+        self.input_ids2 = torch.tensor(self.input_ids2).long()
+        self.attention_mask1 = torch.tensor(self.attention_mask1).long()
+        self.attention_mask2 = torch.tensor(self.attention_mask2).long()
+        self.labels = torch.tensor(self.labels).float()
+
+    def __getitem__(self, idx):
+        input = {
+            'input_ids': torch.stack([self.input_ids1[idx],
+                                      self.input_ids2[idx]]),
+            'attention_mask': torch.stack([self.attention_mask1[idx],
+                                           self.attention_mask2[idx]])
+        }
+
+        return input, self.labels[idx]
+
+    def __len__(self):
+        return len(self.input_ids1)

@@ -10,6 +10,7 @@ from ignite.metrics import Precision, Recall
 from ignite.metrics.metric import reinit__is_reduced, sync_all_reduce
 from sklearn.utils.class_weight import compute_class_weight
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
@@ -29,12 +30,17 @@ EPOCHS = 100
 class SimpleClassifier(nn.Module):
     def __init__(self, trial: optuna.Trial, n_classes, embedding_size=768 * 2):
         super().__init__()
-        self.rel_output = nn.Linear(embedding_size, n_classes)
+        dropout = trial.suggest_categorical('dropout', [0, 0.2, 0.5])
+        self.layer1 = nn.Linear(embedding_size, 200)
+        self.dropout1 = nn.Dropout(dropout)
+        self.rel_output = nn.Linear(200, n_classes)
         # self.dropout = nn.Dropout(trial.suggest_uniform('dropout', 0.0, 0.7))
-        self.dropout = nn.Dropout(trial.suggest_categorical('dropout', [0, 0.2, 0.5]))
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, x):
-        x = self.dropout(x)
+        x = self.dropout1(x)
+        x = F.relu(self.layer1(x))
+        x = self.dropout2(x)
         return self.rel_output(x)
 
 

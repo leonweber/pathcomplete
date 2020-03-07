@@ -3,8 +3,6 @@ import os
 from pathlib import Path
 from typing import Tuple
 
-import pytorch_lightning as pl
-import pandas as pd
 import torch
 import wandb
 from ignite.contrib.handlers import ProgressBar
@@ -15,7 +13,7 @@ from torch.utils.data import DataLoader
 from transformers import BertTokenizerFast, AdamW, PreTrainedTokenizer
 
 from .model import SentenceMatcher
-from .dataset import BioNLPMatchingDataset
+from .dataset import BioNLPMatchingDataset, MTBDataset
 
 
 def _prepare_batch(batch, device=None, non_blocking=False):
@@ -40,15 +38,13 @@ def mask_tokens(inputs: torch.Tensor, tokenizer: PreTrainedTokenizer) -> Tuple[
     labels = inputs.clone()
     # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
     probability_matrix = torch.full(labels.shape, 0.15).to(inputs.device)
-    special_tokens_mask = [
-        tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val
-        in labels.tolist()
-    ]
-    probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool).to(inputs.device),
-                                    value=0.0)
-    if tokenizer._pad_token is not None:
-        padding_mask = labels.eq(tokenizer.pad_token_id)
-        probability_matrix.masked_fill_(padding_mask, value=0.0)
+    special_tokens_mask = torch.zeros_like(labels)
+    for special_id in tokenizer.all_special_ids:
+        special_tokens_mask = special_tokens_mask + labels.eq(
+            torch.tensor(special_id)).long()
+    probability_matrix.masked_fill_(
+        special_tokens_mask.bool().to(inputs.device),
+        value=0.0)
     masked_indices = torch.bernoulli(probability_matrix).bool()
     labels[~masked_indices] = -100  # We only compute loss on masked tokens
 
@@ -59,8 +55,10 @@ def mask_tokens(inputs: torch.Tensor, tokenizer: PreTrainedTokenizer) -> Tuple[
 
     # 10% of the time, we replace masked input tokens with random word
     indices_random = torch.bernoulli(
-        torch.full(labels.shape, 0.5)).bool().to(inputs.device) & masked_indices & ~indices_replaced
-    random_words = torch.randint(len(tokenizer), labels.shape, dtype=torch.long).to(inputs.device)
+        torch.full(labels.shape, 0.5)).bool().to(
+        inputs.device) & masked_indices & ~indices_replaced
+    random_words = torch.randint(len(tokenizer), labels.shape, dtype=torch.long).to(
+        inputs.device)
     inputs[indices_random] = random_words[indices_random]
 
     # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -84,11 +82,42 @@ def create_triplet_trainer(model: SentenceMatcher, optimizer, device, loss_fn,
         anchor, pos, neg, mlm_logits = model(batch)
         loss = loss_fn(anchor, pos, neg)
         if loss_fn_mlm:
-            loss_mlm = loss_fn_mlm(mlm_logits.view(-1, mlm_logits.shape[-1]), mlm_labels.view(-1))
-            loss = mlm_weight * loss_mlm + (1-mlm_weight) * loss
+            loss_mlm = loss_fn_mlm(mlm_logits.view(-1, mlm_logits.shape[-1]),
+                                   mlm_labels.view(-1))
+            loss = mlm_weight * loss_mlm + (1 - mlm_weight) * loss
         loss.backward()
         optimizer.step()
         return output_transform(anchor, pos, neg, loss)
+
+    return Engine(_update)
+
+
+def create_mtb_trainer(model: SentenceMatcher, optimizer, device,
+                       non_blocking=False, loss_fn_mlm=None, mlm_weight=0.5,
+                       output_transform=lambda anchor, pos, neg, loss: loss.item()):
+    loss_fn_mtb = nn.BCEWithLogitsLoss()
+    loss_fn_mlm = nn.CrossEntropyLoss()
+
+    if device:
+        model.to(device)
+
+    def _update(engine, batch):
+        model.train()
+        optimizer.zero_grad()
+        batch, labels_mtb = _prepare_batch(batch, device=device,
+                                           non_blocking=non_blocking)
+        batch['input_ids'], mlm_labels = mask_tokens(batch['input_ids'], tokenizer)
+
+        embs, logits_mlm = model(batch)
+        logits_mtb = torch.einsum('bd,bd->b', embs[:, 0], embs[:, 1])
+        loss_mtb = loss_fn_mtb(logits_mtb, labels_mtb)
+
+        loss_mlm = loss_fn_mlm(logits_mlm.view(-1, logits_mlm.shape[-1]),
+                               mlm_labels.view(-1))
+        loss = mlm_weight * loss_mlm + (1 - mlm_weight) * loss_mtb
+        loss.backward()
+        optimizer.step()
+        return loss
 
     return Engine(_update)
 
@@ -98,11 +127,14 @@ def main(args):
         wandb.init(project="train_embeddings")
         wandb.config.update(args)
     if torch.cuda.is_available():
-        train_batch_size = 2 * torch.cuda.device_count()
+        train_batch_size = args.batch_size * torch.cuda.device_count()
     else:
-        train_batch_size = 2
+        train_batch_size = args.batch_size
     train_loader = DataLoader(dataset=dataset, batch_size=train_batch_size, shuffle=True)
-    model = nn.DataParallel(SentenceMatcher.from_pretrained(args.bert))
+    e1_id = torch.tensor(tokenizer.convert_tokens_to_ids('<e1>'))
+    e2_id = torch.tensor(tokenizer.convert_tokens_to_ids('<e2>'))
+    model = nn.DataParallel(
+        SentenceMatcher.from_pretrained(args.bert, e1_start_id=e1_id, e2_start_id=e2_id))
 
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
@@ -117,24 +149,20 @@ def main(args):
     if torch.cuda.is_available():
         device = "cuda"
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr)
-    loss_fn = nn.TripletMarginLoss()
-    if args.mlm:
-        loss_fn_mlm = nn.CrossEntropyLoss()
-    else:
-        loss_fn_mlm = None
-    trainer = create_triplet_trainer(model=model, optimizer=optimizer, device=device,
-                                     loss_fn=loss_fn, loss_fn_mlm=loss_fn_mlm)
+    trainer = create_mtb_trainer(model=model, optimizer=optimizer, device=device)
+
     pbar = ProgressBar()
     pbar.attach(trainer)
 
     if not args.disable_wandb:
-        @trainer.on(Events.EPOCH_COMPLETED)
+        @trainer.on(Events.ITERATION_COMPLETED)
         def save(engine: Engine):
-            save_dir = args.output_dir / f"epoch_{engine.state.epoch}"
-            if not save_dir.exists():
-                save_dir.mkdir()
-            model.module.cpu().bert.save_pretrained(save_dir)
-            model.to(device)
+            if (engine.state.iteration + 1) % 10000 == 0:
+                save_dir = args.output_dir / f"step_{engine.state.iteration}"
+                if not save_dir.exists():
+                    save_dir.mkdir()
+                model.module.cpu().bert.save_pretrained(save_dir)
+                model.to(device)
 
         @trainer.on(Events.ITERATION_COMPLETED)
         def log_training_loss(trainer):
@@ -157,6 +185,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', required=True, type=Path)
     parser.add_argument('--bert', required=True)
     parser.add_argument('--epochs', default=5, type=int)
+    parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--lr', default=3e-5, type=float)
     parser.add_argument('--weight_decay', default=0.01, type=float)
     parser.add_argument('--overwrite_output_dir', action='store_true',
@@ -179,6 +208,6 @@ if __name__ == '__main__':
 
     tokenizer = BertTokenizerFast.from_pretrained(args.bert)
     tokenizer.add_special_tokens(
-        {'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>']})
-    dataset = BioNLPMatchingDataset(pd.read_csv(args.data), tokenizer=tokenizer, test=args.test)
+        {'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>', '[BLANK]']})
+    dataset = MTBDataset(args.data, tokenizer=tokenizer)
     main(args)
