@@ -9,7 +9,7 @@ import re
 import torch
 from ignite.metrics import Metric
 
-import consts
+from events import consts
 
 THIRD_PARTY_DIR = Path(__file__).parent / '3rd_party'
 
@@ -60,30 +60,24 @@ class BioNLPMetric(Metric):
         return self.evaluator.evaluate(self._predictions)[self.key]
 
 
-def output_transform_A(output):
-    A_pred = output[0]['aux']['A_logits']
-    A_true = output[1]['A'].long()
+def output_transform_event_node(output):
+    pred = output[0]['aux']['node_logits']
+    true = (output[1]['node_targets'] > 0).long()
 
-    return (A_pred.view(-1) > 0).float(), (A_true.view(-1) != 3).float()
+    # score only supports one index with 1
+    # if prediction is true, set predicted index to 1, otherwise set any predicted index to 1
+    pred_idx = (torch.arange(len(pred)), pred.argmax(dim=1))
 
-def output_transform_edge_type(output):
-    edge_types_pred = output[0]['aux']['edge_types']
-    edge_types_true = output[1]['A'].long()
-    edge_types_true = edge_types_true[edge_types_true != 3]
+    correct_mask = true[pred_idx].bool()
 
-    return edge_types_pred, edge_types_true
+    pred_idx = (pred_idx[0][correct_mask], pred_idx[1][correct_mask])
+    some_true_idx = (torch.arange(len(true))[~correct_mask], true.argmax(dim=1)[~correct_mask])
 
-def output_transform_token_types_ent(output):
-    token_types_pred = output[0]['aux']['token_types_logits_ent']
-    token_types_true = output[1]['token_labels_entity']
+    true[:] = 0
+    true[pred_idx] = 1
+    true[some_true_idx] = 1
 
-    return token_types_pred, token_types_true
-
-def output_transform_token_types_trig(output):
-    token_types_pred = output[0]['aux']['token_types_logits_trig']
-    token_types_true = output[1]['token_labels_trigger']
-
-    return token_types_pred, token_types_true
+    return pred, true.argmax(dim=1)
 
 
 

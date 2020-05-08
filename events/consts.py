@@ -5,7 +5,8 @@ PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
                     "Transcription", "Translation", "Degradation",
                     "Activation", "Inactivation", "Binding",
                     "Dissociation", "Regulation", "Positive_regulation",
-                    "Negative_regulation", "Pathway", "Hydroxylation", "Dehydroxylation"}
+                    "Negative_regulation", "Pathway", "Hydroxylation", "Dehydroxylation",
+                    "None"}
 
 PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
                      "Cellular_component"}

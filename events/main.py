@@ -14,24 +14,15 @@ from torch.utils.data import DataLoader
 
 from . import consts
 from .dataset import PC13Dataset
-from .evaluation import BioNLPMetric, Evaluator, output_transform_A, output_transform_token_types_ent, output_transform_token_types_trig, output_transform_edge_type
+from .evaluation import BioNLPMetric, Evaluator, output_transform_event_node
 from .model import EventExtractor
 
-P_A = ignite.metrics.Precision(output_transform=output_transform_A, average=True,)
-R_A = ignite.metrics.Recall(output_transform=output_transform_A, average=True)
-F1_A = ignite.metrics.Fbeta(beta=1.0, output_transform=output_transform_A, average=True)
+DEBUG = True
 
-P_token_types_ent = ignite.metrics.Precision(output_transform=output_transform_token_types_ent, average=True)
-R_token_types_ent = ignite.metrics.Recall(output_transform=output_transform_token_types_ent, average=True)
-F1_token_types_ent = ignite.metrics.Fbeta(beta=1.0, output_transform=output_transform_token_types_ent, average=True)
+P_event_node = ignite.metrics.Precision(output_transform=output_transform_event_node, average=True,)
+R_event_node = ignite.metrics.Recall(output_transform=output_transform_event_node, average=True)
+F1_event_node = ignite.metrics.Fbeta(beta=1.0, output_transform=output_transform_event_node, average=True)
 
-P_token_types_trig = ignite.metrics.Precision(output_transform=output_transform_token_types_trig, average=True)
-R_token_types_trig = ignite.metrics.Recall(output_transform=output_transform_token_types_trig, average=True)
-F1_token_types_trig = ignite.metrics.Fbeta(beta=1.0, output_transform=output_transform_token_types_trig, average=True)
-
-P_edge_type = ignite.metrics.Precision(output_transform=output_transform_edge_type, average=True)
-R_edge_type = ignite.metrics.Recall(output_transform=output_transform_edge_type, average=True)
-F1_edge_type = ignite.metrics.Fbeta(beta=1.0, output_transform=output_transform_edge_type, average=True)
 
 def _prepare_batch(batch, device=None, non_blocking=False):
     for example in batch:
@@ -78,27 +69,31 @@ def create_evaluator(model, device=None, non_blocking=False):
         batch = _prepare_batch(batch, device=device, non_blocking=non_blocking)
         batch = batch[0]
         with torch.no_grad():
-            return model.predict(batch), batch
+            prediction = model.predict(batch), batch
+            if DEBUG:
+                preds = []
+                true = []
+                for pred in prediction[0]['aux']['node_logits'].argmax(dim=1):
+                    preds.append(model.id_to_node_type[pred.item()])
+                print(preds)
+                for row in prediction[1]['node_targets'] > 0:
+                    row_true = []
+                    for i, v in enumerate(row):
+                        if v.item():
+                            row_true.append(model.id_to_node_type[i])
+                    true.append(row_true)
+                print(row_true)
+
+
+            return prediction
 
     engine = Engine(_inference)
     BioNLPMetric(Evaluator(eval_script=consts.PC13_EVAL_SCRIPT, data_dir=args.dev,
                            result_re=consts.PC13_RESULT_RE, verbose=True),
                  key='f1').attach(engine, name='f1')
-    # P_A.attach(engine, name='A_precision')
-    # R_A.attach(engine, name='A_recall')
-    # F1_A.attach(engine, name='A_f1')
-    #
-    # P_token_types_ent.attach(engine, name='token_types_ent_precision')
-    # R_token_types_ent.attach(engine, name='token_types_ent_recall')
-    # F1_token_types_ent.attach(engine, name='token_types_ent_f1')
-    #
-    # P_token_types_trig.attach(engine, name='token_types_trig_precision')
-    # R_token_types_trig.attach(engine, name='token_types_trig_recall')
-    # F1_token_types_trig.attach(engine, name='token_types_trig_f1')
-    #
-    # P_edge_type.attach(engine, name='edge_type_precision')
-    # R_edge_type.attach(engine, name='edge_type_recall')
-    # F1_edge_type.attach(engine, name='edge_type_f1')
+    P_event_node.attach(engine, name='node_precision')
+    R_event_node.attach(engine, name='node_recall')
+    F1_event_node.attach(engine, name='node_f1')
 
     return engine
 
@@ -148,7 +143,7 @@ def objective(trial: optuna.Trial):
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_results(engine):
-        if (engine.state.epoch+1) % 10 == 0:
+        if (engine.state.epoch+1) % 1 == 0:
             pruning_evaluator.run(dev_loader)
             if not args.disable_wandb:
                 wandb.log(
