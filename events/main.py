@@ -14,14 +14,13 @@ from torch.utils.data import DataLoader
 
 from . import consts
 from .dataset import PC13Dataset
-from .evaluation import BioNLPMetric, Evaluator, output_transform_event_node
+from .evaluation import BioNLPMetric, Evaluator, output_transform_event_node, Acc
 from .model import EventExtractor
 
-DEBUG = True
 
-P_event_node = ignite.metrics.Precision(output_transform=output_transform_event_node, average=True,)
-R_event_node = ignite.metrics.Recall(output_transform=output_transform_event_node, average=True)
-F1_event_node = ignite.metrics.Fbeta(beta=1.0, output_transform=output_transform_event_node, average=True)
+node_acc = Acc(output_transform=output_transform_event_node)
+
+
 
 
 def _prepare_batch(batch, device=None, non_blocking=False):
@@ -70,30 +69,13 @@ def create_evaluator(model, device=None, non_blocking=False):
         batch = batch[0]
         with torch.no_grad():
             prediction = model.predict(batch), batch
-            if DEBUG:
-                preds = []
-                true = []
-                for pred in prediction[0]['aux']['node_logits'].argmax(dim=1):
-                    preds.append(model.id_to_node_type[pred.item()])
-                print(preds)
-                for row in prediction[1]['node_targets'] > 0:
-                    row_true = []
-                    for i, v in enumerate(row):
-                        if v.item():
-                            row_true.append(model.id_to_node_type[i])
-                    true.append(row_true)
-                print(row_true)
-
-
             return prediction
 
     engine = Engine(_inference)
     BioNLPMetric(Evaluator(eval_script=consts.PC13_EVAL_SCRIPT, data_dir=args.dev,
                            result_re=consts.PC13_RESULT_RE, verbose=True),
                  key='f1').attach(engine, name='f1')
-    P_event_node.attach(engine, name='node_precision')
-    R_event_node.attach(engine, name='node_recall')
-    F1_event_node.attach(engine, name='node_f1')
+    node_acc.attach(engine, name='node_acc')
 
     return engine
 

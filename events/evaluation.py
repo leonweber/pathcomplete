@@ -61,23 +61,60 @@ class BioNLPMetric(Metric):
 
 
 def output_transform_event_node(output):
-    pred = output[0]['aux']['node_logits']
-    true = (output[1]['node_targets'] > 0).long()
+    all_preds = output[0]['aux']['node_logits']
+    all_trues = output[1]['node_targets']
 
     # score only supports one index with 1
     # if prediction is true, set predicted index to 1, otherwise set any predicted index to 1
-    pred_idx = (torch.arange(len(pred)), pred.argmax(dim=1))
+    pred_idcs = []
+    true_idcs = []
 
-    correct_mask = true[pred_idx].bool()
+    for pred, true in zip(all_preds, all_trues):
+        pred_idx = pred.argmax()
+        some_true_idx = true.argmax()
+        is_true = true[pred_idx].bool().item()
 
-    pred_idx = (pred_idx[0][correct_mask], pred_idx[1][correct_mask])
-    some_true_idx = (torch.arange(len(true))[~correct_mask], true.argmax(dim=1)[~correct_mask])
+        pred_idcs.append(pred_idx)
+        if is_true:
+            true_idcs.append(pred_idx)
+        else:
+            true_idcs.append(some_true_idx)
 
-    true[:] = 0
-    true[pred_idx] = 1
-    true[some_true_idx] = 1
+    return torch.tensor(pred_idcs), torch.tensor(true_idcs)
 
-    return pred, true.argmax(dim=1)
+class Acc(Metric):
+    def __init__(self, output_transform=lambda x: x):
+        self.n_correct = 0
+        self.n_pred = 0
+        super(Acc, self).__init__(output_transform=output_transform, device='cpu')
+
+    def reset(self):
+        self.n_correct = 0
+        self.n_pred = 0
+
+    def update(self, output):
+        pred, true = output
+        self.n_correct += (pred == true).sum().item()
+        self.n_pred += len(pred)
+
+    def compute(self):
+        return self.n_correct / self.n_pred
+
+class F1(Metric):
+    def __init__(self, output_transform=lambda x: x):
+        self.n_tp = 0
+        self.n_fp = 0
+        self.n_fn = 0
+        super(F1, self).__init__(output_transform=output_transform, device='cpu')
+
+    def reset(self):
+        self.n_tp = 0
+        self.n_fp = 0
+        self.n_fn = 0
+
+    def update(self, output):
+        pass
 
 
-
+    def compute(self):
+        return 2*self.n_tp / (2*self.n_tp + self.n_fn + self.n_fp)

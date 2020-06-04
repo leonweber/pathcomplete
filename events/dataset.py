@@ -1,5 +1,6 @@
 import itertools
 from bisect import bisect_right, bisect_left
+from collections import defaultdict
 from pathlib import Path
 import random
 
@@ -14,6 +15,9 @@ from tqdm import tqdm
 
 from events import consts
 from events.parse_standoff import StandoffAnnotation
+
+
+MAX_LEN = 256
 
 
 def adapt_span(start, end, token_starts):
@@ -41,13 +45,12 @@ class BioNLPDataset:
         return batch[0]
 
     def __init__(self, path: Path, tokenizer: Path, split_sentences: bool = False):
-        self.max_len = 512
         self.split_sentences = split_sentences
         self.text_files = [f for f in path.glob('*.txt')]
         self.node_type_to_id = {v: i for i, v in enumerate(sorted(
             itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)))}
         self.edge_type_to_id = {v: i for i, v in enumerate(sorted(self.EDGE_TYPES))}
-        self.nlp = spacy.load("en_core_sci_sm", disable=['tagger'])
+        self.nlp = spacy.load("en_core_sci_md", disable=['tagger'])
 
         self.tokenizer = transformers.BertTokenizerFast.from_pretrained(str(tokenizer))
 
@@ -56,7 +59,9 @@ class BioNLPDataset:
         self.geometric_graph_by_fname = {}
         for file in tqdm(self.text_files, desc="Parsing raw data"):
             with file.open() as f:
-                encoding = self.tokenizer.tokenizer.encode(f.read())
+                text = f.read()
+                encoding = self.tokenizer.encode_plus(text, return_offsets_mapping=True)
+                encoding["text"] = text
                 self.add_sentence_ids(encoding)
                 self.encodings_by_fname[file.name] = encoding
 
@@ -66,19 +71,20 @@ class BioNLPDataset:
                 self.add_annotation_information(graph=self.geometric_graph_by_fname[file.name],
                                                 ann=ann,
                                                 encoding=encoding)
+                pass
 
         self.fnames = sorted(self.encodings_by_fname)
 
     def add_sentence_ids(self, encoding):
-        doc: spacy.tokens.Doc = self.nlp(str(encoding.original_str))
+        doc: spacy.tokens.Doc = self.nlp(str(encoding["text"]))
         sentence_ids = []
         sentence_ends = [s.end_char for s in doc.sents]
         i_sent = 0
-        for tok_start, tok_end in encoding.offsets:
+        for tok_start, tok_end in encoding["offset_mapping"]:
             if tok_start > sentence_ends[i_sent]:
                 i_sent += 1
             sentence_ids.append(i_sent)
-        encoding.sentence_ids = sentence_ids
+        encoding["sentence_ids"] = sentence_ids
 
     def nx_to_geometric(self, graph):
         geometric_graph = torch_geometric.utils.from_networkx(graph)
@@ -89,6 +95,7 @@ class BioNLPDataset:
         geometric_graph.node_type = [self.node_type_to_id[n['type']] for _, n in graph.nodes(data=True)]
         geometric_graph.edge_attr = torch.tensor([self.edge_type_to_id[e['type']] for _, _, e in graph.edges(data=True)])
         geometric_graph.entities = [geometric_graph.name_to_id[n] for n in geometric_graph.node_names if 'T' in n]
+        geometric_graph.events = [geometric_graph.name_to_id[n] for n in geometric_graph.node_names if 'T' not in n]
         geometric_graph.G = graph
 
         return geometric_graph
@@ -97,7 +104,7 @@ class BioNLPDataset:
         fname = self.fnames[item]
         g = self.geometric_graph_by_fname[fname]
         order = self.sample_order(g)
-        node_targets = self.compute_targets(g, order)
+        node_targets = self.compute_next_trigger_targets(g, order)
         result = {"encoding": self.encodings_by_fname[fname],
                   "graph": g,
                   "node_targets": node_targets,
@@ -130,8 +137,8 @@ class BioNLPDataset:
         node_spans = []
         trigger_to_span = {}
         event_to_trigger = {}
-        token_starts = [i[1] for i in encoding.offsets[1:-1]] # because of CLS and SEP tokens
-        n_tokens = len(encoding)
+        token_starts = [i[1] for i in encoding["offset_mapping"][1:-1]] # because of CLS and SEP tokens
+        n_tokens = len(encoding["input_ids"])
 
         for trigger in ann.triggers.values():
             trigger_to_span[trigger.id] = adapt_span(start=trigger.start,
@@ -161,48 +168,78 @@ class BioNLPDataset:
 
     def sample_order(self, g):
         order = []
+        node_to_trigger = {n: g.node_spans[i] for i, n in enumerate(g.node_names)}
+        trigger_to_nodes = defaultdict(list)
+        for node, trigger in node_to_trigger.items():
+            trigger_to_nodes[trigger].append(node)
         G = g.G
-        indegree_map = {v: d for v, d in G.in_degree() if d > 0 if "T" not in v}
-        # These nodes have zero indegree and ready to be returned.
-        zero_indegree = [v for v, d in G.in_degree() if d == 0 if "T" not in v]
+        indegree_map = {v: d for v, d in G.in_degree() if "T" not in v}
+        zero_indegree_triggers = set()
+        for v, d in indegree_map.items():
+            if d == 0:
+                zero_indegree_triggers.add(node_to_trigger[v])
 
-        while zero_indegree:
-            node = random.sample(zero_indegree, 1)[0]
-            zero_indegree.remove(node)
-            for _, child in G.edges(node):
-                if "T" in child:
-                    continue
-                indegree_map[child] -= 1
-                if indegree_map[child] == 0:
-                    zero_indegree.append(child)
-                    del indegree_map[child]
-            order.append(g.name_to_id[node])
+        while zero_indegree_triggers:
+            trigger = random.sample(zero_indegree_triggers, 1)[0]
+            zero_indegree_triggers.remove(trigger)
+            for node in trigger_to_nodes[trigger]:
+                for _, child in G.edges(node):
+                    if "T" in child:
+                        continue
+                    indegree_map[child] -= 1
+                    if indegree_map[child] == 0:
+                        zero_indegree_triggers.add(node_to_trigger[child])
+                        del indegree_map[child]
+            order.append(trigger)
 
         return order
 
-    def compute_targets(self, g, order):
-        targets = torch.zeros((len(order) + 1, len(self.node_type_to_id)))
-        G = nx.convert_node_labels_to_integers(g.G).subgraph(order)
-        indegree_map = {v: d for v, d in G.in_degree() if d > 0}
-        zero_indegree = [v for v, d in G.in_degree() if d == 0]
+    def compute_next_trigger_targets(self, g, order):
+        """
 
-        for valid_node in zero_indegree:
-            targets[0, g.node_type[valid_node]] += 1
-        for i, predicted_node in enumerate(order[:-1], start=1):
-            zero_indegree.remove(predicted_node)
-            for _, child in G.edges(predicted_node):
-                indegree_map[child] -= 1
-                if indegree_map[child] == 0:
-                    zero_indegree.append(child)
-                    del indegree_map[child]
+        :param g:
+        :param order: The node generation order we assume for this datapoint
+        :return:
+        """
 
-            for valid_node in zero_indegree:
-                targets[i, g.node_type[valid_node]] += 1
+        node_to_trigger = {n: g.node_spans[i] for i, n in enumerate(g.node_names)}
+        trigger_to_nodes = defaultdict(list)
+        for node, trigger in node_to_trigger.items():
+            trigger_to_nodes[trigger].append(node)
+        n_triggers = len(order)
+        G = g.G
+        all_targets = []
+        indegree_map = {v: d for v, d in G.in_degree() if "T" not in v}
+        zero_indegree_triggers = set()
+        for v, d in indegree_map.items():
+            if d == 0:
+                zero_indegree_triggers.add(node_to_trigger[v])
 
-        targets[-1][self.node_type_to_id["None"]] = 1
-        targets = targets / targets.sum(dim=1).unsqueeze(1)
+        targets = torch.zeros(n_triggers)
+        for valid_trigger in zero_indegree_triggers:
+            i = order.index(valid_trigger)
+            targets[i] = 1
+        all_targets.append(targets)
+        for i, predicted_trigger in enumerate(order[:-1], start=1):
+            zero_indegree_triggers.remove(predicted_trigger)
+            for node in trigger_to_nodes[predicted_trigger]:
+                for _, child in G.edges(node):
+                    if "T" in child:
+                        continue
+                    indegree_map[child] -= 1
+                    if indegree_map[child] == 0:
+                        zero_indegree_triggers.add(node_to_trigger[child])
+                        del indegree_map[child]
 
-        return targets
+            for valid_trigger in zero_indegree_triggers:
+                i = order.index(valid_trigger)
+                targets[i] = 1
+            all_targets.append(targets[i:])
+
+        normalized_targets = []
+        for targets in all_targets:
+            normalized_targets.append(targets / targets.sum())
+        return normalized_targets
 
 
 
