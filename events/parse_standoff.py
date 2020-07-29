@@ -45,8 +45,8 @@ EVENT_TRIGGER_TYPES = ['conversion',
  'deacetylation',
  'negative_regulation',
  'transport',
- 'hydroxilation'
- 'dehydroxilation'
+ 'hydroxylation',
+ 'dehydroxylation'
                        ]
 
 
@@ -171,27 +171,25 @@ def parse_line( line):
         # EVENTS[event.id] = event
     return ( entity_trigger, event_trigger, event, equivalence)
 
-def parse_files( file_pathnames):
+def parse_lines( lines):
     triggers = {} # entities and event triggers
     entity_triggers = [] # entity triggers only
     events = {} # events annotations
     equivalences = []
-    for pathname in file_pathnames:
-        with open( pathname) as f:
-            for i,line in enumerate(f):
-                try:
-                    entity_trigger, event_trigger, event, equivalence = parse_line( line)
-                    if entity_trigger != None:
-                        triggers[entity_trigger.id] =  entity_trigger
-                        entity_triggers.append( entity_trigger)
-                    if event_trigger != None:
-                        triggers[event_trigger.id] = event_trigger
-                    if event != None:
-                        events[event.id] = event
-                    if equivalence != None:
-                        equivalences.append( equivalence)
-                except MappingError as e:
-                    print("ERROR " + pathname + ":" + str(i) + ": mapping error:" + e.value)
+    for i,line in enumerate(lines):
+        try:
+            entity_trigger, event_trigger, event, equivalence = parse_line( line)
+            if entity_trigger != None:
+                triggers[entity_trigger.id] =  entity_trigger
+                entity_triggers.append( entity_trigger)
+            if event_trigger != None:
+                triggers[event_trigger.id] = event_trigger
+            if event != None:
+                events[event.id] = event
+            if equivalence != None:
+                equivalences.append( equivalence)
+        except MappingError as e:
+            print("ERROR " + ":" + str(i) + ": mapping error:" + e.value)
 
     # handle equivalences (add missing triggers and events)
     for equivalence in equivalences:
@@ -213,7 +211,7 @@ def parse_files( file_pathnames):
                 new.id = t1
             triggers[new.id] = new
             if not old in entity_triggers:
-                print("ERROR " + str(file_pathnames) + " equivalence between non-entities cannot be handled (equivalence: " + equivalence + ")")
+                print("ERROR " +  " equivalence between non-entities cannot be handled (equivalence: " + equivalence + ")")
             else:
                 entity_triggers.append( new)
         
@@ -223,7 +221,7 @@ def parse_files( file_pathnames):
             trigger = triggers[event.trigger]
             event.trigger = trigger
         except:
-           print("ERROR " + str(file_pathnames) + ": entity trigger '" + event.trigger + "' not found")
+           print("ERROR " + ": entity trigger '" + event.trigger + "' not found")
             
         roles = []
         for role_tuple in event.roles:
@@ -237,7 +235,7 @@ def parse_files( file_pathnames):
             except:
                 pass
             if role_filler == None:
-                print("ERROR " + str(file_pathnames) + " entity/event '" + role_tuple[1] + "' not found")
+                print("ERROR " + " entity/event '" + role_tuple[1] + "' not found")
             else:
                 roles.append((role_tuple[0], role_filler))
         event.roles = roles
@@ -245,10 +243,12 @@ def parse_files( file_pathnames):
     return triggers, entity_triggers, events
 
 def parse_a1_a2( a1_file_path, a2_file_path):
-    return parse_files( [ a1_file_path, a2_file_path])
+    with open(a1_file_path) as f:
+        a1_lines = f.readlines()
+    with open(a2_file_path) as f:
+        a2_lines = f.readlines()
+    return parse_lines(a1_lines + a2_lines)
     
-def parse_ann( ann_file_path):
-    return parse_files( [ ann_file_path])
 
 def events_to_nx(events, entity_triggers):
     G = nx.DiGraph()
@@ -261,8 +261,9 @@ def events_to_nx(events, entity_triggers):
 
 
 class StandoffAnnotation:
-    def __init__(self, a1_file_path, a2_file_path):
-        self.triggers, self.entity_triggers, self.events = parse_a1_a2(str(a1_file_path),
-                                                                       str(a2_file_path))
+    def __init__(self, a1_lines, a2_lines):
+        self.triggers, self.entity_triggers, self.events = parse_lines(a1_lines + a2_lines)
         self.event_graph = events_to_nx(self.events, self.entity_triggers)
+        self.a1_lines = a1_lines
+        self.a2_lines = a2_lines
 

@@ -9,9 +9,9 @@ PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
                     "None"}
 
 PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
-                     "Cellular_component"}
+                     "Cellular_component", "None"}
 PC_13_EDGE_TYPES = {"None", "Theme", "Product", "Cause", "Site", "AtLoc", "FromLoc", "ToLoc",
-                    "Participant"}
+                    "Participant", "Trigger", "InText"}
 PC13_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 PC13_EVAL_SCRIPT = 'evaluation-PC.py'
 

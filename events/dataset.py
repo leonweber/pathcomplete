@@ -1,16 +1,15 @@
 import itertools
 from bisect import bisect_right, bisect_left
 from collections import defaultdict
+from copy import deepcopy
+from operator import attrgetter
 from pathlib import Path
 import random
 
-import torch_geometric
 import spacy
-import torch
 import transformers
-import networkx as nx
-from spacy import tokens
-from torch_geometric.data import Data
+import torch
+from flair.tokenization import SciSpacySentenceSplitter
 from tqdm import tqdm
 
 from events import consts
@@ -18,6 +17,216 @@ from events.parse_standoff import StandoffAnnotation
 
 
 MAX_LEN = 256
+
+
+def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
+                         edge_type_to_id):
+    """
+    Computes typed adjacency matrix for text + graph transformer
+
+    Adjacency matrix is decomposed into two parts:
+
+    `text_to_graph':  contains an edge from token to a graph node if they share the same trigger
+    `graph_to_graph':  adjacency matrix of the graph => only edges from graph node to graph node
+    """
+    text1_trigger_ids = []
+    for i in nodes_text:
+        try:
+            text1_trigger_ids.append(i.id)
+        except AttributeError:
+            text1_trigger_ids.append(i)
+
+    node_ids_graph = []
+    trigger_ids_graph = []
+    for i in nodes_graph:
+        try:
+            node_id = {i.id}
+        except AttributeError:
+            node_id = i
+
+        if not isinstance(node_id, set):
+            node_id = {node_id}
+        if list(node_id)[0].startswith("E"): # This is an event and thus there's only a single node in the set => Replace with trigger
+            trigger_id = {event_to_trigger[list(node_id)[0]]}
+        else:
+            trigger_id = node_id
+        node_ids_graph.append(node_id)
+        trigger_ids_graph.append(trigger_id)
+
+    text_to_graph = torch.zeros((len(text1_trigger_ids), len(node_ids_graph)))
+    graph_to_graph = torch.zeros((len(node_ids_graph), len(node_ids_graph)))
+    text_to_graph[:] = edge_type_to_id["None"]
+    graph_to_graph[:] = edge_type_to_id["None"]
+
+    # Text to graph
+    for i, u_trigger in enumerate(text1_trigger_ids):
+        for j, v_trigger in enumerate(trigger_ids_graph):
+            if not isinstance(v_trigger, set):
+                v_trigger = set(v_trigger)
+            if u_trigger in v_trigger: # This gets an edge if the token is the trigger for any of the nodes in the set
+                text_to_graph[i, j] = edge_type_to_id["Trigger"]
+
+    # Graph to graph
+    for i, us in enumerate(node_ids_graph):
+        for j, vs in enumerate(node_ids_graph):
+            if not isinstance(us, set):
+                us = set(us)
+            if not isinstance(vs, set):
+                vs = set(vs)
+            for u in us:
+                for v in vs:
+                    if (u, v) in event_graph.edges:
+                        data = event_graph.get_edge_data(u, v)
+                        graph_to_graph[i, j] = edge_type_to_id[data["type"]]
+
+    return {"text_to_graph": text_to_graph,
+            "graph_to_graph": graph_to_graph}
+
+def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None):
+    text = ""
+    node_char_spans = []
+    node_types = []
+    node_spans = []
+    node_ids = []
+
+    entity_text_to_pos = {}
+    node_char_spans = []
+
+    if known_events is not None:
+        events = [ann.events[e] for e in known_events]
+    else:
+        events = ann.events.values()
+    events = sorted(events, key=attrgetter("trigger.start"))
+
+    for entity in entities:
+        entity = ann.triggers[entity]
+        if entity.text not in entity_text_to_pos:
+            start = len(text)+1 if text else 0
+            if text:
+                text += " " + entity.text
+            else:
+                text = entity.text
+            entity_text_to_pos[entity.text] = len(entity_text_to_pos)
+            node_types.append(entity.type)
+            node_ids.append({entity.id})
+            node_char_spans.append((start, start + len(entity.text)))
+        else:
+            node_ids[entity_text_to_pos[entity.text]].add(entity.id)
+
+
+    for event in events:
+        start = len(text) + 1
+        node_char_spans.append((start, start+len(event.trigger.text)))
+        node_types.append(event.trigger.type)
+        node_ids.append({event.id})
+        text += " " + event.trigger.text
+
+    text += "[SEP]"
+    encoding = tokenizer.encode_plus(text, return_offsets_mapping=True, add_special_tokens=False)
+    token_starts = [i[0] for i in encoding["offset_mapping"]][1:-1]
+    node_type_tensor = torch.zeros(len(encoding["input_ids"]))
+    node_type_tensor[:] = node_type_to_id["None"]
+    for (start, end), node_type in zip(node_char_spans, node_types):
+        start, end = adapt_span(start=start, end=end, token_starts=token_starts)
+        node_type_tensor[start:end] = node_type_to_id[node_type]
+        start += 1 # because adapt_span assumes there's an unhandled [CLS] token at the start
+        end += 1
+        node_spans.append((start,end))
+
+
+    return encoding, node_type_tensor, node_spans, node_ids
+
+def get_event_linearization(ann, tokenizer, node_type_to_id, known_events=None):
+    text = ""
+    node_char_spans = []
+    node_types = []
+    node_spans = []
+    node_ids = []
+
+    if known_events is not None:
+        events = [ann.events[e] for e in known_events]
+    else:
+        events = ann.events.values()
+    events = sorted(events, key=attrgetter("trigger.start"))
+
+    for event in events:
+        start = len(text) + 1
+        node_char_spans.append((start, start+len(event.trigger.text)))
+        node_types.append(event.trigger.type)
+        node_ids.append(event.id)
+        text += " " + event.trigger.text
+
+        for u, v, data in ann.event_graph.out_edges(event.id, data=True):
+            try:
+                trigger = ann.triggers[v]
+            except KeyError:
+                trigger = ann.events[v].trigger
+            start = len(text) + 1
+            node_char_spans.append((start, start+len(trigger.text)))
+            text += " " + trigger.text
+            node_ids.append(v)
+            node_types.append(trigger.type)
+        text += " |"
+    text += "[SEP]"
+
+    encoding = tokenizer.encode_plus(text, return_offsets_mapping=True, add_special_tokens=False)
+    token_starts = [i[0] for i in encoding["offset_mapping"]][:-1]
+    node_type_tensor = torch.zeros(len(encoding["input_ids"]))
+    node_type_tensor[:] = node_type_to_id["None"]
+    for (start, end), node_type in zip(node_char_spans, node_types):
+        start, end = adapt_span(start=start, end=end, token_starts=token_starts)
+        node_type_tensor[start:end] = node_type_to_id[node_type]
+        node_spans.append((start,end))
+
+    return encoding, node_type_tensor, node_spans, node_ids
+
+
+def get_triggers(sent, ann: StandoffAnnotation):
+    entity_trigger_ids = []
+    event_trigger_ids = []
+    for trigger_id, trigger in ann.triggers.items():
+        if sent.end_pos > int(trigger.start) >= sent.start_pos:
+            if trigger in ann.entity_triggers:
+                entity_trigger_ids.append(trigger_id)
+            else:
+                event_trigger_ids.append(trigger_id)
+
+    return entity_trigger_ids, event_trigger_ids
+
+
+def get_trigger_to_position(sent, ann: StandoffAnnotation):
+    trigger_to_position = {}
+    for trigger_id, trigger in ann.triggers.items():
+        if sent.end_pos > int(trigger.start) >= sent.start_pos:
+            trigger_to_position[trigger_id] = (int(trigger.start) - sent.start_pos,
+                                               int(trigger.end) - sent.start_pos)
+    return trigger_to_position
+
+
+def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length, nodes,
+                                     trigger_to_position, node_type_to_id, ann):
+    marker_start, marker_end = trigger_pos
+    marked_text = text[:marker_start] + "@ " + text[ marker_start:marker_end] + " @" + text[
+                                                                           marker_end:]
+    encoding_text = tokenizer.encode_plus(marked_text, return_offsets_mapping=True, max_length=max_length, add_special_tokens=True,
+                                               return_overflowing_tokens=True, pad_to_max_length=True)
+    token_starts = [i for i, _
+                     in tokenizer.encode_plus(text, return_offsets_mapping=True,
+                                              add_special_tokens=True)["offset_mapping"][1:-1]]
+    node_spans = get_trigger_spans(triggers=nodes, token_starts=token_starts,
+                                   marker_start=marker_start, marker_end=marker_end,
+                                   trigger_to_position=trigger_to_position, text=text,
+                                   encoding_text=encoding_text, tokenizer=tokenizer)
+    node_types_text = torch.zeros(len(encoding_text["input_ids"]))
+    node_types_text[:] = node_type_to_id["None"]
+    for node, span in zip(nodes, node_spans):
+        node = ann.triggers[node]
+        node_types_text[span[0]:span[1]] = node_type_to_id[node.type]
+
+
+    return encoding_text, node_spans, node_types_text
+
+
 
 
 def adapt_span(start, end, token_starts):
@@ -33,6 +242,43 @@ def adapt_span(start, end, token_starts):
     return new_start, new_end
 
 
+def get_trigger_spans(triggers, token_starts, marker_start, marker_end, trigger_to_position,
+                      text=None, tokenizer=None, encoding_text=None):
+    trigger_spans = []
+
+    for node in triggers:
+        char_start, char_end = trigger_to_position[node]
+        token_start, token_end = adapt_span(start=char_start, end=char_end, token_starts=token_starts)
+        # account for [CLS]
+        token_start += 1
+        token_end +=1
+
+        # adjust for inserted markers
+        if char_start >= marker_start:
+            token_start += 1
+        if char_start >= marker_end:
+            token_start += 1
+
+        if char_end > marker_start:
+            token_end += 1
+        if char_end > marker_end:
+            token_end += 1
+
+        if token_start >= len(encoding_text["input_ids"]): # default to [SEP] if sentence is too long
+            token_start = len(encoding_text["input_ids"]) - 1
+            token_end = len(encoding_text["input_ids"])
+
+        # if text and tokenizer and encoding_text:
+        #     orig_text = text[char_start:char_end].lower().replace(" ", "")
+        #     marked_text = tokenizer.decode(encoding_text["input_ids"][token_start:token_end]).lower().replace(" ", "")
+        #     if not orig_text == marked_text :
+        #         print(orig_text, marked_text)
+
+        trigger_spans.append((token_start, token_end))
+
+    return trigger_spans
+
+
 
 class BioNLPDataset:
     EVENT_TYPES = None
@@ -44,78 +290,49 @@ class BioNLPDataset:
         assert len(batch) == 1
         return batch[0]
 
-    def __init__(self, path: Path, tokenizer: Path, split_sentences: bool = False):
-        self.split_sentences = split_sentences
+    def __init__(self, path: Path, tokenizer: Path, linearize_events: bool = False,
+                 batch_size: int = 16, predict: bool = False):
         self.text_files = [f for f in path.glob('*.txt')]
-        self.node_type_to_id = {v: i for i, v in enumerate(sorted(
-            itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)))}
+        self.node_type_to_id = {}
+        for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
+            if i not in self.node_type_to_id:
+                self.node_type_to_id[i] = len(self.node_type_to_id)
+
         self.edge_type_to_id = {v: i for i, v in enumerate(sorted(self.EDGE_TYPES))}
-        self.nlp = spacy.load("en_core_sci_md", disable=['tagger'])
+        self.sentence_splitter = SciSpacySentenceSplitter()
+        self.batch_size = batch_size
+        self.predict = predict
+        self.linearize_events = linearize_events
 
         self.tokenizer = transformers.BertTokenizerFast.from_pretrained(str(tokenizer))
+        self.tokenizer.add_special_tokens({'additional_special_tokens': ["@"]})
 
-        self.encodings_by_fname = {}
-        self.annotations_by_fname = {}
-        self.geometric_graph_by_fname = {}
+        self.examples = []
+        self.predict_example_by_fname = {}
         for file in tqdm(self.text_files, desc="Parsing raw data"):
-            with file.open() as f:
+            with file.open() as f, file.with_suffix(".a1").open() as f_a1, file.with_suffix(".a2").open() as f_a2:
                 text = f.read()
-                encoding = self.tokenizer.encode_plus(text, return_offsets_mapping=True)
-                encoding["text"] = text
-                self.add_sentence_ids(encoding)
-                self.encodings_by_fname[file.name] = encoding
+                a1_lines = f_a1.readlines()
+                a2_lines = f_a2.readlines()
+                ann = StandoffAnnotation(a1_lines=a1_lines, a2_lines=a2_lines)
+                self.examples += self.generate_examples(text, ann)
+                self.predict_example_by_fname[file.name] = (file.name, text, ann)
 
-                ann = StandoffAnnotation(file.with_suffix(".a1"), file.with_suffix(".a2"))
-                self.annotations_by_fname[file.name] = ann
-                self.geometric_graph_by_fname[file.name] = self.nx_to_geometric(ann.event_graph)
-                self.add_annotation_information(graph=self.geometric_graph_by_fname[file.name],
-                                                ann=ann,
-                                                encoding=encoding)
-                pass
-
-        self.fnames = sorted(self.encodings_by_fname)
-
-    def add_sentence_ids(self, encoding):
-        doc: spacy.tokens.Doc = self.nlp(str(encoding["text"]))
-        sentence_ids = []
-        sentence_ends = [s.end_char for s in doc.sents]
-        i_sent = 0
-        for tok_start, tok_end in encoding["offset_mapping"]:
-            if tok_start > sentence_ends[i_sent]:
-                i_sent += 1
-            sentence_ids.append(i_sent)
-        encoding["sentence_ids"] = sentence_ids
-
-    def nx_to_geometric(self, graph):
-        geometric_graph = torch_geometric.utils.from_networkx(graph)
-        geometric_graph.node_names = list(graph.nodes)
-        geometric_graph.name_to_id = {n: i for i, n in enumerate(geometric_graph.node_names)}
-        geometric_graph.id_to_name = {i: n for n, i in geometric_graph.name_to_id.items()}
-        geometric_graph.topological_order = [geometric_graph.name_to_id[i] for i in nx.topological_sort(graph) if 'T' not in i]
-        geometric_graph.node_type = [self.node_type_to_id[n['type']] for _, n in graph.nodes(data=True)]
-        geometric_graph.edge_attr = torch.tensor([self.edge_type_to_id[e['type']] for _, _, e in graph.edges(data=True)])
-        geometric_graph.entities = [geometric_graph.name_to_id[n] for n in geometric_graph.node_names if 'T' in n]
-        geometric_graph.events = [geometric_graph.name_to_id[n] for n in geometric_graph.node_names if 'T' not in n]
-        geometric_graph.G = graph
-
-        return geometric_graph
+        self.fnames = sorted(self.predict_example_by_fname)
 
     def __getitem__(self, item):
-        fname = self.fnames[item]
-        g = self.geometric_graph_by_fname[fname]
-        order = self.sample_order(g)
-        node_targets = self.compute_next_trigger_targets(g, order)
-        result = {"encoding": self.encodings_by_fname[fname],
-                  "graph": g,
-                  "node_targets": node_targets,
-                  "order": order,
-                  "fname": fname
-                  }
 
-        return result
+        if self.predict:
+            fname = self.fnames[item]
+            return self.predict_example_by_fname[fname]
+        else:
+            return self.examples[item]
 
     def __len__(self):
-        return len(self.fnames)
+        if self.predict:
+            return len(self.fnames)
+        else:
+            return len(self.examples)
 
     @property
     def n_event_types(self):
@@ -133,113 +350,129 @@ class BioNLPDataset:
     def n_entity_types(self):
         return len(self.ENTITY_TYPES)
 
-    def add_annotation_information(self, graph, ann, encoding):
-        node_spans = []
-        trigger_to_span = {}
-        event_to_trigger = {}
-        token_starts = [i[1] for i in encoding["offset_mapping"][1:-1]] # because of CLS and SEP tokens
-        n_tokens = len(encoding["input_ids"])
 
-        for trigger in ann.triggers.values():
-            trigger_to_span[trigger.id] = adapt_span(start=trigger.start,
-                                                    end=trigger.end,
-                                                    token_starts=token_starts)
+
+
+    def generate_examples(self, text, ann):
+        trigger_to_events = defaultdict(list)
+        event_to_trigger = {}
         for event in ann.events.values():
             try:
+                trigger_to_events[event.trigger.id].append(event)
                 event_to_trigger[event.id] = event.trigger.id
             except AttributeError:
-                event_to_trigger[event.id] = event.trigger
+                trigger_to_events[event.trigger].append(event)
+                event_to_trigger[event.id] = event.trigger.id
 
-        for node in graph.node_names:
-            if node in event_to_trigger:
-                trigger = event_to_trigger[node]
-            else:
-                trigger = node
+        examples = []
 
-            if trigger in trigger_to_span:
-                span = trigger_to_span[trigger]
-            else:
-                span = (n_tokens-2, n_tokens-1) # default to SEP for failed parses
+        for sentence in self.sentence_splitter.split(text):
+            entity_triggers, event_triggers = get_triggers(sentence, ann)
+            trigger_to_position = get_trigger_to_position(sentence, ann)
 
-            span = (span[0]+1, span[1]+1) # because of CLS token
-            node_spans.append(span)
+            known_events = []
 
-        graph.node_spans = node_spans
+            for i_trigger, trigger_id in enumerate(event_triggers):
+                for event in trigger_to_events[trigger_id]:
+                    example = self.build_example(ann, entity_triggers, event,
+                                                 event_to_trigger, event_triggers,
+                                                 i_trigger, known_events, sentence,
+                                                 trigger_id, trigger_to_position)
 
-    def sample_order(self, g):
-        order = []
-        node_to_trigger = {n: g.node_spans[i] for i, n in enumerate(g.node_names)}
-        trigger_to_nodes = defaultdict(list)
-        for node, trigger in node_to_trigger.items():
-            trigger_to_nodes[trigger].append(node)
-        G = g.G
-        indegree_map = {v: d for v, d in G.in_degree() if "T" not in v}
-        zero_indegree_triggers = set()
-        for v, d in indegree_map.items():
-            if d == 0:
-                zero_indegree_triggers.add(node_to_trigger[v])
+                    known_events.append(event.id)
+                    examples.append(example)
 
-        while zero_indegree_triggers:
-            trigger = random.sample(zero_indegree_triggers, 1)[0]
-            zero_indegree_triggers.remove(trigger)
-            for node in trigger_to_nodes[trigger]:
-                for _, child in G.edges(node):
-                    if "T" in child:
-                        continue
-                    indegree_map[child] -= 1
-                    if indegree_map[child] == 0:
-                        zero_indegree_triggers.add(node_to_trigger[child])
-                        del indegree_map[child]
-            order.append(trigger)
+                # signal end of trigger
+                example = self.build_example(ann, entity_triggers, None,
+                                             event_to_trigger, event_triggers,
+                                             i_trigger, known_events, sentence,
+                                             trigger_id, trigger_to_position)
+                examples.append(example)
 
-        return order
+        return examples
 
-    def compute_next_trigger_targets(self, g, order):
-        """
+    def build_example(self, ann, entity_triggers, event, event_to_trigger,
+                      event_triggers, i_trigger, known_events, sentence, trigger_id,
+                      trigger_to_position):
+        example = {}
+        if self.linearize_events:
+            encoding_graph, node_types_graph, node_spans_graph, node_ids_graph = get_event_linearization(
+                ann, known_events=known_events,
+                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id)
+        else:
+            encoding_graph, node_types_graph, node_spans_graph, node_ids_graph = get_event_graph(
+                known_events=known_events,
+                ann=ann, tokenizer=self.tokenizer,
+                node_type_to_id=self.node_type_to_id,
+                entities=entity_triggers)
+        adjacency_matrix = get_adjacency_matrix(event_graph=ann.event_graph,
+                                                nodes_text=entity_triggers + event_triggers,
+                                                nodes_graph=node_ids_graph,
+                                                event_to_trigger=event_to_trigger,
+                                                edge_type_to_id=self.edge_type_to_id)
+        assert adjacency_matrix["text_to_graph"].shape[1] == len(node_spans_graph)
+        remaining_length = MAX_LEN - len(encoding_graph["input_ids"])
+        node_spans_graph = [(a + remaining_length, b + remaining_length) for a, b in
+                            node_spans_graph]  # because we will append them to the text encoding
+        encoding_text, node_spans_text, node_types_text = get_text_encoding_and_node_spans(
+            text=str(sentence),
+            trigger_pos=trigger_to_position[trigger_id],
+            tokenizer=self.tokenizer,
+            max_length=remaining_length,
+            nodes=entity_triggers + event_triggers,
+            node_type_to_id=self.node_type_to_id,
+            ann=ann,
+            trigger_to_position=trigger_to_position)
+        input_ids = torch.cat([torch.tensor(encoding_text["input_ids"]),
+                               torch.tensor(encoding_graph["input_ids"])])
+        token_type_ids = torch.zeros(input_ids.size(0))
+        token_type_ids[len(encoding_text["input_ids"]):] = 1
+        edge_types = {}
 
-        :param g:
-        :param order: The node generation order we assume for this datapoint
-        :return:
-        """
+        if event:
+            for u, v, data in ann.event_graph.out_edges(event.id, data=True):
+                if v.startswith("E"):
+                    try:
+                        v = ann.events[v].trigger.id
+                    except AttributeError:
+                        v = ann.events[v].trigger
 
-        node_to_trigger = {n: g.node_spans[i] for i, n in enumerate(g.node_names)}
-        trigger_to_nodes = defaultdict(list)
-        for node, trigger in node_to_trigger.items():
-            trigger_to_nodes[trigger].append(node)
-        n_triggers = len(order)
-        G = g.G
-        all_targets = []
-        indegree_map = {v: d for v, d in G.in_degree() if "T" not in v}
-        zero_indegree_triggers = set()
-        for v, d in indegree_map.items():
-            if d == 0:
-                zero_indegree_triggers.add(node_to_trigger[v])
+                edge_types[(u, v)] = data["type"]
+            labels = []
+            for node in entity_triggers + event_triggers:
+                node = ann.triggers[node]
+                edge_type = edge_types.get((event.id, node.id), "None")
+                labels.append(self.edge_type_to_id[edge_type])
+        else:
+            labels = torch.tensor([self.edge_type_to_id["None"]] * len(entity_triggers + event_triggers))
 
-        targets = torch.zeros(n_triggers)
-        for valid_trigger in zero_indegree_triggers:
-            i = order.index(valid_trigger)
-            targets[i] = 1
-        all_targets.append(targets)
-        for i, predicted_trigger in enumerate(order[:-1], start=1):
-            zero_indegree_triggers.remove(predicted_trigger)
-            for node in trigger_to_nodes[predicted_trigger]:
-                for _, child in G.edges(node):
-                    if "T" in child:
-                        continue
-                    indegree_map[child] -= 1
-                    if indegree_map[child] == 0:
-                        zero_indegree_triggers.add(node_to_trigger[child])
-                        del indegree_map[child]
+        example["input_ids"] = input_ids
+        example["token_type_ids"] = token_type_ids
+        example["adjacency_matrix"] = adjacency_matrix
+        example["node_types_text"] = node_types_text
+        example["node_types_graph"] = node_types_graph
+        example["node_spans_text"] = node_spans_text
+        example["node_spans_graph"] = node_spans_graph
+        example["trigger_span"] = node_spans_text[len(entity_triggers) + i_trigger]
+        example["labels"] = labels
+        return example
 
-            for valid_trigger in zero_indegree_triggers:
-                i = order.index(valid_trigger)
-                targets[i] = 1
-            all_targets.append(targets[i:])
+    @staticmethod
+    def collate_fn(examples):
+        keys_to_batch = {"input_ids", "token_type_ids"}
+        batch = defaultdict(list)
+        for example in examples:
+            for k, v in example.items():
+                batch[k].append(v)
+        for k in keys_to_batch:
+            batch[k] = torch.stack(batch[k])
 
-        normalized_targets = []
-        for targets in all_targets:
-            normalized_targets.append(targets / targets.sum())
-        return normalized_targets
+        return batch
+
+
+
+
+
 
 
 
@@ -248,5 +481,7 @@ class PC13Dataset(BioNLPDataset):
     ENTITY_TYPES = consts.PC13_ENTITY_TYPES
     EDGE_TYPES = consts.PC_13_EDGE_TYPES
 
-    def __init__(self, path: Path, bert_path: Path):
-        super().__init__(path, bert_path, split_sentences=False)
+    def __init__(self, path: Path, bert_path: Path, batch_size: int = 16, predict=False,
+                 linearize_events: bool = False):
+        super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
+                         linearize_events=linearize_events)
