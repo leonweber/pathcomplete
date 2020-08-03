@@ -6,9 +6,11 @@ from operator import attrgetter
 from pathlib import Path
 import random
 
+import networkx as nx
 import spacy
 import transformers
 import torch
+from flair.models import SequenceTagger
 from flair.tokenization import SciSpacySentenceSplitter
 from tqdm import tqdm
 
@@ -279,19 +281,61 @@ def get_trigger_spans(triggers, token_starts, marker_start, marker_end, trigger_
     return trigger_spans
 
 
+def triggers_are_overlapping(trigger1, trigger2):
+    return max(int(trigger1.start), int(trigger2.start)) <= min(int(trigger1.end), int(trigger2.end))
+
+
+def integrate_predicted_a2_triggers(ann, ann_predicted):
+    new_graph = ann.event_graph.copy()
+    new_a2_lines = []
+    added_triggers = set()
+    original_triggers = set(e.trigger for e in ann.events.values())
+
+    for predicted_trigger in ann_predicted.triggers.values():
+        predicted_trigger.id = None # only overlapping triggers receive an id for now
+
+    for original_trigger in original_triggers:
+        for predicted_trigger in ann_predicted.triggers.values():
+            if triggers_are_overlapping(original_trigger, predicted_trigger):
+                if original_trigger.id not in added_triggers:
+                    predicted_trigger.id = original_trigger.id
+                    new_a2_lines.append(predicted_trigger.to_a_star())
+                    added_triggers.add(original_trigger.id)
+                break
+        else: # didn't find an overlap
+            for _, event in ann.event_graph.out_edges(original_trigger.id):
+                new_graph.remove_node(event)
+
+    for predicted_trigger in ann_predicted.triggers.values():
+        if not predicted_trigger.id:
+            predicted_trigger.id = get_free_trigger_id(new_graph)
+            new_a2_lines.append(predicted_trigger.to_a_star())
+
+    new_a2_lines += get_a2_lines_from_graph(new_graph)
+
+    new_ann = StandoffAnnotation(ann.a1_lines, new_a2_lines)
+
+    return new_ann
+
+
+
 
 class BioNLPDataset:
     EVENT_TYPES = None
     ENTITY_TYPES = None
     EDGE_TYPES = None
+    DUPLICATES_ALLOWED = None
+    NO_THEME_FORBIDDEN = None
+    EDGES_FORBIDDEN = None
+
 
     @staticmethod
     def collate(batch):
         assert len(batch) == 1
         return batch[0]
 
-    def __init__(self, path: Path, tokenizer: Path, linearize_events: bool = False,
-                 batch_size: int = 16, predict: bool = False):
+    def __init__(self, path: Path, tokenizer: Path, trigger_detector: SequenceTagger,
+                 linearize_events: bool = False, batch_size: int = 16, predict: bool = False):
         self.text_files = [f for f in path.glob('*.txt')]
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
@@ -303,19 +347,26 @@ class BioNLPDataset:
         self.batch_size = batch_size
         self.predict = predict
         self.linearize_events = linearize_events
+        self.trigger_detector = trigger_detector
 
         self.tokenizer = transformers.BertTokenizerFast.from_pretrained(str(tokenizer))
         self.tokenizer.add_special_tokens({'additional_special_tokens': ["@"]})
 
         self.examples = []
+        self.predicted_examples = []
         self.predict_example_by_fname = {}
         for file in tqdm(self.text_files, desc="Parsing raw data"):
             with file.open() as f, file.with_suffix(".a1").open() as f_a1, file.with_suffix(".a2").open() as f_a2:
                 text = f.read()
+                sentences = self.sentence_splitter.split(text)
                 a1_lines = f_a1.readlines()
                 a2_lines = f_a2.readlines()
                 ann = StandoffAnnotation(a1_lines=a1_lines, a2_lines=a2_lines)
+                predicted_a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector, len(a1_lines))
+                ann_predicted = StandoffAnnotation(a1_lines=[], a2_lines=predicted_a2_trigger_lines)
+                ann_predicted = integrate_predicted_a2_triggers(ann, ann_predicted)
                 self.examples += self.generate_examples(text, ann)
+                self.predicted_examples += self.generate_examples(text, ann_predicted)
                 self.predict_example_by_fname[file.name] = (file.name, text, ann)
 
         self.fnames = sorted(self.predict_example_by_fname)
@@ -326,13 +377,13 @@ class BioNLPDataset:
             fname = self.fnames[item]
             return self.predict_example_by_fname[fname]
         else:
-            return self.examples[item]
+            return self.predicted_examples[item]
 
     def __len__(self):
         if self.predict:
             return len(self.fnames)
         else:
-            return len(self.examples)
+            return len(self.predicted_examples)
 
     @property
     def n_event_types(self):
@@ -415,7 +466,7 @@ class BioNLPDataset:
         node_spans_graph = [(a + remaining_length, b + remaining_length) for a, b in
                             node_spans_graph]  # because we will append them to the text encoding
         encoding_text, node_spans_text, node_types_text = get_text_encoding_and_node_spans(
-            text=str(sentence),
+            text=sentence.to_original_text(),
             trigger_pos=trigger_to_position[trigger_id],
             tokenizer=self.tokenizer,
             max_length=remaining_length,
@@ -471,17 +522,55 @@ class BioNLPDataset:
 
 
 
-
-
-
-
-
 class PC13Dataset(BioNLPDataset):
     EVENT_TYPES = consts.PC13_EVENT_TYPES
     ENTITY_TYPES = consts.PC13_ENTITY_TYPES
-    EDGE_TYPES = consts.PC_13_EDGE_TYPES
+    EDGE_TYPES = consts.PC13_EDGE_TYPES
+    DUPLICATES_ALLOWED = consts.PC13_DUPLICATES_ALLOWED
+    NO_THEME_FORBIDDEN = consts.PC13_NO_THEME_FORBIDDEN
+    EDGES_FORBIDDEN = consts.PC13_EDGES_FORBIDDEN
 
-    def __init__(self, path: Path, bert_path: Path, batch_size: int = 16, predict=False,
-                 linearize_events: bool = False):
+    def __init__(self, path: Path, bert_path: Path,trigger_detector: SequenceTagger,
+                 batch_size: int = 16, predict=False,
+                 linearize_events: bool = False, ):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events)
+                         linearize_events=linearize_events, trigger_detector=trigger_detector)
+
+
+def get_event_trigger_lines_from_sentences(sentences, trigger_detector, n_a1_lines):
+    lines = []
+    trigger_detector.predict(sentences)
+    for sentence in sentences:
+        for trigger in sentence.get_spans("trigger"):
+            start = trigger.start_pos + sentence.start_pos
+            end = trigger.end_pos + sentence.start_pos
+            id_ = f"T{len(lines) + n_a1_lines + 1}"
+            lines.append(f"{id_}\t{trigger.tag} {start} {end}\t{trigger.text}")
+
+    return lines
+
+
+def get_free_event_id(graph):
+    ids = [int(n[1:]) for n in graph.nodes if n.startswith("E")]
+    max_id = max(ids) if ids else 0
+    free_id = f"E{max_id+1}"
+    return free_id
+
+def get_free_trigger_id(graph):
+    ids = [int(n[1:]) for n in graph.nodes if n.startswith("T")]
+    max_id = max(ids) if ids else 0
+    free_id = f"T{max_id+1}"
+    return free_id
+
+
+def get_a2_lines_from_graph(graph: nx.DiGraph):
+    lines = []
+    for event in [n for n in graph.nodes if n.startswith("E")]:
+        trigger = [u for u, v, d in graph.in_edges(event, data=True) if d["type"] == "Trigger"][0]
+        event_type = graph.nodes[event]["type"]
+        args = []
+        for _, v, d in graph.out_edges(event, data=True):
+            args.append(f"{d['type']}:{v}")
+        lines.append(f"{event}\t{event_type}:{trigger} {' '.join(args)}")
+
+    return lines

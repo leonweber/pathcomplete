@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from pytorch_transformers import WarmupLinearSchedule
 from transformers import BertConfig
 from sklearn.metrics import average_precision_score
 from torch import nn
@@ -15,7 +16,7 @@ import wandb
 
 from torch.utils.data import DataLoader, RandomSampler, ConcatDataset
 from tqdm import trange, tqdm
-from transformers import AdamW, WarmupLinearSchedule
+from transformers import AdamW
 
 from .predict_bert import predict
 from .dataset import DistantBertDataset

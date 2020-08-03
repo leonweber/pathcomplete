@@ -46,7 +46,7 @@ os.environ['cnn_size'] = '100'  # avg, max
 
 # trainer configurations
 os.environ['batch_size'] = '64'
-os.environ['cuda_device'] = '0'  # which GPU to use. Use -1 for no-gpu
+os.environ['cuda_device'] = '0,1,2,3'  # which GPU to use. Use -1 for no-gpu
 os.environ['num_epochs'] = '100'  # set to 100 and rely on early stopping
 
 

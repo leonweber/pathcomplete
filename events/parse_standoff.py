@@ -60,15 +60,19 @@ class TextAnnotation:
     start = ""
     end = ""
     text = ""
+
     def __str__(self):
         return "<trigger {0}, {1}, {2}, {3}, '{4}'>".format( self.id, self.type, self.start, self.end, self.text)
+
 
 class EntityTrigger(TextAnnotation):
     def get_url(self):
         return
 
 class EventTrigger(TextAnnotation):
-    pass
+
+    def to_a_star(self):
+        return f"{self.id}\t{self.type} {self.start} {self.end}\t{self.text}"
 
 class Event():
     def __init__(self, ):
@@ -250,20 +254,22 @@ def parse_a1_a2( a1_file_path, a2_file_path):
     return parse_lines(a1_lines + a2_lines)
     
 
-def events_to_nx(events, entity_triggers):
+def events_to_nx(events, triggers):
     G = nx.DiGraph()
+    for trigger in triggers.values():
+        G.add_node(trigger.id, type=trigger.type)
     for event in events.values():
+        G.add_node(event.id, type=event.type)
+        G.add_edge(event.trigger.id, event.id, type="Trigger")
         for role, dst in event.roles:
             G.add_edge(event.id, dst.id, type=role)
-    nx.set_node_attributes(G, {k: e.type for k, e in events.items()}, name='type')
-    nx.set_node_attributes(G, {e.id: e.type for e in entity_triggers}, name='type')
     return G
 
 
 class StandoffAnnotation:
     def __init__(self, a1_lines, a2_lines):
         self.triggers, self.entity_triggers, self.events = parse_lines(a1_lines + a2_lines)
-        self.event_graph = events_to_nx(self.events, self.entity_triggers)
+        self.event_graph = events_to_nx(self.events, self.triggers)
         self.a1_lines = a1_lines
         self.a2_lines = a2_lines
 

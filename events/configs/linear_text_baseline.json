@@ -1,7 +1,8 @@
 {
   "linearize": true,
   "model": "bert",
-  "train": "data/BioNLP-ST_2013_PC_training_data",
-  "dev": "data/BioNLP-ST_2013_PC_development_data",
-  "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased"
+  "train": "events/data/BioNLP-ST_2013_PC_training_data",
+  "dev": "events/data/BioNLP-ST_2013_PC_development_data",
+  "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
+  "trigger_detector": "events/trigger_detection_models/bionlp2013_pc_triggers/best-model.pt"
 }

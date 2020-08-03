@@ -2,12 +2,9 @@ import logging
 
 import numpy as np
 import torch
-from allennlp.commands.elmo import ElmoEmbedder
 from sklearn.metrics import pairwise_distances
 from torch import nn
 from torch.utils.data import Dataset
-from tqdm import tqdm
-from transformers import BertModel, BertTokenizerFast
 
 
 class BioNLPClassificationDataset(Dataset):
@@ -53,146 +50,10 @@ class BioNLPClassificationDataset(Dataset):
         return len(self.X)
 
 
-class BERTEntityEmbedder:
-    def __init__(self, bert, multiply=False):
-        self.bert = nn.DataParallel(BertModel.from_pretrained(bert))
-        self.bert.cuda()
-        self.tokenizer = BertTokenizerFast.from_pretrained(bert)
-        self.tokenizer.add_special_tokens(
-            {'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>']})
-        self.multiply = multiply
-        self.embedding_size = 768 * 2
-
-    def embed(self, texts, batch_size=8):
-        with torch.no_grad():
-            embs = []
-            batch_size = batch_size * torch.cuda.device_count()
-            for chunk in tqdm(list(chunks(texts, batch_size))):
-                input_ids = []
-                attention_mask = []
-                e1_starts = []
-                e2_starts = []
-                for text in chunk:
-                    bert_input = self.tokenizer.encode_plus(text, max_length=256,
-                                                            pad_to_max_length=True,
-                                                            add_special_tokens=True)
-                    subword_tokens = self.tokenizer.convert_ids_to_tokens(
-                        bert_input['input_ids'],
-                        skip_special_tokens=False)
-                    try:
-                        e1_idx = subword_tokens.index('<e1>')
-                        e2_idx = subword_tokens.index('<e2>')
-                    except ValueError:
-                        embs.append(torch.zeros(1, 768 * 2))
-                        continue
-
-                    e1_starts.append(e1_idx)
-                    e2_starts.append(e2_idx)
-
-                    input_ids.append(bert_input['input_ids'])
-                    attention_mask.append(bert_input['attention_mask'])
-                input_ids = torch.tensor(input_ids).long().cuda()
-                attention_mask = torch.tensor(attention_mask).long().cuda()
-                chunk_embs = self.bert(input_ids=input_ids,
-                                       attention_mask=attention_mask)[
-                    0].cpu().detach().numpy()
-
-                e1_embs = torch.from_numpy(
-                    chunk_embs[np.arange(len(chunk_embs)), np.array(e1_starts), ...])
-                e2_embs = torch.from_numpy(
-                    chunk_embs[np.arange(len(chunk_embs)), np.array(e2_starts), ...])
-
-                if self.multiply:
-                    embs.append(torch.cat([e1_embs, e2_embs, e1_embs * e2_embs], dim=1))
-                else:
-                    embs.append(torch.cat([e1_embs, e2_embs], dim=1))
-            embs = torch.cat(embs, dim=0)
-
-            return embs
-
-
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
-
-
-class BERTCLSEmbedder:
-    def __init__(self, bert):
-        self.bert = BertModel.from_pretrained(bert)
-        self.bert.cuda()
-        self.tokenizer = BertTokenizerFast.from_pretrained(bert)
-        self.tokenizer.add_special_tokens(
-            {'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>']})
-
-    def embed(self, texts, batch_size=8):
-        embs = []
-        for chunk in tqdm(list(chunks(texts, batch_size))):
-            input_ids = []
-            for text in chunk:
-                input_id = self.tokenizer.encode(text, max_length=256,
-                                                 pad_to_max_length=True)
-                input_ids.append(input_id)
-            input_ids = torch.tensor(input_ids).long().cuda()
-            chunk_embs = self.bert(input_ids)[0].cpu().detach().numpy()
-            embs.append(chunk_embs[:, 0, ...])
-
-        embs = torch.cat(embs, dim=0)
-
-        return embs
-
-
-class BERTTokenizerEmbedder:
-    def __init__(self, tokenizer):
-        self.tokenizer = BertTokenizerFast.from_pretrained(tokenizer)
-        self.tokenizer.add_special_tokens(
-            {'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>']})
-
-    def embed(self, texts):
-        input_ids = []
-        for text in texts:
-            input_id = self.tokenizer.encode_plus(text, max_length=256,
-                                                  pad_to_max_length=True,
-                                                  add_special_tokens=True)
-            input_ids.append(input_id)
-
-        return input_ids
-
-
-class MyElmoEmbedder:
-    def __init__(self, elmo):
-        self.elmo = ElmoEmbedder(
-            options_file=elmo + "/biomed_elmo_options.json",
-            weight_file=elmo + "/biomed_elmo_weights.hdf5",
-            cuda_device=0)
-        self.embedding_size = 3 * 512 * 4
-
-    def embed(self, texts):
-        all_tokens = []
-        for text in texts:
-            tokens = text.split()
-            all_tokens.append(text.replace("<e1>", "").replace("</e1>", "")
-                              .replace("</e1>", "").replace("</e1>", "").split())
-
-        embs = list(self.elmo.embed_sentences(sentences=all_tokens))
-        final_embs = []
-
-        for text, emb in zip(texts, embs):
-            tokens = text.split()
-            e1_start = [i for i, t in enumerate(tokens) if '<e1>' in t][0]
-            e1_end = [i for i, t in enumerate(tokens) if '</e1>' in t][0]
-            e2_start = [i for i, t in enumerate(tokens) if '<e2>' in t][0]
-            e2_end = [i for i, t in enumerate(tokens) if '</e2>' in t][0]
-
-            e1_emb_fwd = emb[:, e1_start, :512].ravel()
-            e1_emb_bwd = emb[:, e1_end, 512:].ravel()
-            e2_emb_fwd = emb[:, e2_start, :512].ravel()
-            e2_emb_bwd = emb[:, e2_end, 512:].ravel()
-
-            final_embs.append(torch.from_numpy(
-                np.hstack([e1_emb_fwd, e1_emb_bwd, e2_emb_fwd, e2_emb_bwd])))
-
-        return torch.stack(final_embs, dim=0)
 
 
 class BioNLPMatchingDataset(Dataset):

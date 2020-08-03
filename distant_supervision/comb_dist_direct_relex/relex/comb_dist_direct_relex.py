@@ -107,7 +107,7 @@ class CombDistDirectRelex(Model):
         is_direct_supervision_batch = bool(is_direct_supervision_bag['tokens'].shape[1] - 1)
 
         if is_direct_supervision_bag['tokens'].shape[1] != 1:
-            direct_supervision_bags_count = sum(is_direct_supervision_bag['tokens'][:, -1] != 0).item()
+            direct_supervision_bags_count = sum((is_direct_supervision_bag['tokens'][:, -1] != 0).long()).item()
             # is it a mix of both ? this affects a single batch because of the sorting_keys in the bucket iterator 
             if direct_supervision_bags_count != len(is_direct_supervision_bag['tokens'][:, -1] != 0):
                 log.error("Mixed batch with %d supervised bags. Treated as dist. supervised", direct_supervision_bags_count)

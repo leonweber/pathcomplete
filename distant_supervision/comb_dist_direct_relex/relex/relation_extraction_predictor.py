@@ -13,6 +13,7 @@ class RelationExtractionPredictor(Predictor):
     """"Predictor wrapper for the RelationExtractionPredictor"""
     @overrides
     def _json_to_instance(self, json_dict: JsonDict) -> Tuple[Instance, JsonDict]:
+        __import__('pdb').set_trace()
         e1 = json_dict['e1']
         e2 = json_dict['e2']
         mentions = json_dict['mentions']

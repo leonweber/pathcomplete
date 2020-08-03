@@ -5,8 +5,7 @@ import numpy as np
 from sklearn.metrics import average_precision_score
 from tqdm import trange
 
-from evaluation.evaluate_pathway_nodes import f1_nodes, evaluate_ranking
-from load_data import SuperPathDataset
+from .load_data import SuperPathDataset
 
 def jaccard_sim(set1, set2):
     return len(set1 & set2)/len(set1 | set2)
@@ -40,7 +39,7 @@ if __name__ == '__main__':
 
     maps = []
     maps_sample = []
-    for i in trange(10):
+    for i in trange(20):
         aps = []
         aps_sample = []
         for i, k_test in enumerate(test_data.pathways):

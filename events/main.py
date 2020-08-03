@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 from pprint import pprint
+
+import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.logging import WandbLogger
 
@@ -43,13 +45,19 @@ if __name__ == '__main__':
                                           mode="min",
                                           save_top_k=20)
 
-    # model = EventExtractor.load_from_checkpoint("test2/epoch=23_v0.ckpt",
-    #                                             config=config)
-    model = EventExtractor(config=config)
+    model = EventExtractor.load_from_checkpoint("debug.ckpt", config=config)
+    # model = EventExtractor(config=config)
+    # checkpoint = torch.load("foofofo/epoch=92.ckpt")
+    # model.load_state_dict(checkpoint["state_dict"])
+
     logger = []
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
     trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1,
                          checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
                          )
-    trainer.fit(model)
+    # trainer.fit(model)
+    trainer.test(model, model.val_dataloader())
+    # fname, text, ann = model.dev_dataset.predict_example_by_fname["PMID-22223884.txt"]
+    # a2_lines = model.predict(text, ann)
+    # pass

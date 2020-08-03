@@ -14,12 +14,13 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
+from tqdm import trange
 from transformers import AdamW, BertModel
 import optuna
 import wandb
 
-from .dataset import BioNLPClassificationDataset, BERTEntityEmbedder, \
-    BERTTokenizerEmbedder, MyElmoEmbedder
+from .dataset import BioNLPClassificationDataset
+from model import BERTEntityEmbedder, W2VEmbedder, BERTTokenizerEmbedder, MyElmoEmbedder
 
 DIR = Path(__file__).parent
 MODEL_DIR = DIR / 'results'
@@ -102,42 +103,47 @@ def objective(trial: optuna.Trial):
                                  y=train_dataset.y_rels.numpy()
                                  )).float().to(device)
     )
-    trainer = create_supervised_trainer(model=model, optimizer=optimizer,
-                                        device=device, loss_fn=loss_fn)
-    pbar = ProgressBar()
-    pbar.attach(trainer)
-    pos_rel_labels = [v for k, v in train_dataset.rel_dict.items() if k != 'No']
-    evaluator = create_supervised_evaluator(model=model, metrics={
-        'f1': F1Macro(labels=pos_rel_labels)}, device=device)
-    # pbar.attach(evaluator)
 
-    pruning_handler = optuna.integration.PyTorchIgnitePruningHandler(trial, 'f1',
-                                                                     trainer)
-    pruning_evaluator = create_supervised_evaluator(model=model, metrics={
-        'f1': F1Macro(labels=pos_rel_labels)}, device=device)
-    pruning_evaluator.add_event_handler(Events.COMPLETED, pruning_handler)
+    scores = []
+    for i in trange(10):
+        trainer = create_supervised_trainer(model=model, optimizer=optimizer,
+                                            device=device, loss_fn=loss_fn)
+        pbar = ProgressBar()
+        pbar.attach(trainer)
+        pos_rel_labels = [v for k, v in train_dataset.rel_dict.items() if k != 'No']
+        evaluator = create_supervised_evaluator(model=model, metrics={
+            'f1': F1Macro(labels=pos_rel_labels)}, device=device)
+        # pbar.attach(evaluator)
 
-    def score_function(engine):
-        return engine.state.metrics['f1']
+        pruning_handler = optuna.integration.PyTorchIgnitePruningHandler(trial, 'f1',
+                                                                         trainer)
+        pruning_evaluator = create_supervised_evaluator(model=model, metrics={
+            'f1': F1Macro(labels=pos_rel_labels)}, device=device)
+        pruning_evaluator.add_event_handler(Events.COMPLETED, pruning_handler)
 
-    early_stopping = ignite.handlers.EarlyStopping(patience=5, score_function=score_function,
-                                                   trainer=trainer)
-    pruning_evaluator.add_event_handler(Events.COMPLETED, early_stopping)
+        def score_function(engine):
+            return engine.state.metrics['f1']
 
-    if not args.disable_wandb:
-        @trainer.on(Events.EPOCH_COMPLETED)
-        def log_results(engine):
-            pruning_evaluator.run(dev_loader)
-            wandb.log(pruning_evaluator.state.metrics)
+        early_stopping = ignite.handlers.EarlyStopping(patience=5, score_function=score_function,
+                                                       trainer=trainer)
+        pruning_evaluator.add_event_handler(Events.COMPLETED, early_stopping)
 
-        @trainer.on(Events.ITERATION_COMPLETED)
-        def log_training_loss(trainer):
-            wandb.log({'loss': trainer.state.output})
+        if not args.disable_wandb:
+            @trainer.on(Events.EPOCH_COMPLETED)
+            def log_results(engine):
+                pruning_evaluator.run(dev_loader)
+                wandb.log(pruning_evaluator.state.metrics)
 
-    trainer.run(train_loader, max_epochs=args.epochs)
-    evaluator.run(dev_loader)
+            @trainer.on(Events.ITERATION_COMPLETED)
+            def log_training_loss(trainer):
+                wandb.log({'loss': trainer.state.output})
 
-    return evaluator.state.metrics['f1']
+        trainer.run(train_loader, max_epochs=args.epochs)
+        evaluator.run(dev_loader)
+
+        scores.append(evaluator.state.metrics['f1'])
+
+    return np.mean(scores)
 
 
 if __name__ == '__main__':
@@ -156,6 +162,8 @@ if __name__ == '__main__':
         embedder = BERTEntityEmbedder(embedder_model_path, multiply=bool(args.multiply))
     elif embedder == "ELMO":
         embedder = MyElmoEmbedder(embedder_model_path)
+    elif embedder == "W2V":
+        embedder = W2VEmbedder(embedder_model_path)
     else:
         raise ValueError(embedder)
 

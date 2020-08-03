@@ -18,13 +18,13 @@
         "tokens": {
           "type": "embedding",
           "embedding_dim": 200,
-          "pretrained_file": "/home/shared/embeddings/wikipedia-pubmed-and-PMC-w2v.vec.gz",
+          "pretrained_file": "/glusterfs/dfs-gfs-dist/weberple/data/wikipedia-pubmed-and-PMC-w2v.vec.gz",
           "trainable": false
         }
       }
     },
     "cnn_size": 100,
-    "dropout_weight": 0.0,
+    "dropout_weight": 0.1,
     "with_entity_embeddings": true,
     "sent_loss_weight": 1,
     "attention_weight_fn": "sigmoid",
@@ -33,14 +33,14 @@
   "iterator": {
     "type": "bucket",
     "sorting_keys": [["is_direct_supervision_bag", "num_tokens"], ["mentions", "list_num_tokens"]],
-    "batch_size": 4,
+    "batch_size": 32,
     "cache_instances": true
   },
   "trainer": {
     "num_epochs": 100,
-    "cuda_device": [0,1,2,3],
+    "cuda_device": 0,
     "grad_clipping": 5.0,
-    "patience": 3,
+    "patience": 10,
     "validation_metric": "+ap",
     "optimizer": {
       "type": "adam",

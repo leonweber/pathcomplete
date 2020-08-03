@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Tuple
 
 import torch
+import pandas as pd
 import wandb
 from ignite.contrib.handlers import ProgressBar
 from ignite.engine import Engine, Events
@@ -38,10 +39,10 @@ def mask_tokens(inputs: torch.Tensor, tokenizer: PreTrainedTokenizer) -> Tuple[
     labels = inputs.clone()
     # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
     probability_matrix = torch.full(labels.shape, 0.15).to(inputs.device)
-    special_tokens_mask = torch.zeros_like(labels)
+    special_tokens_mask = torch.zeros_like(labels).to(inputs.device)
     for special_id in tokenizer.all_special_ids:
         special_tokens_mask = special_tokens_mask + labels.eq(
-            torch.tensor(special_id)).long()
+            torch.tensor(special_id).to(inputs.device)).long()
     probability_matrix.masked_fill_(
         special_tokens_mask.bool().to(inputs.device),
         value=0.0)
@@ -57,7 +58,8 @@ def mask_tokens(inputs: torch.Tensor, tokenizer: PreTrainedTokenizer) -> Tuple[
     indices_random = torch.bernoulli(
         torch.full(labels.shape, 0.5)).bool().to(
         inputs.device) & masked_indices & ~indices_replaced
-    random_words = torch.randint(len(tokenizer), labels.shape, dtype=torch.long).to(
+    random_words = torch.randint(max(tokenizer.all_special_ids) + 1, len(tokenizer),
+                                 labels.shape, dtype=torch.long).to(
         inputs.device)
     inputs[indices_random] = random_words[indices_random]
 
@@ -67,9 +69,11 @@ def mask_tokens(inputs: torch.Tensor, tokenizer: PreTrainedTokenizer) -> Tuple[
     return inputs, labels
 
 
-def create_triplet_trainer(model: SentenceMatcher, optimizer, device, loss_fn,
-                           non_blocking=False, loss_fn_mlm=None, mlm_weight=0.8,
+def create_triplet_trainer(model: SentenceMatcher, optimizer, device,
+                           non_blocking=False, mlm_weight=0.5,
                            output_transform=lambda anchor, pos, neg, loss: loss.item()):
+    loss_fn = nn.TripletMarginLoss()
+    loss_fn_mlm = nn.CrossEntropyLoss()
     if device:
         model.to(device)
 
@@ -79,9 +83,10 @@ def create_triplet_trainer(model: SentenceMatcher, optimizer, device, loss_fn,
         batch = _prepare_batch(batch, device=device, non_blocking=non_blocking)
         batch['input_ids'], mlm_labels = mask_tokens(batch['input_ids'], tokenizer)
 
-        anchor, pos, neg, mlm_logits = model(batch)
+        embs, mlm_logits = model(batch)
+        anchor, pos, neg = embs[:, 0], embs[:, 1], embs[:, 2]
         loss = loss_fn(anchor, pos, neg)
-        if loss_fn_mlm:
+        if mlm_weight > 0:
             loss_mlm = loss_fn_mlm(mlm_logits.view(-1, mlm_logits.shape[-1]),
                                    mlm_labels.view(-1))
             loss = mlm_weight * loss_mlm + (1 - mlm_weight) * loss
@@ -119,7 +124,16 @@ def create_mtb_trainer(model: SentenceMatcher, optimizer, device,
         optimizer.step()
         return loss
 
-    return Engine(_update)
+    engine = Engine(_update)
+
+    @engine.on(Events.EPOCH_STARTED)
+    def prepare_data(engine: Engine):
+        if args.resample:
+            dataset.resample_indices()
+        if args.hard_negatives:
+            dataset.update_dist_matrix(model.module.bert)
+
+    return engine
 
 
 def main(args):
@@ -149,31 +163,30 @@ def main(args):
     if torch.cuda.is_available():
         device = "cuda"
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr)
-    trainer = create_mtb_trainer(model=model, optimizer=optimizer, device=device)
+
+    if args.mtb:
+        trainer = create_mtb_trainer(model=model, optimizer=optimizer, device=device,
+                                     mlm_weight=args.mlm_weight)
+    else:
+        trainer = create_triplet_trainer(model=model, optimizer=optimizer, device=device,
+                                         mlm_weight=args.mlm_weight)
 
     pbar = ProgressBar()
     pbar.attach(trainer)
 
     if not args.disable_wandb:
-        @trainer.on(Events.ITERATION_COMPLETED)
+        @trainer.on(Events.EPOCH_COMPLETED)
         def save(engine: Engine):
-            if (engine.state.iteration + 1) % 10000 == 0:
-                save_dir = args.output_dir / f"step_{engine.state.iteration}"
-                if not save_dir.exists():
-                    save_dir.mkdir()
-                model.module.cpu().bert.save_pretrained(save_dir)
-                model.to(device)
+            save_dir = args.output_dir / f"epoch_{engine.state.epoch}"
+            if not save_dir.exists():
+                save_dir.mkdir()
+            model.module.cpu().bert.save_pretrained(save_dir)
+            model.to(device)
 
         @trainer.on(Events.ITERATION_COMPLETED)
         def log_training_loss(trainer):
             wandb.log({'loss': trainer.state.output})
 
-    @trainer.on(Events.EPOCH_STARTED)
-    def prepare_data(engine: Engine):
-        if args.resample:
-            dataset.resample_indices()
-        if args.hard_negatives:
-            dataset.update_dist_matrix(model.module.bert)
 
     trainer.run(train_loader, max_epochs=args.epochs)
 
@@ -188,12 +201,13 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=2, type=int)
     parser.add_argument('--lr', default=3e-5, type=float)
     parser.add_argument('--weight_decay', default=0.01, type=float)
+    parser.add_argument('--mlm_weight', default=0.0, type=float)
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
     parser.add_argument('--disable_wandb', action='store_true')
     parser.add_argument('--hard_negatives', action='store_true')
     parser.add_argument('--resample', action='store_true')
-    parser.add_argument('--mlm', action='store_true')
+    parser.add_argument('--mtb', action='store_true')
     parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
@@ -209,5 +223,8 @@ if __name__ == '__main__':
     tokenizer = BertTokenizerFast.from_pretrained(args.bert)
     tokenizer.add_special_tokens(
         {'additional_special_tokens': ['<e1>', '</e1>', '<e2>', '</e2>', '[BLANK]']})
-    dataset = MTBDataset(args.data, tokenizer=tokenizer)
+    if args.mtb:
+        dataset = MTBDataset(args.data, tokenizer=tokenizer)
+    else:
+        dataset = BioNLPMatchingDataset(pd.read_csv(args.data), tokenizer)
     main(args)
