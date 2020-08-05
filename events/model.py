@@ -13,13 +13,15 @@ import networkx as nx
 from events import consts
 from events.dataset import (
     PC13Dataset,
+    GE13Dataset,
     get_text_encoding_and_node_spans,
     get_triggers,
     get_trigger_to_position,
     get_event_linearization,
     get_event_graph,
     get_adjacency_matrix, MAX_LEN, BioNLPDataset, get_free_event_id,
-    get_a2_lines_from_graph)
+    get_a2_lines_from_graph
+)
 from events.evaluation import Evaluator
 from events.modeling_bert import BertGNNModel
 from events.parse_standoff import StandoffAnnotation
@@ -79,9 +81,14 @@ def break_up_cycles(graph):
                     graph.remove_edge(*edge)
                     break
             else:
-                graph.remove_edge(last_edge)
+                graph.remove_edge(*last_edge)
         except nx.NetworkXNoCycle:
             return
+
+
+def get_dataset_type(dataset_path: str) -> BioNLPDataset:
+    if "2013_GE" in dataset_path:
+        return
 
 
 class EventExtractor(pl.LightningModule):
@@ -92,19 +99,24 @@ class EventExtractor(pl.LightningModule):
         self.dev_path = config["dev"]
         self.linearize_events = config["linearize"]
         self.trigger_detector = SequenceTagger.load(config["trigger_detector"])
+        self.output_dir = config["output_dir"]
+
+        DatasetType = get_dataset_type(config["train"])
 
         self.dropout = nn.Dropout(0.2)
 
-        self.train_dataset = PC13Dataset(
+        self.train_dataset = DatasetType(
             Path(config["train"]),
             config["bert"],
             linearize_events=self.linearize_events,
-            trigger_detector=self.trigger_detector
+            trigger_detector=self.trigger_detector,
+            trigger_ordering=config["trigger_ordering"]
         )
-        self.dev_dataset = PC13Dataset(
+        self.dev_dataset = DatasetType(
             Path(config["dev"]), config["bert"], linearize_events=self.linearize_events,
             predict=True,
-            trigger_detector=self.trigger_detector
+            trigger_detector=self.trigger_detector,
+            trigger_ordering=config["trigger_ordering"]
         )
 
         bert_config = BertConfig.from_pretrained(config["bert"])
@@ -122,6 +134,7 @@ class EventExtractor(pl.LightningModule):
         self.id_to_edge_type = {
             v: k for k, v in self.train_dataset.edge_type_to_id.items()
         }
+
 
     def split_args(self, graph):
         # TODO check whether this all-combinations strategy yields too many results and leads to bad scores
@@ -176,17 +189,18 @@ class EventExtractor(pl.LightningModule):
             for u, v, d in list(graph.out_edges(event, data=True)):
                 edge_type = d["type"]
                 v_type = graph.nodes[v]["type"]
-                if (edge_type, v_type) in self.train_dataset.EDGES_FORBIDDEN:
+                if not self.train_dataset.is_valid_argument_type(edge_type, v_type):
                     graph.remove_edge(u, v)
 
     def clean_up_graph(self, graph: nx.DiGraph):
-        lift_event_edges(graph)
-        self.remove_invalid_edges(graph)
-        break_up_cycles(graph)
         old_nodes = None
         while old_nodes != list(graph.nodes()):
-            old_nodes = list(graph.nodes())
+            lift_event_edges(graph)
+            self.remove_invalid_edges(graph)
+            break_up_cycles(graph)
+            self.split_args(graph)
             self.remove_invalid_events(graph)
+            old_nodes = list(graph.nodes())
 
     def adjacency_matrix_to_edge_types(self, adjacency_matrix,
                                        node_spans_text,
@@ -305,7 +319,7 @@ class EventExtractor(pl.LightningModule):
 
     def train_dataloader(self):
         loader = DataLoader(
-            self.train_dataset, batch_size=64, shuffle=True, collate_fn=BioNLPDataset.collate_fn
+            self.train_dataset, batch_size=32, shuffle=True, collate_fn=BioNLPDataset.collate_fn
         )
         return loader
 
@@ -327,7 +341,7 @@ class EventExtractor(pl.LightningModule):
         evaluator = Evaluator(
             eval_script=consts.PC13_EVAL_SCRIPT,
             data_dir=self.dev_path,
-            out_dir=Path("tmp/val_out"),
+            out_dir=self.output_dir/"eval",
             result_re=consts.PC13_RESULT_RE,
             verbose=True,
         )
@@ -356,8 +370,7 @@ class EventExtractor(pl.LightningModule):
             trigger_to_position = get_trigger_to_position(sentence, ann)
             events_in_sentence = set()
 
-
-            for i_trigger, marked_trigger in enumerate(event_triggers):
+            for i_trigger, marked_trigger in enumerate(self.train_dataset.trigger_ordering(event_triggers, ann)):
                 for i_generated in range(self.max_events_per_trigger):
                     ann = StandoffAnnotation(a1_lines, a2_trigger_lines + a2_event_lines)
                     event_ids_in_sentence = []

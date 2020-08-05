@@ -12,8 +12,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.logging import WandbLogger
 
 from events.model import EventExtractor
-
-
+from util.utils import Tee
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -22,12 +21,14 @@ if __name__ == '__main__':
     parser.add_argument('--overwrite_output_dir', action='store_true',
                         help="Overwrite the content of the output directory")
     parser.add_argument('--disable_wandb', action='store_true')
+    parser.add_argument('--train', action='store_true')
+    parser.add_argument('--test', action='store_true')
 
     args = parser.parse_args()
-    # args.config = Path("configs/gnn_bert.json")
 
     with args.config.open() as f:
         config = json.load(f)
+    config["output_dir"] = args.output_dir
     pprint(config)
 
     if os.path.exists(args.output_dir) and os.listdir(
@@ -41,14 +42,10 @@ if __name__ == '__main__':
     checkpoint_callback = ModelCheckpoint(filepath=args.output_dir,
                                           save_weights_only=True,
                                           verbose=True,
-                                          monitor="train_loss",
-                                          mode="min",
-                                          save_top_k=20)
+                                          monitor="val_f1",
+                                          mode="max",
+                                          save_top_k=1)
 
-    model = EventExtractor.load_from_checkpoint("debug.ckpt", config=config)
-    # model = EventExtractor(config=config)
-    # checkpoint = torch.load("foofofo/epoch=92.ckpt")
-    # model.load_state_dict(checkpoint["state_dict"])
 
     logger = []
     if not args.disable_wandb:
@@ -56,8 +53,18 @@ if __name__ == '__main__':
     trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1,
                          checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
                          )
-    # trainer.fit(model)
-    trainer.test(model, model.val_dataloader())
-    # fname, text, ann = model.dev_dataset.predict_example_by_fname["PMID-22223884.txt"]
+    if args.train:
+        with Tee(args.output_dir/"train.log", "w"):
+            model = EventExtractor(config=config)
+            trainer.fit(model)
+
+    if args.test:
+        best_checkpoint = list(args.output_dir.glob("*ckpt"))[0]
+        with Tee(args.output_dir/"test.log", "w"):
+            model = EventExtractor.load_from_checkpoint(best_checkpoint, config=config)
+            trainer.test(model, model.val_dataloader())
+    # best_checkpoint = list(args.output_dir.glob("*ckpt"))[0]
+    # model = EventExtractor.load_from_checkpoint(best_checkpoint, config=config)
+    # fname, text, ann = model.dev_dataset.predict_example_by_fname['PMID-12771181.txt']
     # a2_lines = model.predict(text, ann)
     # pass

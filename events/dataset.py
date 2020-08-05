@@ -1,8 +1,9 @@
 import itertools
+import re
 from bisect import bisect_right, bisect_left
 from collections import defaultdict
 from copy import deepcopy
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 from pathlib import Path
 import random
 
@@ -19,6 +20,11 @@ from events.parse_standoff import StandoffAnnotation
 
 
 MAX_LEN = 256
+
+
+
+
+
 
 
 def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
@@ -326,7 +332,11 @@ class BioNLPDataset:
     EDGE_TYPES = None
     DUPLICATES_ALLOWED = None
     NO_THEME_FORBIDDEN = None
-    EDGES_FORBIDDEN = None
+    EVENT_TYPE_TO_ORDER = None
+
+
+    def is_valid_argument_type(self, arg, reftype):
+        raise NotImplementedError
 
 
     @staticmethod
@@ -335,7 +345,8 @@ class BioNLPDataset:
         return batch[0]
 
     def __init__(self, path: Path, tokenizer: Path, trigger_detector: SequenceTagger,
-                 linearize_events: bool = False, batch_size: int = 16, predict: bool = False):
+                 linearize_events: bool = False, batch_size: int = 16, predict: bool = False,
+                 trigger_ordering: str = "position" ):
         self.text_files = [f for f in path.glob('*.txt')]
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
@@ -348,6 +359,13 @@ class BioNLPDataset:
         self.predict = predict
         self.linearize_events = linearize_events
         self.trigger_detector = trigger_detector
+
+        if trigger_ordering  == "id":
+            self.trigger_ordering = lambda x, y: x
+        elif trigger_ordering == "position":
+            self.trigger_ordering = self.sort_triggers_by_position
+        elif trigger_ordering == "simple_first":
+            self.trigger_ordering = self.sort_triggers_by_simple_first
 
         self.tokenizer = transformers.BertTokenizerFast.from_pretrained(str(tokenizer))
         self.tokenizer.add_special_tokens({'additional_special_tokens': ["@"]})
@@ -370,6 +388,31 @@ class BioNLPDataset:
                 self.predict_example_by_fname[file.name] = (file.name, text, ann)
 
         self.fnames = sorted(self.predict_example_by_fname)
+        self.print_statistics()
+
+    def print_statistics(self):
+        if not self.predict:
+            n_truncated = 0
+            for example in self:
+                if 0 not in example["input_ids"]:
+                    n_truncated += 1
+            print(f"{n_truncated}/{len(self)} truncated")
+
+    def sort_triggers_by_position(self, triggers, ann):
+        return sorted(triggers, key=lambda x: int(ann.triggers[x].start))
+
+    def sort_triggers_by_simple_first(self, triggers, ann):
+        triggers_with_info = []
+        for trigger in triggers:
+            triggers_with_info.append((trigger,
+                                      ann.triggers[trigger].start,
+                                      self.EVENT_TYPE_TO_ORDER[ann.triggers[trigger].type]))
+
+        sorted_triggers = sorted(triggers_with_info, key=itemgetter(2, 1))
+
+        return [i[0] for i in sorted_triggers]
+
+
 
     def __getitem__(self, item):
 
@@ -401,9 +444,6 @@ class BioNLPDataset:
     def n_entity_types(self):
         return len(self.ENTITY_TYPES)
 
-
-
-
     def generate_examples(self, text, ann):
         trigger_to_events = defaultdict(list)
         event_to_trigger = {}
@@ -423,7 +463,7 @@ class BioNLPDataset:
 
             known_events = []
 
-            for i_trigger, trigger_id in enumerate(event_triggers):
+            for i_trigger, trigger_id in enumerate(self.trigger_ordering(event_triggers, ann)):
                 for event in trigger_to_events[trigger_id]:
                     example = self.build_example(ann, entity_triggers, event,
                                                  event_to_trigger, event_triggers,
@@ -441,6 +481,9 @@ class BioNLPDataset:
                 examples.append(example)
 
         return examples
+
+    def trigger_ordering(self, triggers):
+        return triggers
 
     def build_example(self, ann, entity_triggers, event, event_to_trigger,
                       event_triggers, i_trigger, known_events, sentence, trigger_id,
@@ -528,14 +571,54 @@ class PC13Dataset(BioNLPDataset):
     EDGE_TYPES = consts.PC13_EDGE_TYPES
     DUPLICATES_ALLOWED = consts.PC13_DUPLICATES_ALLOWED
     NO_THEME_FORBIDDEN = consts.PC13_NO_THEME_FORBIDDEN
-    EDGES_FORBIDDEN = consts.PC13_EDGES_FORBIDDEN
+    EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
 
     def __init__(self, path: Path, bert_path: Path,trigger_detector: SequenceTagger,
-                 batch_size: int = 16, predict=False,
+                 batch_size: int = 16, predict=False, trigger_ordering="position",
                  linearize_events: bool = False, ):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events, trigger_detector=trigger_detector)
+                         linearize_events=linearize_events, trigger_detector=trigger_detector,
+                         trigger_ordering=trigger_ordering)
 
+    def is_valid_argument_type(self, arg, reftype):
+        if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
+            return reftype in self.ENTITY_TYPES or reftype in self.EVENT_TYPES
+        elif arg in ("ToLoc", "AtLoc", "FromLoc"):
+            return reftype in ("Cellular_component", )
+        elif re.match(r'^C?Site\d*$', arg):
+            return reftype in ("Simple_chemical", )
+        elif re.match(r'^Participant\d*$', arg):
+            return reftype in self.ENTITY_TYPES
+        else:
+            return False
+
+
+class GE13Dataset(BioNLPDataset):
+    EVENT_TYPES = consts.GE_EVENT_TYPES
+    ENTITY_TYPES = consts.GE_ENTITY_TYPES
+    EDGE_TYPES = consts.GE_EDGE_TYPES
+    DUPLICATES_ALLOWED = consts.GE_DUPLICATES_ALLOWED
+    NO_THEME_FORBIDDEN = consts.GE_NO_THEME_FORBIDDEN
+    EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
+
+    def __init__(self, path: Path, bert_path: Path,trigger_detector: SequenceTagger,
+                 batch_size: int = 16, predict=False, trigger_ordering="position",
+                 linearize_events: bool = False, ):
+        super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
+                         linearize_events=linearize_events, trigger_detector=trigger_detector,
+                         trigger_ordering=trigger_ordering)
+
+    def is_valid_argument_type(self, arg, reftype):
+        if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
+            return reftype in self.ENTITY_TYPES or reftype in self.EVENT_TYPES
+        elif arg in ("ToLoc", "AtLoc", "FromLoc"):
+            return reftype in ("Cellular_component", )
+        elif re.match(r'^C?Site\d*$', arg):
+            return reftype in ("Simple_chemical", )
+        elif re.match(r'^Participant\d*$', arg):
+            return reftype in self.ENTITY_TYPES
+        else:
+            return False
 
 def get_event_trigger_lines_from_sentences(sentences, trigger_detector, n_a1_lines):
     lines = []
@@ -569,8 +652,15 @@ def get_a2_lines_from_graph(graph: nx.DiGraph):
         trigger = [u for u, v, d in graph.in_edges(event, data=True) if d["type"] == "Trigger"][0]
         event_type = graph.nodes[event]["type"]
         args = []
+        edge_type_count = defaultdict(int)
         for _, v, d in graph.out_edges(event, data=True):
-            args.append(f"{d['type']}:{v}")
+            edge_type = d['type']
+            edge_type_count[edge_type] += 1
+            if edge_type_count[edge_type] == 1:
+                args.append(f"{edge_type}:{v}")
+            else:
+                args.append(f"{edge_type}{edge_type_count[edge_type]}:{v}") # for Theme2, Product2 etc.
+            pass
         lines.append(f"{event}\t{event_type}:{trigger} {' '.join(args)}")
 
     return lines

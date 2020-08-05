@@ -1,3 +1,5 @@
+import re
+
 PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
                     "Acetylation", "Deacetylation", "Methylation",
                     "Demethylation", "Ubiquitination", "Deubiquitination",
@@ -16,7 +18,37 @@ PC13_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\
 PC13_EVAL_SCRIPT = 'evaluation-PC.py'
 PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product")}
 PC13_NO_THEME_FORBIDDEN = {"Site"}
-PC13_EDGES_FORBIDDEN = {("ToLoc", "Gene_or_gene_product")}
+PC13_MOLECULE = {"Simple_chemical", "Gene_or_gene_product", "Complex"}
+
+
+PC13_EVENT_TYPE_TO_ORDER = {}
+for event in PC13_EVENT_TYPES:
+    if "regulation" in event.lower():
+        PC13_EVENT_TYPE_TO_ORDER[event] = 1
+    else:
+        PC13_EVENT_TYPE_TO_ORDER[event] = 0
+
+GE_EVENT_TYPES = {
+    'Gene_expression', 'Transcription', 'Protein_catabolism', 'Phosphorylation', 'Localization',
+    'Regulation', 'Positive_regulation', 'Negative_regulation'
+                  }
+
+GE_ENTITY_TYPES = {"Protein"}
+GE_EDGE_TYPES = {"Theme", "None"}
+GE_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
+GE_EVAL_SCRIPT = 'a2-evaluate.pl'
+GE_DUPLICATES_ALLOWED = {("Binding", "Theme")}
+GE_NO_THEME_FORBIDDEN = {}
+GE_MOLECULE = {"Protein"}
+
+
+PC13_EVENT_TYPE_TO_ORDER = {}
+for event in PC13_EVENT_TYPES:
+    if "regulation" in event.lower():
+        PC13_EVENT_TYPE_TO_ORDER[event] = 1
+    else:
+        PC13_EVENT_TYPE_TO_ORDER[event] = 0
+
 
 NODE_TYPES = {"token": 0, "word_type": 1}
 EDGE_TYPES = {"entity_to_trigger": 0, "trigger_to_entity": 1}

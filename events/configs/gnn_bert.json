@@ -1,6 +1,6 @@
 {
   "linearize": false,
-  "model": "gnn",
+  "model": "simple_first",
   "train": "data/BioNLP-ST_2013_PC_training_data",
   "dev": "data/BioNLP-ST_2013_PC_development_data",
   "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased"
