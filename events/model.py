@@ -1,5 +1,7 @@
 import itertools
+import os
 from collections import defaultdict
+from glob import glob
 from pathlib import Path
 
 import pytorch_lightning as pl
@@ -9,6 +11,7 @@ from flair.models import SequenceTagger
 from torch.utils.data import DataLoader
 from transformers import BertModel, BertTokenizerFast, BertConfig
 import networkx as nx
+import numpy as np
 
 from events import consts
 from events.dataset import (
@@ -20,7 +23,8 @@ from events.dataset import (
     get_event_linearization,
     get_event_graph,
     get_adjacency_matrix, MAX_LEN, BioNLPDataset, get_free_event_id,
-    get_a2_lines_from_graph
+    get_a2_lines_from_graph,
+    get_event_trigger_lines_from_sentences
 )
 from events.evaluation import Evaluator
 from events.modeling_bert import BertGNNModel
@@ -88,7 +92,12 @@ def break_up_cycles(graph):
 
 def get_dataset_type(dataset_path: str) -> BioNLPDataset:
     if "2013_GE" in dataset_path:
-        return
+        return GE13Dataset
+    elif "2013_PC" in dataset_path:
+        return PC13Dataset
+
+
+
 
 
 class EventExtractor(pl.LightningModule):
@@ -98,8 +107,17 @@ class EventExtractor(pl.LightningModule):
         self.train_path = config["train"]
         self.dev_path = config["dev"]
         self.linearize_events = config["linearize"]
-        self.trigger_detector = SequenceTagger.load(config["trigger_detector"])
         self.output_dir = config["output_dir"]
+        self.loss_weight_td = config["loss_weight_td"] / (config["loss_weight_td"] + config["loss_weight_eg"])
+        self.loss_weight_eg = config["loss_weight_eg"] / (config["loss_weight_td"] + config["loss_weight_eg"])
+        self.max_span_width = 10
+        if config["trigger_detector"].endswith(".pt"):
+            self.trigger_detector = SequenceTagger.load(config["trigger_detector"])
+        elif os.path.isdir(config["trigger_detector"]):
+            self.trigger_detector = {}
+            for fname in Path(config["trigger_detector"]).glob("*a2"):
+                with fname.open() as f:
+                    self.trigger_detector[fname.with_suffix(".txt").name] = [l.strip() for l in f if l.startswith("T")]
 
         DatasetType = get_dataset_type(config["train"])
 
@@ -109,14 +127,20 @@ class EventExtractor(pl.LightningModule):
             Path(config["train"]),
             config["bert"],
             linearize_events=self.linearize_events,
-            trigger_detector=self.trigger_detector,
-            trigger_ordering=config["trigger_ordering"]
+            trigger_ordering=config["trigger_ordering"],
+            trigger_detector = self.trigger_detector
         )
         self.dev_dataset = DatasetType(
             Path(config["dev"]), config["bert"], linearize_events=self.linearize_events,
             predict=True,
-            trigger_detector=self.trigger_detector,
-            trigger_ordering=config["trigger_ordering"]
+            trigger_ordering=config["trigger_ordering"],
+            trigger_detector = self.trigger_detector
+        )
+        self.test_dataset = DatasetType(
+            Path(config["test"]), config["bert"], linearize_events=self.linearize_events,
+            predict=True,
+            trigger_ordering=config["trigger_ordering"],
+            trigger_detector = self.trigger_detector
         )
 
         bert_config = BertConfig.from_pretrained(config["bert"])
@@ -128,11 +152,16 @@ class EventExtractor(pl.LightningModule):
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
         self.edge_classifier = nn.Linear(768*3, len(self.train_dataset.edge_type_to_id))
+        # self.trigger_classifier = nn.Linear(768*3, len(self.train_dataset.node_type_to_id))
         self.loss_fn = nn.CrossEntropyLoss()
+        self.span_poolings = nn.ModuleList([nn.AvgPool1d(kernel_size=i, stride=1) for i in range(1, self.max_span_width+1)])
         self.max_events_per_trigger = 10
 
         self.id_to_edge_type = {
             v: k for k, v in self.train_dataset.edge_type_to_id.items()
+        }
+        self.id_to_node_type = {
+            v: k for k, v in self.train_dataset.node_type_to_id.items()
         }
 
 
@@ -180,16 +209,20 @@ class EventExtractor(pl.LightningModule):
     def remove_invalid_events(self, graph):
         for event in [n for n in graph.nodes if n.startswith("E")]:
             edge_types = [i[2]["type"] for i in graph.out_edges(event, data=True)]
-            if "Theme" not in edge_types and (set(edge_types) & self.train_dataset.NO_THEME_FORBIDDEN):
+            event_type = graph.nodes[event]["type"]
+            if not edge_types:
+                graph.remove_node(event)
+            elif "Theme" not in edge_types and event_type not in self.train_dataset.NO_THEME_ALLOWED:
                 graph.remove_node(event)
 
     def remove_invalid_edges(self, graph):
         graph.remove_edges_from(nx.selfloop_edges(graph))
         for event in [n for n in graph.nodes if n.startswith("E")]:
+            event_type = graph.nodes[event]["type"]
             for u, v, d in list(graph.out_edges(event, data=True)):
                 edge_type = d["type"]
                 v_type = graph.nodes[v]["type"]
-                if not self.train_dataset.is_valid_argument_type(edge_type, v_type):
+                if not self.train_dataset.is_valid_argument_type(event_type=event_type, arg=edge_type, reftype=v_type, refid=v):
                     graph.remove_edge(u, v)
 
     def clean_up_graph(self, graph: nx.DiGraph):
@@ -254,35 +287,17 @@ class EventExtractor(pl.LightningModule):
         return position_ids
 
     def forward(self, batch):
-        if self.linearize_events:
-            attention_mask = self.get_full_attention_mask(batch["input_ids"]).long()
-            edge_type_ids = None
-            position_ids = None
-        else:
-            for i, (adjacency_matrix, node_spans_graph) in enumerate(zip(batch["adjacency_matrix"], batch["node_spans_graph"])):
-                assert adjacency_matrix["text_to_graph"].shape[1] == len(node_spans_graph)
-            edge_type_ids = self.adjacency_matrix_to_edge_types(
-                adjacency_matrix=batch["adjacency_matrix"],
-                input_ids=batch["input_ids"],
-                node_spans_text=batch["node_spans_text"],
-                node_spans_graph=batch["node_spans_graph"],
-                sep_id=self.tokenizer.encode("")[-1]
-            )
-            edge_type_ids = edge_type_ids.to(self.device).long()
-            # attention_mask = edge_type_ids != self.train_dataset.edge_type_to_id["None"]
-            attention_mask = self.get_full_attention_mask(batch["input_ids"]).long()
-            position_ids = self.get_gnn_position_ids(input_ids=batch["input_ids"],
-                                                     sep_id=self.tokenizer.encode("")[-1]).long()
+        attention_mask = self.get_full_attention_mask(batch["eg_input_ids"]).long()
         node_type_ids = []
-        for node_types_text, node_types_graph in zip(batch["node_types_text"], batch["node_types_graph"]):
+        for node_types_text, node_types_graph in zip(batch["eg_node_types_text"], batch["eg_node_types_graph"]):
             node_type_ids.append(torch.cat([node_types_text, node_types_graph]))
         node_type_ids = torch.stack(node_type_ids).long()
 
         xs, _ = self.bert(
-            input_ids=batch["input_ids"].long(),
+            input_ids=batch["eg_input_ids"].long(),
             # edge_type_ids=edge_type_ids,
             attention_mask=attention_mask,
-            token_type_ids=batch["token_type_ids"].long(),
+            token_type_ids=batch["eg_token_type_ids"].long(),
             node_type_ids=node_type_ids,
             # position_ids=position_ids
         )
@@ -290,28 +305,79 @@ class EventExtractor(pl.LightningModule):
         batch_logits = []
         for x, node_spans_text, node_spans_graph in zip(
             xs,
-            batch["node_spans_text"],
-            batch["node_spans_graph"]
+            batch["eg_node_spans_text"],
+            batch["eg_node_spans_graph"]
         ):
             x_nodes = []
             for node_span in node_spans_text:
                 span_rep = [x[node_span[0]],
                             torch.mean(x[node_span[0] : node_span[1]], dim=0),
-                            x[node_span[1]]]
+                            x[node_span[1]]-1]
                 x_nodes.append(torch.cat(span_rep))
             x_nodes = torch.stack(x_nodes)
             logits = self.edge_classifier(x_nodes)
             batch_logits.append(logits)
         return batch_logits
 
+    def forward_triggers(
+            self,
+            batch
+    ):
+
+        embeddings = self.bert(
+            batch["td_input_ids"], attention_mask=batch["td_attention_mask"],
+        )[0]
+        span_embeddings = []
+        span_starts = []
+        span_ends = []
+        embeddings_t = embeddings.transpose(1,2)
+        for pool in self.span_poolings:
+            span_width = pool.kernel_size[0]
+            pooled_embeddings = pool(embeddings_t).transpose(1,2)
+            start_embeddings = embeddings[:, :pooled_embeddings.size(1)]
+            end_embeddings = embeddings[:, span_width-1:]
+            span_embedding = torch.cat([start_embeddings, pooled_embeddings, end_embeddings], dim=2)
+            span_embeddings.append(span_embedding)
+            span_starts.append(torch.arange(0, pooled_embeddings.size(1)).repeat([pooled_embeddings.size(0), 1]))
+            span_ends.append(torch.arange(span_width, embeddings.size(1)+1).repeat([pooled_embeddings.size(0), 1]))
+        span_embeddings = torch.cat(span_embeddings, dim=1)
+        span_starts = torch.cat(span_starts, dim=1)
+        span_ends = torch.cat(span_ends, dim=1)
+
+        return {"logits": self.trigger_classifier(span_embeddings),
+                "span_starts": span_starts,
+                "span_ends": span_ends}
+
     def training_step(self, batch, batch_idx):
-        batch_logits = self(batch)
-        loss = 0
-        for i, (logits, labels) in enumerate(zip(batch_logits, batch["labels"])):
+        batch_logits = self.forward(batch)
+        eg_loss = 0
+        for i, (logits, labels) in enumerate(zip(batch_logits, batch["eg_labels"])):
             labels = torch.tensor(labels).to(self.device)
-            loss += self.loss_fn(logits, labels)
-        loss /= len(batch)
+            eg_loss += self.loss_fn(logits, labels)
+        eg_loss /= len(batch)
+
+        # td_out = self.forward_triggers(batch)
+        # logits = td_out["logits"].reshape(-1, td_out["logits"].size(-1))
+        # labels = batch["td_labels"].reshape(-1, batch["td_labels"].size(-1)).float()
+        # mask = batch["td_span_mask"].reshape(-1).bool()
+        # loss_fn = nn.BCEWithLogitsLoss()
+        # td_loss = loss_fn(logits[mask], labels[mask])
+
+        # check whether input -> label mapping is correct
+        # for batch_idx, span_idx, label_idx in zip(*torch.where(batch["td_labels"])):
+        #     start = td_out["span_starts"][batch_idx, span_idx]
+        #     end = td_out["span_ends"][batch_idx, span_idx]
+        #     token = self.tokenizer.decode(batch["td_input_ids"][batch_idx, start:end].tolist())
+        #     print(f"{token}: {self.id_to_node_type[label_idx.item()]}")
+
+        # loss = self.loss_weight_td * td_loss + self.loss_weight_eg * eg_loss
+        loss = eg_loss
+
+        #
+        # log = {"train_loss_eg": eg_loss, "train_loss_td": td_loss, "train_loss": loss,
+        #        "max_td_logit": logits.max()}
         log = {"train_loss": loss}
+
         return {"loss": loss, "log": log}
 
     def configure_optimizers(self):
@@ -325,13 +391,109 @@ class EventExtractor(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         fname, text, ann = batch[0]
-        return {fname: self.predict(text, ann)}
+        return {fname: self.predict(text, ann, fname)}
+
+    def validation_step_gold(self, batch, batch_idx):
+        batch_logits = self.forward(batch)
+        eg_loss = 0
+        result = defaultdict(int)
+        for i, (logits, labels, input_ids) in enumerate(zip(batch_logits, batch["eg_labels"], batch["eg_input_ids"])):
+            preds = logits.argmax(dim=1).cpu()
+            labels = torch.tensor(labels).cpu()
+
+            true_edges = (self.train_dataset.edge_type_to_id["None"] != labels).cpu()
+            pred_edges = (self.train_dataset.edge_type_to_id["None"] != preds).cpu()
+
+            if not any(true_edges) and not any(pred_edges):
+                continue
+
+            if any(true_edges) and any(pred_edges) and all(true_edges == pred_edges) and any(preds[true_edges].cpu() != labels[true_edges]):
+                result["wrong_edge_type"] += 1
+
+            if any(true_edges) and any(pred_edges) and any(true_edges != pred_edges):
+                print()
+                print("Wrong edge target: " + self.tokenizer.decode(input_ids.tolist()).replace("[PAD]", ""))
+                print("\tShould have been: ")
+                missed_edges = torch.tensor(batch["eg_node_spans_text"][i])[true_edges]
+                missed_types = labels[true_edges]
+                for edge, type in zip(missed_edges, missed_types):
+                    start = edge[0]
+                    end = edge[1]
+                    print("\t\t" + self.id_to_edge_type[type.item()] + " " + self.tokenizer.decode(input_ids[start:end].tolist()) + ": " + self.id_to_node_type[batch["eg_node_types_text"][i][start].item()])
+                print("\tWas: ")
+                edges = torch.tensor(batch["eg_node_spans_text"][i])[pred_edges]
+                types = preds[pred_edges]
+                for edge, type in zip(edges, types):
+                    start = edge[0]
+                    end = edge[1]
+                    print("\t\t" + self.id_to_edge_type[type.item()] + " " + self.tokenizer.decode(input_ids[start:end].tolist()) + ": " + self.id_to_node_type[batch["eg_node_types_text"][i][start].item()])
+                result["wrong_edge_target"] += 1
+                print()
+
+            if any(true_edges) and not any(pred_edges):
+                print()
+                print("Stopped here: " + self.tokenizer.decode(input_ids.tolist()).replace("[PAD]", ""))
+                print("\tShould have been: ")
+                missed_edges = torch.tensor(batch["eg_node_spans_text"][i])[true_edges]
+                missed_types = labels[true_edges]
+                for edge, type in zip(missed_edges, missed_types):
+                    start = edge[0]
+                    end = edge[1]
+                    print("\t\t" + self.id_to_edge_type[type.item()] + " " + self.tokenizer.decode(input_ids[start:end].tolist()) + ": " + self.id_to_node_type[batch["eg_node_types_text"][i][start].item()])
+
+                result["stopped_too_early"] += 1
+                print()
+
+            if not any(true_edges) and any(pred_edges):
+                result["predicted_too_many"] += 1
+
+
+            if all(true_edges == pred_edges) and all(preds[true_edges].cpu() == labels[true_edges]):
+                result["tp"] += 1
+            elif not any(pred_edges):
+                result["fn"] += 1
+            elif not any(true_edges):
+                result["fp"] += 1
+            else:
+                result["fp"] += 1
+                result["fn"] += 1
+
+
+            # if all(preds[pred_edges].cpu() != labels[pred_edges]):
+            #     result["fp"] += 1
+            #
+            # if all(preds[true_edges].cpu() != labels[true_edges]):
+            #     result["fn"] += 1
+
+        return result
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
 
     def test_epoch_end( self, outputs ):
         return self.validation_epoch_end(outputs)
+
+    def validation_epoch_end_gold(self, outputs):
+        aggregated_outputs = defaultdict(int)
+        for result in outputs:
+            for k, v in result.items():
+                aggregated_outputs[k] += v
+        try:
+            p = aggregated_outputs["tp"] / (aggregated_outputs["tp"] + aggregated_outputs["fp"])
+            r = aggregated_outputs["tp"] / (aggregated_outputs["tp"] + aggregated_outputs["fn"])
+            f1 = (2*p*r)/(p+r)
+        except ZeroDivisionError:
+            p = r = f1 = 0.0
+
+
+        aggregated_outputs.update({
+            "precision": p,
+            "recall": r,
+            "f1": f1,
+            "log": {}
+        })
+
+        return dict(aggregated_outputs)
 
     def validation_epoch_end(self, outputs):
         aggregated_outputs = {}
@@ -346,9 +508,15 @@ class EventExtractor(pl.LightningModule):
             verbose=True,
         )
         log = {}
-        log.update(evaluator.evaluate(aggregated_outputs))
+        log.update(evaluator.evaluate_event_generation(aggregated_outputs))
+        log.update(evaluator.evaluate_trigger_detection(aggregated_outputs))
+        print(log)
 
-        return {"val_f1": torch.tensor(log["f1"]), "log": log}
+        return {
+            "val_f1": torch.tensor(log["f1"]),
+            "val_f1_td": torch.tensor(log["f1_td"]),
+            "log": log
+        }
 
     def val_dataloader(self):
         loader = DataLoader(
@@ -356,12 +524,63 @@ class EventExtractor(pl.LightningModule):
         )
         return loader
 
-    def predict(self, text, ann):
+    def val_gold_dataloader(self):
+        loader = DataLoader(
+            self.dev_dataset, batch_size=32, shuffle=False, collate_fn=BioNLPDataset.collate_fn,
+        )
+        return loader
+
+    def test_dataloader(self):
+        loader = DataLoader(
+            self.test_dataset, batch_size=1, shuffle=False, collate_fn=lambda x: x,
+        )
+        return loader
+
+    def predict_triggers(self, sentences):
+        sentence_texts = [s.to_original_text() for s in sentences]
+        encoding = self.tokenizer.batch_encode_plus(sentence_texts, padding=True,return_offsets_mapping=True)
+        batch = {k: torch.tensor(v, device=self.device) for k, v in encoding.items()}
+        renamed_batch = {}
+        for k, v in batch.items():
+            renamed_batch["td_" + k] = v
+        out = self.forward_triggers(renamed_batch)
+
+        predicted_lines = []
+        trigger_classes = out["logits"] > 0.0
+        predicted_indices = torch.where(trigger_classes)
+        predicted_starts = out["span_starts"][predicted_indices[:2]]
+        predicted_ends = out["span_starts"][predicted_indices[:2]]
+        predicted_starts_char = batch["offset_mapping"][[predicted_indices[0], predicted_starts]][:, 0]
+        predicted_ends_char = batch["offset_mapping"][[predicted_indices[0], predicted_ends]][:, 1]
+        for i, (i_sent, start, end, cls) in enumerate(zip(predicted_indices[0], predicted_starts_char, predicted_ends_char, predicted_indices[2])):
+            start = start.item()
+            end = end.item()
+            if start + end > 0:
+                text = sentence_texts[i_sent][start:end]
+                start += sentences[i_sent].start_pos
+                end += sentences[i_sent].start_pos
+                span_type = self.id_to_node_type[cls.item()]
+                if span_type != "None":
+                    predicted_lines.append(f"T{i}\t{span_type} {start} {end}\t{text}")
+
+        return predicted_lines
+
+
+
+    def predict(self, text, ann, fname):
         a1_lines = ann.a1_lines
         sentences = self.train_dataset.sentence_splitter.split(text)
-        a2_trigger_lines = [l.strip() for l in ann.a2_lines if l.startswith("T")]
-        # a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector,
-        #                                        len(a1_lines))
+        # a2_trigger_lines = [l.strip() for l in ann.a2_lines if l.startswith("T")]
+        # a2_trigger_lines = self.predict_triggers(sentences)
+
+        if isinstance(self.trigger_detector, dict):
+            a2_trigger_lines = self.trigger_detector[fname]
+        else:
+            a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector, len(a1_lines))
+        if self.loss_weight_eg == 0: # this model was only trained for trigger detection
+            return "\n".join(a2_trigger_lines)
+        if len(a2_trigger_lines) > 100: # this should only happen before any training started
+            a2_trigger_lines = []
         a2_event_lines = []
         ann = StandoffAnnotation(a1_lines, a2_trigger_lines)
         predicted_graph = ann.event_graph.copy()
@@ -423,17 +642,17 @@ class EventExtractor(pl.LightningModule):
                                                             edge_type_to_id=self.train_dataset.edge_type_to_id)
                     assert adjacency_matrix["text_to_graph"].shape[1] == len(node_spans_graph)
                     current_batch = {}
-                    current_batch["input_ids"] = torch.cat([torch.tensor(encoding_text["input_ids"]),
+                    current_batch["eg_input_ids"] = torch.cat([torch.tensor(encoding_text["input_ids"]),
                                            torch.tensor(encoding_graph["input_ids"])]).unsqueeze(0).to(self.device)
-                    current_batch["token_type_ids"] = torch.zeros(current_batch["input_ids"].size(0)).unsqueeze(0).to(self.device)
-                    current_batch["token_type_ids"][:, len(encoding_text["input_ids"]):] = 1
+                    current_batch["eg_token_type_ids"] = torch.zeros(current_batch["eg_input_ids"].size(0)).unsqueeze(0).to(self.device)
+                    current_batch["eg_token_type_ids"][:, len(encoding_text["input_ids"]):] = 1
 
-                    current_batch["node_spans_text"] = torch.tensor([node_spans_text]).to(self.device)
-                    current_batch["node_spans_graph"] = torch.tensor([node_spans_graph]).to(self.device)
-                    current_batch["node_types_text"] = node_types_text.unsqueeze(0).to(self.device)
-                    current_batch["node_types_graph"] = node_types_graph.unsqueeze(0).to(self.device)
+                    current_batch["eg_node_spans_text"] = torch.tensor([node_spans_text]).to(self.device)
+                    current_batch["eg_node_spans_graph"] = torch.tensor([node_spans_graph]).to(self.device)
+                    current_batch["eg_node_types_text"] = node_types_text.unsqueeze(0).to(self.device)
+                    current_batch["eg_node_types_graph"] = node_types_graph.unsqueeze(0).to(self.device)
 
-                    current_batch["adjacency_matrix"] = [adjacency_matrix]
+                    current_batch["eg_adjacency_matrix"] = [adjacency_matrix]
 
 
                     edge_logits = self(current_batch)

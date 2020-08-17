@@ -14,10 +14,18 @@ PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
                      "Cellular_component", "None"}
 PC13_EDGE_TYPES = {"None", "Theme", "Product", "Cause", "Site", "AtLoc", "FromLoc", "ToLoc",
                     "Participant", "Trigger", "InText"}
+PC13_EDGE_TYPES_TO_MOD = {
+    "Product": "resulting",
+    "Site": "at",
+    "AtLoc": "in",
+    "FromLoc": "from",
+    "ToLoc": "to",
+    "Participant": "with",
+}
 PC13_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 PC13_EVAL_SCRIPT = 'evaluation-PC.py'
 PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product")}
-PC13_NO_THEME_FORBIDDEN = {"Site"}
+PC13_NO_THEME_ALLOWED = {"Conversion", "Pathway", "Binding", "Dissociation"}
 PC13_MOLECULE = {"Simple_chemical", "Gene_or_gene_product", "Complex"}
 
 
@@ -30,11 +38,12 @@ for event in PC13_EVENT_TYPES:
 
 GE_EVENT_TYPES = {
     'Gene_expression', 'Transcription', 'Protein_catabolism', 'Phosphorylation', 'Localization',
-    'Regulation', 'Positive_regulation', 'Negative_regulation'
+    'Regulation', 'Positive_regulation', 'Negative_regulation', 'Protein_modification', 'Binding',
+    'Ubiquitination', 'Acetylation', 'Deacetylation'
                   }
 
-GE_ENTITY_TYPES = {"Protein"}
-GE_EDGE_TYPES = {"Theme", "None"}
+GE_ENTITY_TYPES = {"Protein", "None", "Entity"}
+GE_EDGE_TYPES = {"Theme", "None", "Cause"}
 GE_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 GE_EVAL_SCRIPT = 'a2-evaluate.pl'
 GE_DUPLICATES_ALLOWED = {("Binding", "Theme")}

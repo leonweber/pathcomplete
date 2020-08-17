@@ -1,17 +1,14 @@
 import itertools
+import math
 import re
 from bisect import bisect_right, bisect_left
 from collections import defaultdict
-from copy import deepcopy
 from operator import attrgetter, itemgetter
 from pathlib import Path
-import random
 
 import networkx as nx
-import spacy
 import transformers
 import torch
-from flair.models import SequenceTagger
 from flair.tokenization import SciSpacySentenceSplitter
 from tqdm import tqdm
 
@@ -20,11 +17,6 @@ from events.parse_standoff import StandoffAnnotation
 
 
 MAX_LEN = 256
-
-
-
-
-
 
 
 def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
@@ -144,8 +136,10 @@ def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None
 
     return encoding, node_type_tensor, node_spans, node_ids
 
-def get_event_linearization(ann, tokenizer, node_type_to_id, known_events=None):
-    text = ""
+def get_event_linearization(ann, tokenizer, node_type_to_id,
+                            edge_types_to_mod,
+                            known_events=None):
+    linearization = ""
     node_char_spans = []
     node_types = []
     node_spans = []
@@ -158,26 +152,85 @@ def get_event_linearization(ann, tokenizer, node_type_to_id, known_events=None):
     events = sorted(events, key=attrgetter("trigger.start"))
 
     for event in events:
-        start = len(text) + 1
-        node_char_spans.append((start, start+len(event.trigger.text)))
-        node_types.append(event.trigger.type)
-        node_ids.append(event.id)
-        text += " " + event.trigger.text
-
+        edge_type_to_trigger = {}
         for u, v, data in ann.event_graph.out_edges(event.id, data=True):
             try:
                 trigger = ann.triggers[v]
             except KeyError:
                 trigger = ann.events[v].trigger
-            start = len(text) + 1
-            node_char_spans.append((start, start+len(trigger.text)))
-            text += " " + trigger.text
-            node_ids.append(v)
-            node_types.append(trigger.type)
-        text += " |"
-    text += "[SEP]"
+            edge_type_to_trigger[data["type"]] = trigger
 
-    encoding = tokenizer.encode_plus(text, return_offsets_mapping=True, add_special_tokens=False)
+        # add Cause
+        if "Cause" in edge_type_to_trigger:
+            trigger = edge_type_to_trigger["Cause"]
+            linearization = add_text_to_linearization(
+                text=trigger.text,
+                node_id=trigger.id,
+                node_type=trigger.type,
+                linearization=linearization,
+                node_char_spans=node_char_spans,
+                node_types=node_types,
+                node_ids=node_ids)
+
+            linearization += " causes"
+
+        # add trigger (with Theme)
+        linearization = add_text_to_linearization(
+            text=event.trigger.text,
+            node_id=event.trigger.id,
+            node_type=event.trigger.type,
+            linearization=linearization,
+            node_char_spans=node_char_spans,
+            node_types=node_types,
+            node_ids=node_ids)
+
+        if "Theme" in edge_type_to_trigger:
+            linearization += " of"
+
+            trigger = edge_type_to_trigger["Theme"]
+            linearization = add_text_to_linearization(
+                text=trigger.text,
+                node_id=trigger.id,
+                node_type=trigger.type,
+                linearization=linearization,
+                node_char_spans=node_char_spans,
+                node_types=node_types,
+                node_ids=node_ids)
+
+        for i in range(2, 100):
+            if "Theme" + str(i) in edge_type_to_trigger:
+                linearization += " and"
+                trigger = edge_type_to_trigger["Theme"]
+                linearization = add_text_to_linearization(
+                    text=trigger.text,
+                    node_id=trigger.id,
+                    node_type=trigger.type,
+                    linearization=linearization,
+                    node_char_spans=node_char_spans,
+                    node_types=node_types,
+                    node_ids=node_ids)
+            else:
+                break
+
+        # add rest
+        for edge_type, mod in sorted(edge_types_to_mod.items()):
+            if edge_type in edge_type_to_trigger:
+                linearization += " " + mod
+
+                trigger = edge_type_to_trigger[edge_type]
+                linearization = add_text_to_linearization(
+                    text=trigger.text,
+                    node_id=trigger.id,
+                    node_type=trigger.type,
+                    linearization=linearization,
+                    node_char_spans=node_char_spans,
+                    node_types=node_types,
+                    node_ids=node_ids)
+
+        linearization += " |"
+    linearization += "[SEP]"
+
+    encoding = tokenizer.encode_plus(linearization, return_offsets_mapping=True, add_special_tokens=False)
     token_starts = [i[0] for i in encoding["offset_mapping"]][:-1]
     node_type_tensor = torch.zeros(len(encoding["input_ids"]))
     node_type_tensor[:] = node_type_to_id["None"]
@@ -187,6 +240,21 @@ def get_event_linearization(ann, tokenizer, node_type_to_id, known_events=None):
         node_spans.append((start,end))
 
     return encoding, node_type_tensor, node_spans, node_ids
+
+
+def add_text_to_linearization(text, linearization, node_char_spans, node_types, node_ids,
+                              node_id, node_type):
+    start = len(linearization) + 1
+    end = start + len(text)
+    node_char_spans.append((start, end))
+
+    node_ids.append(node_id)
+    node_types.append(node_type)
+    linearization += " " + text
+
+    node_char_spans.append((start,end))
+
+    return linearization
 
 
 def get_triggers(sent, ann: StandoffAnnotation):
@@ -213,11 +281,16 @@ def get_trigger_to_position(sent, ann: StandoffAnnotation):
 
 def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length, nodes,
                                      trigger_to_position, node_type_to_id, ann):
-    marker_start, marker_end = trigger_pos
-    marked_text = text[:marker_start] + "@ " + text[ marker_start:marker_end] + " @" + text[
-                                                                           marker_end:]
+    if trigger_pos:
+        marker_start, marker_end = trigger_pos
+        marked_text = text[:marker_start] + "@ " + text[ marker_start:marker_end] + " @" + text[
+                                                                               marker_end:]
+    else:
+        marked_text = text
+        marker_start = None
+        marker_end = None
     encoding_text = tokenizer.encode_plus(marked_text, return_offsets_mapping=True, max_length=max_length, add_special_tokens=True,
-                                               return_overflowing_tokens=True, pad_to_max_length=True)
+                                          pad_to_max_length=True, truncation=True)
     token_starts = [i for i, _
                      in tokenizer.encode_plus(text, return_offsets_mapping=True,
                                               add_special_tokens=True)["offset_mapping"][1:-1]]
@@ -262,14 +335,14 @@ def get_trigger_spans(triggers, token_starts, marker_start, marker_end, trigger_
         token_end +=1
 
         # adjust for inserted markers
-        if char_start >= marker_start:
+        if marker_start is not None and char_start >= marker_start:
             token_start += 1
-        if char_start >= marker_end:
+        if marker_end is not None and char_start >= marker_end:
             token_start += 1
 
-        if char_end > marker_start:
+        if marker_start is not None and char_end > marker_start:
             token_end += 1
-        if char_end > marker_end:
+        if marker_end is not None and char_end > marker_end:
             token_end += 1
 
         if token_start >= len(encoding_text["input_ids"]): # default to [SEP] if sentence is too long
@@ -331,8 +404,9 @@ class BioNLPDataset:
     ENTITY_TYPES = None
     EDGE_TYPES = None
     DUPLICATES_ALLOWED = None
-    NO_THEME_FORBIDDEN = None
+    NO_THEME_ALLOWED = None
     EVENT_TYPE_TO_ORDER = None
+    EDGE_TYPES_TO_MOD = None
 
 
     def is_valid_argument_type(self, arg, reftype):
@@ -344,9 +418,12 @@ class BioNLPDataset:
         assert len(batch) == 1
         return batch[0]
 
-    def __init__(self, path: Path, tokenizer: Path, trigger_detector: SequenceTagger,
+    def __init__(self, path: Path, tokenizer: Path,
                  linearize_events: bool = False, batch_size: int = 16, predict: bool = False,
-                 trigger_ordering: str = "position" ):
+                 trigger_ordering: str = "position", predict_entities: bool = False,
+                 max_span_width: int = 10, trigger_detector = None
+                 ):
+        self.trigger_detector = trigger_detector
         self.text_files = [f for f in path.glob('*.txt')]
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
@@ -358,7 +435,8 @@ class BioNLPDataset:
         self.batch_size = batch_size
         self.predict = predict
         self.linearize_events = linearize_events
-        self.trigger_detector = trigger_detector
+        self.predict_entities = predict_entities
+        self.max_span_width = max_span_width
 
         if trigger_ordering  == "id":
             self.trigger_ordering = lambda x, y: x
@@ -373,18 +451,28 @@ class BioNLPDataset:
         self.examples = []
         self.predicted_examples = []
         self.predict_example_by_fname = {}
+        self.trigger_detection_examples = []
+
         for file in tqdm(self.text_files, desc="Parsing raw data"):
-            with file.open() as f, file.with_suffix(".a1").open() as f_a1, file.with_suffix(".a2").open() as f_a2:
+            if file.with_suffix(".a2").exists():
+                with file.with_suffix(".a2").open() as f:
+                    a2_lines = f.readlines()
+            else:
+                a2_lines = []
+            with file.open() as f, file.with_suffix(".a1").open() as f_a1:
                 text = f.read()
                 sentences = self.sentence_splitter.split(text)
                 a1_lines = f_a1.readlines()
-                a2_lines = f_a2.readlines()
                 ann = StandoffAnnotation(a1_lines=a1_lines, a2_lines=a2_lines)
-                predicted_a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector, len(a1_lines))
-                ann_predicted = StandoffAnnotation(a1_lines=[], a2_lines=predicted_a2_trigger_lines)
-                ann_predicted = integrate_predicted_a2_triggers(ann, ann_predicted)
+                # if isinstance(self.trigger_detector, dict):
+                #     predicted_a2_trigger_lines = self.trigger_detector[file.name]
+                # else:
+                #     predicted_a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector, len(a1_lines))
+                # ann_predicted = StandoffAnnotation(a1_lines=[], a2_lines=predicted_a2_trigger_lines)
+                # ann_predicted = integrate_predicted_a2_triggers(ann, ann_predicted)
                 self.examples += self.generate_examples(text, ann)
-                self.predicted_examples += self.generate_examples(text, ann_predicted)
+                # self.examples += self.generate_examples(text, ann_predicted)
+                self.trigger_detection_examples += self.generate_trigger_detection_examples(sentences, ann)
                 self.predict_example_by_fname[file.name] = (file.name, text, ann)
 
         self.fnames = sorted(self.predict_example_by_fname)
@@ -394,7 +482,7 @@ class BioNLPDataset:
         if not self.predict:
             n_truncated = 0
             for example in self:
-                if 0 not in example["input_ids"]:
+                if 0 not in example["eg_input_ids"]:
                     n_truncated += 1
             print(f"{n_truncated}/{len(self)} truncated")
 
@@ -412,21 +500,31 @@ class BioNLPDataset:
 
         return [i[0] for i in sorted_triggers]
 
-
-
     def __getitem__(self, item):
 
         if self.predict:
             fname = self.fnames[item]
             return self.predict_example_by_fname[fname]
         else:
-            return self.predicted_examples[item]
+            # implement multitask data generation here, hacky but should work :)
+            if item >= len(self):
+                raise IndexError
+            trigger_detection_example = self.trigger_detection_examples[item % len(self.trigger_detection_examples)]
+            event_generation_example = self.examples[item % len(self.examples)]
+
+            example = {}
+            for k, v in trigger_detection_example.items():
+                example["td_" + k] = v
+            for k, v in event_generation_example.items():
+                example["eg_" + k] = v
+
+            return example
 
     def __len__(self):
         if self.predict:
             return len(self.fnames)
         else:
-            return len(self.predicted_examples)
+            return max(len(self.examples), len(self.trigger_detection_examples))
 
     @property
     def n_event_types(self):
@@ -491,7 +589,7 @@ class BioNLPDataset:
         example = {}
         if self.linearize_events:
             encoding_graph, node_types_graph, node_spans_graph, node_ids_graph = get_event_linearization(
-                ann, known_events=known_events,
+                ann, known_events=known_events, edge_types_to_mod=self.EDGE_TYPES_TO_MOD,
                 tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id)
         else:
             encoding_graph, node_types_graph, node_spans_graph, node_ids_graph = get_event_graph(
@@ -499,12 +597,12 @@ class BioNLPDataset:
                 ann=ann, tokenizer=self.tokenizer,
                 node_type_to_id=self.node_type_to_id,
                 entities=entity_triggers)
-        adjacency_matrix = get_adjacency_matrix(event_graph=ann.event_graph,
-                                                nodes_text=entity_triggers + event_triggers,
-                                                nodes_graph=node_ids_graph,
-                                                event_to_trigger=event_to_trigger,
-                                                edge_type_to_id=self.edge_type_to_id)
-        assert adjacency_matrix["text_to_graph"].shape[1] == len(node_spans_graph)
+        # adjacency_matrix = get_adjacency_matrix(event_graph=ann.event_graph,
+        #                                         nodes_text=entity_triggers + event_triggers,
+        #                                         nodes_graph=node_ids_graph,
+        #                                         event_to_trigger=event_to_trigger,
+        #                                         edge_type_to_id=self.edge_type_to_id)
+        # assert adjacency_matrix["text_to_graph"].shape[1] == len(node_spans_graph)
         remaining_length = MAX_LEN - len(encoding_graph["input_ids"])
         node_spans_graph = [(a + remaining_length, b + remaining_length) for a, b in
                             node_spans_graph]  # because we will append them to the text encoding
@@ -542,7 +640,7 @@ class BioNLPDataset:
 
         example["input_ids"] = input_ids
         example["token_type_ids"] = token_type_ids
-        example["adjacency_matrix"] = adjacency_matrix
+        # example["adjacency_matrix"] = adjacency_matrix
         example["node_types_text"] = node_types_text
         example["node_types_graph"] = node_types_graph
         example["node_spans_text"] = node_spans_text
@@ -553,16 +651,66 @@ class BioNLPDataset:
 
     @staticmethod
     def collate_fn(examples):
-        keys_to_batch = {"input_ids", "token_type_ids"}
+        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "span_mask", "td_labels"}
         batch = defaultdict(list)
         for example in examples:
             for k, v in example.items():
                 batch[k].append(v)
-        for k in keys_to_batch:
-            batch[k] = torch.stack(batch[k])
 
-        return batch
+        batched_batch  = {}
+        for k, v in list(batch.items()):
+            for i in keys_to_batch:
+                if i in k:
+                    batched_batch[k] = torch.stack(v)
+                    break
+            else:
+                batched_batch[k] = v
 
+        return batched_batch
+
+    def generate_trigger_detection_examples(self, sentences, ann):
+        examples = []
+        for sentence in sentences:
+            entity_triggers, event_triggers = get_triggers(sentence, ann)
+            if self.predict_entities:
+                triggers = entity_triggers + event_triggers
+            else:
+                triggers = event_triggers
+
+            example, trigger_spans, _ = get_text_encoding_and_node_spans(
+                text=sentence.to_original_text(),
+                trigger_pos=None,
+                tokenizer=self.tokenizer,
+                max_length=MAX_LEN//2,
+                nodes=triggers,
+                node_type_to_id=self.node_type_to_id,
+                ann=ann,
+                trigger_to_position=get_trigger_to_position(sentence, ann))
+
+            trigger_types = [ann.triggers[t].type for t in triggers]
+
+            span_labels = []
+            span_mask = []
+
+            for span_width in range(1, self.max_span_width+1):
+                n_spans = math.floor(MAX_LEN//2-span_width + 1)
+                labels = torch.zeros(n_spans, len(self.node_type_to_id)) # we do multilabel here
+                for trigger_span, trigger_type in zip(trigger_spans, trigger_types):
+                    if trigger_span[1] - trigger_span[0] == span_width:
+                        labels[trigger_span[0], self.node_type_to_id[trigger_type]] = 1
+                span_mask.append(torch.tensor(example["attention_mask"][span_width-1:])) # we mask if span end is padding
+                span_labels.append(labels)
+
+
+            example["labels"] = torch.cat(span_labels)
+            example["span_mask"] = torch.cat(span_mask)
+            tensored_example = {}
+            for k, v in example.items():
+                tensored_example[k] = torch.tensor(v)
+            examples.append(tensored_example)
+
+
+        return examples
 
 
 class PC13Dataset(BioNLPDataset):
@@ -570,19 +718,59 @@ class PC13Dataset(BioNLPDataset):
     ENTITY_TYPES = consts.PC13_ENTITY_TYPES
     EDGE_TYPES = consts.PC13_EDGE_TYPES
     DUPLICATES_ALLOWED = consts.PC13_DUPLICATES_ALLOWED
-    NO_THEME_FORBIDDEN = consts.PC13_NO_THEME_FORBIDDEN
+    NO_THEME_ALLOWED = consts.PC13_NO_THEME_ALLOWED
     EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
+    EDGE_TYPES_TO_MOD = consts.PC13_EDGE_TYPES_TO_MOD
 
-    def __init__(self, path: Path, bert_path: Path,trigger_detector: SequenceTagger,
+    def __init__(self, path: Path, bert_path: Path,
                  batch_size: int = 16, predict=False, trigger_ordering="position",
-                 linearize_events: bool = False, ):
+                 linearize_events: bool = False, trigger_detector=None):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events, trigger_detector=trigger_detector,
-                         trigger_ordering=trigger_ordering)
+                         linearize_events=linearize_events,
+                         trigger_ordering=trigger_ordering,
+                         trigger_detector=trigger_detector
+                         )
 
-    def is_valid_argument_type(self, arg, reftype):
+    def is_valid_argument_type(self, event_type, arg, reftype, refid):
+        if event_type == "Binding":
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+        if event_type == "Transport":
+            if arg in {"Cause", "Product"}:
+                return False
+
+        if "activation" in event_type.lower():
+            if arg in {"AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+        if event_type == "Transcription":
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+        if event_type == "Gene_expression":
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+        if event_type == "Conversion":
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+        if event_type == "Degradation":
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+        if event_type == "Dissociation":
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc"}:
+                return False
+
+
+        if "regulation" not in event_type.lower() and reftype not in self.ENTITY_TYPES:
+            return False
+
+
         if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
-            return reftype in self.ENTITY_TYPES or reftype in self.EVENT_TYPES
+            return reftype in self.ENTITY_TYPES or (reftype in self.EVENT_TYPES and not refid.startswith("T"))
         elif arg in ("ToLoc", "AtLoc", "FromLoc"):
             return reftype in ("Cellular_component", )
         elif re.match(r'^C?Site\d*$', arg):
@@ -601,12 +789,13 @@ class GE13Dataset(BioNLPDataset):
     NO_THEME_FORBIDDEN = consts.GE_NO_THEME_FORBIDDEN
     EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
 
-    def __init__(self, path: Path, bert_path: Path,trigger_detector: SequenceTagger,
+    def __init__(self, path: Path, bert_path: Path,
                  batch_size: int = 16, predict=False, trigger_ordering="position",
-                 linearize_events: bool = False, ):
+                 linearize_events: bool = False, trigger_detector=None):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events, trigger_detector=trigger_detector,
-                         trigger_ordering=trigger_ordering)
+                         linearize_events=linearize_events,
+                         trigger_ordering=trigger_ordering,
+                         trigger_detector=trigger_detector)
 
     def is_valid_argument_type(self, arg, reftype):
         if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
@@ -628,7 +817,7 @@ def get_event_trigger_lines_from_sentences(sentences, trigger_detector, n_a1_lin
             start = trigger.start_pos + sentence.start_pos
             end = trigger.end_pos + sentence.start_pos
             id_ = f"T{len(lines) + n_a1_lines + 1}"
-            lines.append(f"{id_}\t{trigger.tag} {start} {end}\t{trigger.text}")
+            lines.append(f"{id_}\t{trigger.tag} {start} {end}\t{sentence.to_original_text()[trigger.start_pos:trigger.end_pos]}")
 
     return lines
 

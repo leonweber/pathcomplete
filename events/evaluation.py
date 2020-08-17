@@ -12,8 +12,20 @@ import torch
 from ignite.metrics import Metric
 
 from events import consts
+from events.parse_standoff import StandoffAnnotation
 
 THIRD_PARTY_DIR = Path(__file__).parent / '3rd_party'
+
+def get_statistics_from_ann(ann_pred, ann_gold):
+    triggers_pred = {(i.start, i.end, i.type) for i in ann_pred.triggers.values()}
+    triggers_gold = {(i.start, i.end, i.type) for i in ann_gold.triggers.values()}
+
+    tp = len(triggers_gold & triggers_pred)
+    fp = len(triggers_pred - triggers_gold)
+    fn = len(triggers_gold - triggers_pred)
+
+    return {"tp": tp, "fp": fp, "fn": fn}
+
 
 
 class Evaluator:
@@ -26,7 +38,33 @@ class Evaluator:
         self.verbose = verbose
         self.out_dir = out_dir
 
-    def evaluate(self, predicted_a2: Dict[str, List[str]]):
+
+
+    def evaluate_trigger_detection(self, predicted_a2: Dict[str, List[str]]):
+        statistics = defaultdict(int)
+
+        for a2_file in Path(self.data_dir).glob("*.a2"):
+            with a2_file.open() as f:
+                ann_gold = StandoffAnnotation(a1_lines=[], a2_lines=f.readlines())
+            if a2_file.with_suffix(".txt").name in predicted_a2:
+                lines_pred = predicted_a2[a2_file.with_suffix(".txt").name].split("\n")
+            else:
+                lines_pred = []
+            ann_pred = StandoffAnnotation(a1_lines=[],
+                                          a2_lines=lines_pred)
+            for k, v in get_statistics_from_ann(ann_pred, ann_gold).items():
+                statistics[k] += v
+
+        try:
+            p = statistics["tp"] / (statistics["tp"] + statistics["fp"])
+            r = statistics["tp"] / (statistics["tp"] + statistics["fn"])
+            f1 = (2*p*r)/(p+r)
+        except ZeroDivisionError:
+            p = r = f1 = 0.0
+
+        return {"precision_td": p, "recall_td": r, "f1_td": f1}
+
+    def evaluate_event_generation(self, predicted_a2: Dict[str, List[str]]):
         if os.path.exists(self.out_dir):
             shutil.rmtree(self.out_dir)
         os.makedirs(self.out_dir)
@@ -43,7 +81,9 @@ class Evaluator:
                 print(line)
             match = re.match(self.result_re, line)
             if match:
-                p, r, f = match.group(1), match.group(2), match.group(3)
+                p, r, f = float(match.group(1)), float(match.group(2)), float(match.group(3))
+                if p == r == f == 100:
+                    p = r = f = 0.0
         try:
             return {'precision': float(p), 'recall': float(r), 'f1': float(f)}
         except UnboundLocalError:
@@ -69,7 +109,7 @@ class BioNLPMetric(Metric):
         self._predictions[batch['fname']] = pred
 
     def compute(self):
-        return self.evaluator.evaluate(self._predictions)[self.key]
+        return self.evaluator.evaluate_event_generation(self._predictions)[self.key]
 
 
 def output_transform_edges(output):

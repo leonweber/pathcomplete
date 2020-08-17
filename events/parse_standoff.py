@@ -46,7 +46,8 @@ EVENT_TRIGGER_TYPES = ['conversion',
  'negative_regulation',
  'transport',
  'hydroxylation',
- 'dehydroxylation'
+ 'dehydroxylation',
+ 'protein_modification'
                        ]
 
 
@@ -64,15 +65,17 @@ class TextAnnotation:
     def __str__(self):
         return "<trigger {0}, {1}, {2}, {3}, '{4}'>".format( self.id, self.type, self.start, self.end, self.text)
 
+    def to_a_star(self):
+        return f"{self.id}\t{self.type} {self.start} {self.end}\t{self.text}"
+
 
 class EntityTrigger(TextAnnotation):
     def get_url(self):
         return
 
 class EventTrigger(TextAnnotation):
+    pass
 
-    def to_a_star(self):
-        return f"{self.id}\t{self.type} {self.start} {self.end}\t{self.text}"
 
 class Event():
     def __init__(self, ):

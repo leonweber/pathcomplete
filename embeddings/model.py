@@ -2,7 +2,6 @@ from bisect import bisect_right, bisect_left
 
 import numpy as np
 import torch
-from allennlp.commands.elmo import ElmoEmbedder
 from gensim.models import KeyedVectors
 from torch import nn
 from tqdm import tqdm
