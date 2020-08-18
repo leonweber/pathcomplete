@@ -269,10 +269,39 @@ def events_to_nx(events, triggers):
     return G
 
 
+def events_to_text_graph(events, triggers):
+    G = nx.DiGraph()
+    added_signatures = set()
+    for trigger in triggers.values():
+        G.add_node(trigger.id, type=trigger.type)
+    for event in events.values():
+        event_signature = [(event.trigger.id, "Trigger")]
+        for role, dst in event.roles:
+            if dst.id in triggers:
+                trigger_id = dst.id
+            else:
+                trigger_id = events[dst.id].trigger.id
+            event_signature.append((trigger_id, role))
+        event_signature = tuple(sorted(event_signature))
+
+        if event_signature not in added_signatures:
+            added_signatures.add(event_signature)
+            G.add_node(event.id, type=event.type)
+            G.add_edge(event.trigger.id, event.id, type="Trigger")
+            for role, dst in event.roles:
+                if dst.id in triggers:
+                    trigger_id = dst.id
+                else:
+                    trigger_id = events[dst.id].trigger.id
+                G.add_edge(event.id, trigger_id, type=role)
+    return G
+
+
 class StandoffAnnotation:
     def __init__(self, a1_lines, a2_lines):
         self.triggers, self.entity_triggers, self.events = parse_lines(a1_lines + a2_lines)
         self.event_graph = events_to_nx(self.events, self.triggers)
+        self.text_graph = events_to_text_graph(self.events, self.triggers)
         self.a1_lines = a1_lines
         self.a2_lines = a2_lines
 

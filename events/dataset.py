@@ -16,7 +16,7 @@ from events import consts
 from events.parse_standoff import StandoffAnnotation
 
 
-MAX_LEN = 256
+MAX_LEN = 256 + 128
 
 
 def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
@@ -152,17 +152,18 @@ def get_event_linearization(ann, tokenizer, node_type_to_id,
     events = sorted(events, key=attrgetter("trigger.start"))
 
     for event in events:
-        edge_type_to_trigger = {}
+        edge_type_to_trigger = defaultdict(set)
         for u, v, data in ann.event_graph.out_edges(event.id, data=True):
             try:
                 trigger = ann.triggers[v]
             except KeyError:
                 trigger = ann.events[v].trigger
-            edge_type_to_trigger[data["type"]] = trigger
+            edge_type_to_trigger[data["type"]].add(trigger)
 
         # add Cause
         if "Cause" in edge_type_to_trigger:
-            trigger = edge_type_to_trigger["Cause"]
+            assert len(edge_type_to_trigger["Cause"]) == 1
+            trigger = list(edge_type_to_trigger["Cause"])[0]
             linearization = add_text_to_linearization(
                 text=trigger.text,
                 node_id=trigger.id,
@@ -185,9 +186,11 @@ def get_event_linearization(ann, tokenizer, node_type_to_id,
             node_ids=node_ids)
 
         if "Theme" in edge_type_to_trigger:
+            themes = sorted(edge_type_to_trigger["Theme"], key=attrgetter("id"))
+
             linearization += " of"
 
-            trigger = edge_type_to_trigger["Theme"]
+            trigger = themes[0]
             linearization = add_text_to_linearization(
                 text=trigger.text,
                 node_id=trigger.id,
@@ -197,10 +200,8 @@ def get_event_linearization(ann, tokenizer, node_type_to_id,
                 node_types=node_types,
                 node_ids=node_ids)
 
-        for i in range(2, 100):
-            if "Theme" + str(i) in edge_type_to_trigger:
+            for trigger in themes[1:]:
                 linearization += " and"
-                trigger = edge_type_to_trigger["Theme"]
                 linearization = add_text_to_linearization(
                     text=trigger.text,
                     node_id=trigger.id,
@@ -209,15 +210,14 @@ def get_event_linearization(ann, tokenizer, node_type_to_id,
                     node_char_spans=node_char_spans,
                     node_types=node_types,
                     node_ids=node_ids)
-            else:
-                break
 
         # add rest
         for edge_type, mod in sorted(edge_types_to_mod.items()):
             if edge_type in edge_type_to_trigger:
                 linearization += " " + mod
+                triggers = sorted(edge_type_to_trigger[edge_type], key=attrgetter("id"))
 
-                trigger = edge_type_to_trigger[edge_type]
+                trigger = triggers[0]
                 linearization = add_text_to_linearization(
                     text=trigger.text,
                     node_id=trigger.id,
@@ -226,6 +226,19 @@ def get_event_linearization(ann, tokenizer, node_type_to_id,
                     node_char_spans=node_char_spans,
                     node_types=node_types,
                     node_ids=node_ids)
+
+                for trigger in triggers[1:]:
+                    linearization += " and"
+
+                    linearization = add_text_to_linearization(
+                        text=trigger.text,
+                        node_id=trigger.id,
+                        node_type=trigger.type,
+                        linearization=linearization,
+                        node_char_spans=node_char_spans,
+                        node_types=node_types,
+                        node_ids=node_ids)
+
 
         linearization += " |"
     linearization += "[SEP]"
@@ -247,12 +260,10 @@ def add_text_to_linearization(text, linearization, node_char_spans, node_types, 
     start = len(linearization) + 1
     end = start + len(text)
     node_char_spans.append((start, end))
-
     node_ids.append(node_id)
     node_types.append(node_type)
     linearization += " " + text
 
-    node_char_spans.append((start,end))
 
     return linearization
 
@@ -464,12 +475,12 @@ class BioNLPDataset:
                 sentences = self.sentence_splitter.split(text)
                 a1_lines = f_a1.readlines()
                 ann = StandoffAnnotation(a1_lines=a1_lines, a2_lines=a2_lines)
-                # if isinstance(self.trigger_detector, dict):
-                #     predicted_a2_trigger_lines = self.trigger_detector[file.name]
-                # else:
-                #     predicted_a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector, len(a1_lines))
-                # ann_predicted = StandoffAnnotation(a1_lines=[], a2_lines=predicted_a2_trigger_lines)
-                # ann_predicted = integrate_predicted_a2_triggers(ann, ann_predicted)
+                if isinstance(self.trigger_detector, dict):
+                    predicted_a2_trigger_lines = self.trigger_detector[file.name]
+                else:
+                    predicted_a2_trigger_lines = get_event_trigger_lines_from_sentences(sentences, self.trigger_detector, len(a1_lines))
+                ann_predicted = StandoffAnnotation(a1_lines=[], a2_lines=predicted_a2_trigger_lines)
+                ann_predicted = integrate_predicted_a2_triggers(ann, ann_predicted)
                 self.examples += self.generate_examples(text, ann)
                 # self.examples += self.generate_examples(text, ann_predicted)
                 self.trigger_detection_examples += self.generate_trigger_detection_examples(sentences, ann)
@@ -481,10 +492,16 @@ class BioNLPDataset:
     def print_statistics(self):
         if not self.predict:
             n_truncated = 0
+            n_cross_sentence = 0
             for example in self:
                 if 0 not in example["eg_input_ids"]:
                     n_truncated += 1
+                if example["eg_cross_sentence"]:
+                    n_cross_sentence += 1
             print(f"{n_truncated}/{len(self)} truncated")
+            print(f"{n_cross_sentence}/{len(self)} cross sentence")
+
+
 
     def sort_triggers_by_position(self, triggers, ann):
         return sorted(triggers, key=lambda x: int(ann.triggers[x].start))
@@ -621,15 +638,17 @@ class BioNLPDataset:
         token_type_ids[len(encoding_text["input_ids"]):] = 1
         edge_types = {}
 
+        cross_sentence = False
         if event:
-            for u, v, data in ann.event_graph.out_edges(event.id, data=True):
+            for u, v, data in ann.text_graph.out_edges(event.id, data=True):
                 if v.startswith("E"):
-                    try:
-                        v = ann.events[v].trigger.id
-                    except AttributeError:
-                        v = ann.events[v].trigger
+                    raise ValueError("Text graph should only have Event -> Trigger edges")
 
                 edge_types[(u, v)] = data["type"]
+
+                if v not in entity_triggers + event_triggers:
+                    cross_sentence = True
+
             labels = []
             for node in entity_triggers + event_triggers:
                 node = ann.triggers[node]
@@ -645,8 +664,9 @@ class BioNLPDataset:
         example["node_types_graph"] = node_types_graph
         example["node_spans_text"] = node_spans_text
         example["node_spans_graph"] = node_spans_graph
-        example["trigger_span"] = node_spans_text[len(entity_triggers) + i_trigger]
+        example["trigger_span"] = node_spans_text[(entity_triggers + event_triggers).index(trigger_id)]
         example["labels"] = labels
+        example["cross_sentence"] = cross_sentence
         return example
 
     @staticmethod

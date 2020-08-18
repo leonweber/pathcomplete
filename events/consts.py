@@ -11,9 +11,10 @@ PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
                     "None"}
 
 PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
-                     "Cellular_component", "None"}
+                     "Cellular_component", "None", "Protein", "Entity", "Protein_modification",
+                     "Protein_catabolism"}
 PC13_EDGE_TYPES = {"None", "Theme", "Product", "Cause", "Site", "AtLoc", "FromLoc", "ToLoc",
-                    "Participant", "Trigger", "InText"}
+                    "Participant", "Trigger", "InText", "CSite"}
 PC13_EDGE_TYPES_TO_MOD = {
     "Product": "resulting",
     "Site": "at",
@@ -42,8 +43,17 @@ GE_EVENT_TYPES = {
     'Ubiquitination', 'Acetylation', 'Deacetylation'
                   }
 
+GE_EDGE_TYPES_TO_MOD = {
+    "Product": "resulting",
+    "Site": "at",
+    "AtLoc": "in",
+    "FromLoc": "from",
+    "ToLoc": "to",
+    "Participant": "with",
+}
+
 GE_ENTITY_TYPES = {"Protein", "None", "Entity"}
-GE_EDGE_TYPES = {"Theme", "None", "Cause"}
+GE_EDGE_TYPES = {"Theme", "None", "Cause", "ToLoc"}
 GE_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 GE_EVAL_SCRIPT = 'a2-evaluate.pl'
 GE_DUPLICATES_ALLOWED = {("Binding", "Theme")}

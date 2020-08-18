@@ -1,4 +1,5 @@
 import itertools
+import math
 import os
 from collections import defaultdict
 from glob import glob
@@ -32,6 +33,8 @@ from events.parse_standoff import StandoffAnnotation
 
 BERTS = {"bert": BertModel, "gnn": BertGNNModel}
 
+def gelu(x):
+    return 0.5 * x * (1 + torch.tanh(math.sqrt(math.pi / 2) * (x + 0.044715 * x ** 3)))
 
 def lift_event_edges(graph):
     for trigger in [n for n in graph.nodes if n.startswith("T")]:
@@ -92,7 +95,8 @@ def break_up_cycles(graph):
 
 def get_dataset_type(dataset_path: str) -> BioNLPDataset:
     if "2013_GE" in dataset_path:
-        return GE13Dataset
+        # return GE13Dataset
+        return PC13Dataset
     elif "2013_PC" in dataset_path:
         return PC13Dataset
 
@@ -146,12 +150,11 @@ class EventExtractor(pl.LightningModule):
         bert_config = BertConfig.from_pretrained(config["bert"])
         bert_config.node_type_vocab_size = len(self.train_dataset.node_type_to_id)
         bert_config.edge_type_vocab_size = len(self.train_dataset.edge_type_to_id)
-        self.bert = BertGNNModel.from_pretrained(config["bert"], config=bert_config)
-        # self.bert = BertModel.from_pretrained(config["bert"], config=bert_config)
+        # self.bert = BertGNNModel.from_pretrained(config["bert"], config=bert_config)
+        self.bert = BertModel.from_pretrained(config["bert"], config=bert_config)
         self.tokenizer = BertTokenizerFast.from_pretrained(config["bert"])
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
-        self.edge_classifier = nn.Linear(768*3, len(self.train_dataset.edge_type_to_id))
         # self.trigger_classifier = nn.Linear(768*3, len(self.train_dataset.node_type_to_id))
         self.loss_fn = nn.CrossEntropyLoss()
         self.span_poolings = nn.ModuleList([nn.AvgPool1d(kernel_size=i, stride=1) for i in range(1, self.max_span_width+1)])
@@ -163,6 +166,12 @@ class EventExtractor(pl.LightningModule):
         self.id_to_node_type = {
             v: k for k, v in self.train_dataset.node_type_to_id.items()
         }
+
+        self.node_type_embedding = nn.Embedding(len(self.id_to_node_type), 100)
+        self.hidden1 = nn.Linear(768*3 + self.node_type_embedding.embedding_dim*2,
+                                         1000)
+        self.hidden2 = nn.Linear(1000, 1000)
+        self.edge_classifier = nn.Linear(1000, len(self.train_dataset.edge_type_to_id))
 
 
     def split_args(self, graph):
@@ -298,23 +307,30 @@ class EventExtractor(pl.LightningModule):
             # edge_type_ids=edge_type_ids,
             attention_mask=attention_mask,
             token_type_ids=batch["eg_token_type_ids"].long(),
-            node_type_ids=node_type_ids,
+            # node_type_ids=node_type_ids,
             # position_ids=position_ids
         )
         xs = self.dropout(xs)
         batch_logits = []
-        for x, node_spans_text, node_spans_graph in zip(
+        for x, node_spans_text, node_types_text, trigger_span in zip(
             xs,
             batch["eg_node_spans_text"],
-            batch["eg_node_spans_graph"]
+            batch["eg_node_types_text"],
+            batch["eg_trigger_span"],
         ):
             x_nodes = []
             for node_span in node_spans_text:
+                type_emb = self.node_type_embedding(node_types_text[node_span[0]].long())
+                trigger_type_emb = self.node_type_embedding(node_types_text[trigger_span[0]].long())
                 span_rep = [x[node_span[0]],
                             torch.mean(x[node_span[0] : node_span[1]], dim=0),
-                            x[node_span[1]]-1]
+                            x[node_span[1]]-1,
+                            type_emb,
+                            trigger_type_emb]
                 x_nodes.append(torch.cat(span_rep))
             x_nodes = torch.stack(x_nodes)
+            x_nodes = self.hidden1(x_nodes)
+            x_nodes = self.hidden2(x_nodes)
             logits = self.edge_classifier(x_nodes)
             batch_logits.append(logits)
         return batch_logits
@@ -385,7 +401,7 @@ class EventExtractor(pl.LightningModule):
 
     def train_dataloader(self):
         loader = DataLoader(
-            self.train_dataset, batch_size=32, shuffle=True, collate_fn=BioNLPDataset.collate_fn
+            self.train_dataset, batch_size=16, shuffle=True, collate_fn=BioNLPDataset.collate_fn
         )
         return loader
 
@@ -609,7 +625,8 @@ class EventExtractor(pl.LightningModule):
                         ) = get_event_linearization(ann=ann,
                                                     tokenizer=self.train_dataset.tokenizer,
                                                     node_type_to_id=self.train_dataset.node_type_to_id,
-                                                    known_events=event_ids_in_sentence)
+                                                    known_events=event_ids_in_sentence,
+                                                    edge_types_to_mod=self.train_dataset.EDGE_TYPES_TO_MOD)
                     else:
                         (
                             encoding_graph,
@@ -651,6 +668,7 @@ class EventExtractor(pl.LightningModule):
                     current_batch["eg_node_spans_graph"] = torch.tensor([node_spans_graph]).to(self.device)
                     current_batch["eg_node_types_text"] = node_types_text.unsqueeze(0).to(self.device)
                     current_batch["eg_node_types_graph"] = node_types_graph.unsqueeze(0).to(self.device)
+                    current_batch["eg_trigger_span"] = torch.tensor(node_spans_text[(entity_triggers + event_triggers).index(marked_trigger)]).unsqueeze(0).to(self.device)
 
                     current_batch["eg_adjacency_matrix"] = [adjacency_matrix]
 

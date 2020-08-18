@@ -1,3 +1,4 @@
+import logging
 import os
 import shlex
 import shutil
@@ -15,16 +16,21 @@ from events import consts
 from events.parse_standoff import StandoffAnnotation
 
 THIRD_PARTY_DIR = Path(__file__).parent / '3rd_party'
+logging.basicConfig(level=logging.DEBUG)
 
 def get_statistics_from_ann(ann_pred, ann_gold):
-    triggers_pred = {(i.start, i.end, i.type) for i in ann_pred.triggers.values()}
-    triggers_gold = {(i.start, i.end, i.type) for i in ann_gold.triggers.values()}
+    triggers_pred = {(i.start, i.end, i.type, i.text) for i in ann_pred.triggers.values()}
+    triggers_gold = {(i.start, i.end, i.type, i.text) for i in ann_gold.triggers.values()}
 
-    tp = len(triggers_gold & triggers_pred)
-    fp = len(triggers_pred - triggers_gold)
-    fn = len(triggers_gold - triggers_pred)
+    tp = triggers_gold & triggers_pred
+    fp = triggers_pred - triggers_gold
+    fn = triggers_gold - triggers_pred
 
-    return {"tp": tp, "fp": fp, "fn": fn}
+    logging.debug(f"TPs: {tp}")
+    logging.debug(f"FPs: {fp}")
+    logging.debug(f"FNs: {fn}")
+
+    return {"tp": len(tp), "fp": len(fp), "fn": len(fn)}
 
 
 
