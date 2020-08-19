@@ -14,7 +14,7 @@ PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
                      "Cellular_component", "None", "Protein", "Entity", "Protein_modification",
                      "Protein_catabolism"}
 PC13_EDGE_TYPES = {"None", "Theme", "Product", "Cause", "Site", "AtLoc", "FromLoc", "ToLoc",
-                    "Participant", "Trigger", "InText", "CSite"}
+                    "Participant", "Trigger",  "CSite", "Candidate", "Self"}
 PC13_EDGE_TYPES_TO_MOD = {
     "Product": "resulting",
     "Site": "at",

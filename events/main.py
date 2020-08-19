@@ -60,7 +60,7 @@ if __name__ == '__main__':
     logger = []
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
-    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1,
+    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=5,
                          checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
                          )
     if args.train:
@@ -76,11 +76,11 @@ if __name__ == '__main__':
             model = EventExtractor(config=config)
             model.load_state_dict(latest_checkpoint["state_dict"], strict=False)
             # model.trigger_detector = SequenceTagger.load(config["trigger_detector"])
-            # trainer.test(model, model.val_dataloader())
-            model.validation_step = model.validation_step_gold
-            model.dev_dataset.predict = False
-            model.validation_epoch_end = model.validation_epoch_end_gold
-            trainer.test(model, model.val_gold_dataloader())
+            trainer.test(model, model.val_dataloader())
+            # model.validation_step = model.validation_step_gold
+            # model.dev_dataset.predict = False
+            # model.validation_epoch_end = model.validation_epoch_end_gold
+            # trainer.test(model, model.val_gold_dataloader())
 
     if args.test:
         latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]

@@ -16,7 +16,7 @@ from events import consts
 from events.parse_standoff import StandoffAnnotation
 
 THIRD_PARTY_DIR = Path(__file__).parent / '3rd_party'
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 def get_statistics_from_ann(ann_pred, ann_gold):
     triggers_pred = {(i.start, i.end, i.type, i.text) for i in ann_pred.triggers.values()}

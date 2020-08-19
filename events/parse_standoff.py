@@ -196,7 +196,8 @@ def parse_lines( lines):
             if equivalence != None:
                 equivalences.append( equivalence)
         except MappingError as e:
-            print("ERROR " + ":" + str(i) + ": mapping error:" + e.value)
+            #print("ERROR " + ":" + str(i) + ": mapping error:" + e.value)
+            pass
 
     # handle equivalences (add missing triggers and events)
     for equivalence in equivalences:
@@ -218,7 +219,8 @@ def parse_lines( lines):
                 new.id = t1
             triggers[new.id] = new
             if not old in entity_triggers:
-                print("ERROR " +  " equivalence between non-entities cannot be handled (equivalence: " + equivalence + ")")
+                #print("ERROR " +  " equivalence between non-entities cannot be handled (equivalence: " + equivalence + ")")
+                pass
             else:
                 entity_triggers.append( new)
         
@@ -228,7 +230,8 @@ def parse_lines( lines):
             trigger = triggers[event.trigger]
             event.trigger = trigger
         except:
-           print("ERROR " + ": entity trigger '" + event.trigger + "' not found")
+           #print("ERROR " + ": entity trigger '" + event.trigger + "' not found")
+            pass
             
         roles = []
         for role_tuple in event.roles:
@@ -242,7 +245,8 @@ def parse_lines( lines):
             except:
                 pass
             if role_filler == None:
-                print("ERROR " + " entity/event '" + role_tuple[1] + "' not found")
+                #print("ERROR " + " entity/event '" + role_tuple[1] + "' not found")
+                pass
             else:
                 roles.append((role_tuple[0], role_filler))
         event.roles = roles
