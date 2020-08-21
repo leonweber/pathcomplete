@@ -292,9 +292,18 @@ class BioNLPDataset:
                                                  sentence=sentence,
                                                  trigger_spans=trigger_spans,
                                                  trigger=trigger)
-                    if len(example["graph"].nodes) > 1:
-                        examples.append(example)
+                    # if len(example["graph"].nodes) > 1:
+                    examples.append(example)
                     known_events.add(event.id)
+                example = self.build_example(ann=ann,
+                                             entity_triggers=entity_triggers,
+                                             event=None,
+                                             event_triggers=event_triggers,
+                                             known_events=known_events,
+                                             sentence=sentence,
+                                             trigger_spans=trigger_spans,
+                                             trigger=trigger)
+                examples.append(example)
 
         return examples
 
@@ -305,11 +314,15 @@ class BioNLPDataset:
                       event_triggers, known_events, sentence, trigger_spans,
                       trigger):
         edges_to_predict = {}
-        for u, v, d in ann.text_graph.out_edges(event.id, data=True):
-            edges_to_predict[(event.id, v)] = d["type"]
+        if event:
+            for u, v, d in ann.text_graph.out_edges(event.id, data=True):
+                edges_to_predict[(event.id, v)] = d["type"]
+            event_id = event.id
+        else:
+            event_id = "None"
 
         example = {"sentence": sentence,
-                   "trigger": trigger.id, "event_id": event.id,
+                   "trigger": trigger.id, "event_id": event_id,
                    "graph": get_partial_graph(ann, known_events,
                                               triggers=entity_triggers + event_triggers,
                                               trigger_spans = trigger_spans),
@@ -439,7 +452,7 @@ class PC13Dataset(BioNLPDataset):
 
 
         if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
-            return reftype in self.ENTITY_TYPES or (reftype in self.EVENT_TYPES and not refid.startswith("T"))
+            return reftype in self.ENTITY_TYPES or reftype in self.EVENT_TYPES
         elif arg in ("ToLoc", "AtLoc", "FromLoc"):
             return reftype in ("Cellular_component", )
         elif re.match(r'^C?Site\d*$', arg):
