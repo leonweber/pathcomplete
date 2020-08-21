@@ -4,7 +4,6 @@ import re
 from bisect import bisect_right, bisect_left
 from collections import defaultdict, deque
 from operator import attrgetter, itemgetter
-from torch_geometric.data import Data
 from pathlib import Path
 
 import networkx as nx

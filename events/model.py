@@ -4,22 +4,20 @@ from glob import glob
 import itertools
 from pathlib import Path
 
+import dgl
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from flair.embeddings import TransformerWordEmbeddings
 from flair.models import SequenceTagger
 from torch.utils.data import DataLoader
-from torch_geometric.nn import GINEConv
 import logging
 from transformers import BertModel, BertTokenizerFast, BertConfig
 import networkx as nx
-from torch_geometric.data import Data
-import torch_geometric
 import numpy as np
 
 from events import consts
-from events.model_gnn import GNN
+from events.model_gnn import GatedGCNNet, MLPReadout
 from events.dataset import (
     PC13Dataset,
     GE13Dataset,
@@ -36,9 +34,6 @@ from events.parse_standoff import StandoffAnnotation
 logging.basicConfig(level=logging.CRITICAL)
 
 BERTS = {"bert": BertModel, "gnn": BertGNNModel}
-
-def gelu(x):
-    return 0.5 * x * (1 + torch.tanh(math.sqrt(math.pi / 2) * (x + 0.044715 * x ** 3)))
 
 
 
@@ -105,7 +100,7 @@ class EventExtractor(pl.LightningModule):
         super().__init__()
 
         self.train_path = config["train"]
-        self.batch_size = 32
+        self.batch_size = 64
         self.dev_path = config["dev"]
         self.linearize_events = config["linearize"]
         self.output_dir = config["output_dir"]
@@ -168,10 +163,12 @@ class EventExtractor(pl.LightningModule):
         self.node_dim = 2*self.bert.embedding_length + 100
         self.edge_dim = 100
         self.node_type_embedding = nn.Embedding(len(self.id_to_node_type), 100)
-        self.edge_type_embedding = nn.Embedding(len(self.id_to_edge_type), 100)
-        self.edge_classifier = nn.Linear(2*self.node_dim, len(self.train_dataset.edge_type_to_id))
-        self.graph_embedder = GNN(num_layer=3, node_emb_dim=self.node_dim, gnn_type="gin",
-                                  edge_emb_dim=self.edge_dim)
+        self.edge_type_embedding = nn.Embedding(len(self.id_to_edge_type)*2, 100) # forward and reverse edges
+        self.graph_embedder = GatedGCNNet(in_dim=self.node_dim, in_dim_edge=self.edge_dim, hidden_dim=100, out_dim=100,
+                                          dropout=0.2, n_layers=3)
+        self.edge_classifier = MLPReadout(input_dim=self.node_dim*2,
+                                          output_dim=len(self.id_to_edge_type),
+                                          L=2)
 
 
     def split_args(self, graph):
@@ -261,8 +258,8 @@ class EventExtractor(pl.LightningModule):
 
 
     def get_graphs(self, batch):
-        graph_batch = []
         nx_graphs = []
+        dgl_graphs = []
         for sentence, trigger, graph, event_id in zip(
                 batch["eg_sentence"],
                 batch["eg_trigger"],
@@ -293,27 +290,41 @@ class EventExtractor(pl.LightningModule):
             for u, v, data in graph.edges(data=True):
                 edge_types.append(self.train_dataset.edge_type_to_id[data["type"]])
 
-            # TODO maybe also add span embeddings for src and trgt here
-            edge_embs = self.edge_type_embedding(torch.tensor(edge_types).long().to(self.device))
-            graph_data = torch_geometric.utils.from_networkx(graph)
-            graph_data.x = node_embs
-            graph_data.edge_attr = edge_embs
+            # for u, v, d in graph.edges(data=True):
+            #     if (v, u) not in graph.edges:
+            #         graph.add_edge(v, u, type=d["type"] + "_r")
+            #         edge_types.append(self.train_dataset.edge_type_to_id[d["type"]] + len(self.train_dataset.edge_type_to_id))
 
+            edge_embs = self.edge_type_embedding(torch.tensor(edge_types).long().to(self.device))
+
+            us = []
+            vs = []
+            for u, v in nx.convert_node_labels_to_integers(graph).edges:
+                us.append(u)
+                vs.append(v)
+            dgl_graph = dgl.graph((us, vs)).to(self.device)
+            dgl_graph.ndata["h"] = node_embs
+            dgl_graph.edata["e"] = edge_embs
+
+            dgl_graphs.append(dgl_graph)
             nx_graphs.append(graph)
 
-            graph_batch.append(graph_data)
-
-        return torch_geometric.data.Batch.from_data_list(graph_batch).to(self.device), nx_graphs
+        return dgl.batch(dgl_graphs), nx_graphs
 
 
 
     def forward(self, batch):
-        graphs, nx_graphs = self.get_graphs(batch)
-        node_embs = self.graph_embedder(graphs.x, graphs.edge_index, graphs.edge_attr)
-        edge_embs = torch.cat([node_embs[graphs.edge_index][0], node_embs[graphs.edge_index][1]], dim=1)
-        edge_logits = self.edge_classifier(edge_embs)
+        batched_graph, nx_graphs = self.get_graphs(batch)
+        node_embs, _ = self.graph_embedder(batched_graph, batched_graph.ndata["h"], batched_graph.edata["e"])
+        edge_embs = []
+        for g in dgl.unbatch(batched_graph):
+            edge_emb = torch.cat([node_embs[g.edges()[0]], node_embs[g.edges()[1]]], dim=1)
+            edge_embs.append(edge_emb)
+        edge_embs = torch.cat(edge_embs)
 
-        return edge_logits, nx_graphs
+        logits = self.edge_classifier(edge_embs)
+
+        return logits, nx_graphs
 
 
     def forward_triggers(
