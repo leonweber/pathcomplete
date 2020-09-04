@@ -5,7 +5,7 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 import random
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import tempfile
 import subprocess
 import re
@@ -46,14 +46,14 @@ class Evaluator:
 
 
 
-    def evaluate_trigger_detection(self, predicted_a2: Dict[str, List[str]]):
+    def evaluate_trigger_detection(self, predicted_a2: Dict[str, Tuple]):
         statistics = defaultdict(int)
 
         for a2_file in Path(self.data_dir).glob("*.a2"):
             with a2_file.open() as f:
                 ann_gold = StandoffAnnotation(a1_lines=[], a2_lines=f.readlines())
             if a2_file.with_suffix(".txt").name in predicted_a2:
-                lines_pred = predicted_a2[a2_file.with_suffix(".txt").name].split("\n")
+                lines_pred = predicted_a2[a2_file.with_suffix(".txt").name][0].split("\n")
             else:
                 lines_pred = []
             ann_pred = StandoffAnnotation(a1_lines=[],
@@ -77,7 +77,7 @@ class Evaluator:
         # with tempfile.TemporaryDirectory() as d:
         for fname, preds in predicted_a2.items():
             with (Path(self.out_dir) / fname).with_suffix('.a2').open('w') as f:
-                f.write(preds)
+                f.write(preds[0])
 
         cmd = f'python2 {THIRD_PARTY_DIR / self.eval_script} -r {self.data_dir} {" ".join([str(i) for i in Path(self.out_dir).glob("*a2")])}'
         result = subprocess.run(cmd, capture_output=True, shell=True)
@@ -87,7 +87,7 @@ class Evaluator:
                 print(line)
             match = re.match(self.result_re, line)
             if match:
-                p, r, f = float(match.group(1)), float(match.group(2)), float(match.group(3))
+                r, p, f = float(match.group(1)), float(match.group(2)), float(match.group(3))
                 if p == r == f == 100:
                     p = r = f = 0.0
         try:

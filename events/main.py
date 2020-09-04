@@ -61,16 +61,21 @@ if __name__ == '__main__':
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
     trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1,
-                         checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
-                         num_sanity_val_steps=0
+                         checkpoint_callback=checkpoint_callback, logger=logger, use_amp=False,
+                         num_sanity_val_steps=0, gradient_clip_val=5.0
                          )
     if args.train:
-        with Tee(args.output_dir/"train.log", "w"):
-            model = EventExtractor(config=config)
-            trainer.fit(model)
+    #     with Tee(args.output_dir/"train.log", "w"):
+    #     latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+    #     print("Loading " + str(latest_checkpoint) + "...")
+        # latest_checkpoint = torch.load(latest_checkpoint)
+        model = EventExtractor(config=config)
+        # model = EventExtractor.load_from_checkpoint(latest_checkpoint, config=config)
+        trainer.fit(model)
 
     if args.dev:
         latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+        print("Loading " + str(latest_checkpoint) + "...")
         latest_checkpoint = torch.load(latest_checkpoint)
 
         with Tee(args.output_dir/"test.log", "w"):

@@ -47,7 +47,9 @@ EVENT_TRIGGER_TYPES = ['conversion',
  'transport',
  'hydroxylation',
  'dehydroxylation',
- 'protein_modification'
+ 'protein_modification',
+ 'none'
+
                        ]
 
 
@@ -181,6 +183,7 @@ def parse_line( line):
 def parse_lines( lines):
     triggers = {} # entities and event triggers
     entity_triggers = [] # entity triggers only
+    event_triggers = []
     events = {} # events annotations
     equivalences = []
     for i,line in enumerate(lines):
@@ -191,6 +194,7 @@ def parse_lines( lines):
                 entity_triggers.append( entity_trigger)
             if event_trigger != None:
                 triggers[event_trigger.id] = event_trigger
+                event_triggers.append(event_trigger)
             if event != None:
                 events[event.id] = event
             if equivalence != None:
@@ -251,7 +255,7 @@ def parse_lines( lines):
                 roles.append((role_tuple[0], role_filler))
         event.roles = roles
 
-    return triggers, entity_triggers, events
+    return triggers, entity_triggers, event_triggers, events
 
 def parse_a1_a2( a1_file_path, a2_file_path):
     with open(a1_file_path) as f:
@@ -264,7 +268,10 @@ def parse_a1_a2( a1_file_path, a2_file_path):
 def events_to_nx(events, triggers):
     G = nx.DiGraph()
     for trigger in triggers.values():
-        G.add_node(trigger.id, type=trigger.type)
+        G.add_node(trigger.id, type=trigger.type,
+                   orig_span=(trigger.start, trigger.end),
+                   text=trigger.text
+                   )
     for event in events.values():
         G.add_node(event.id, type=event.type)
         G.add_edge(event.trigger.id, event.id, type="Trigger")
@@ -303,7 +310,7 @@ def events_to_text_graph(events, triggers):
 
 class StandoffAnnotation:
     def __init__(self, a1_lines, a2_lines):
-        self.triggers, self.entity_triggers, self.events = parse_lines(a1_lines + a2_lines)
+        self.triggers, self.entity_triggers, self.event_triggers, self.events = parse_lines(a1_lines + a2_lines)
         self.event_graph = events_to_nx(self.events, self.triggers)
         self.text_graph = events_to_text_graph(self.events, self.triggers)
         self.a1_lines = a1_lines

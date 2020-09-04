@@ -1,6 +1,9 @@
+import dgl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import dgl.function as fn
+import math
 
 
 class MLPReadout(nn.Module):
@@ -23,13 +26,80 @@ class MLPReadout(nn.Module):
         return y
 
 
+class MDNReadout(nn.Module):
+    def __init__(self, input_dim, output_dim, n_components):
+        super(MDNReadout, self).__init__()
+        self.coefficient_layer = nn.Sequential(nn.Linear(input_dim*2, input_dim), nn.ReLU(), nn.Linear(input_dim, n_components, bias=False))
+        self.logit_layer = nn.Sequential(nn.Linear(input_dim*2, input_dim), nn.ReLU(), nn.Linear(input_dim, output_dim*n_components))
+        self.n_components = n_components
+        self.output_dim = output_dim
+
+    def forward(self, graphs):
+        u = []
+        v = []
+        edge_to_graph = []
+        for i, g in enumerate(graphs):
+            node_embs = g.ndata["h"]
+            u.append(node_embs[g.edges()[0]])
+            v.append(node_embs[g.edges()[1]])
+            edge_to_graph += [i] * len(g.edges()[0])
+        u = torch.cat(u)
+        v = torch.cat(v)
+        edge_to_graph = torch.tensor(edge_to_graph).to(u.device)
+
+        x = torch.cat([u, v], dim=1)
+        mixture_coefficients = self.coefficient_layer(x).reshape(x.shape[0], self.n_components)
+        logits = self.logit_layer(x).reshape(x.shape[0], self.n_components, -1)
+
+        for i, g in enumerate(graphs):
+            mask = edge_to_graph == i
+            g.edata["mixture_coefficients"] = mixture_coefficients[mask]
+            g.edata["logits"] = logits[mask]
+            g.edata["probs"] = torch.softmax(logits[mask], dim=2)
+
+        return graphs
+
+
+class NeighborhoodTransformer(nn.Module):
+
+    def __init__(self, node_dim, edge_dim, dropout=0.2, output_layer=False):
+        super(NeighborhoodTransformer, self).__init__()
+        assert node_dim == edge_dim
+        transformer_layer = nn.TransformerEncoderLayer(node_dim, 8, node_dim, dropout=dropout)
+        self.transformer = nn.TransformerEncoder(transformer_layer, 3)
+        self.readout_embedding = nn.Embedding(1, node_dim)
+
+    def message_func(self, edges):
+        h_e = edges.src["h"] + edges.data["e"]
+        return {"h_e": h_e}
+
+    def reduce_func(self, nodes):
+        messages = nodes.mailbox["h_e"]
+        readout_messages = nodes.data["h"] + self.readout_embedding(torch.tensor(0).to(messages.device))
+        x = torch.cat([readout_messages.unsqueeze(1), messages], dim=1) # first message is the readout message
+        h = self.transformer(nodes.mailbox["h_e"].transpose(0, 1)).transpose(0,1)[:, 0, :]
+        return {"h": h}
+
+    def forward(self, g, h, e):
+        g.ndata["h"] = h
+        g.edata["e"] = e
+        g.update_all(self.message_func, self.reduce_func)
+        h = g.ndata["h"]
+
+        return h
+
+
+
+
 class GINConvLayer(nn.Module):
 
-    def __init__(self, node_dim, edge_dim, dropout):
+    def __init__(self, node_dim, edge_dim, dropout,
+                 output_layer=False):
         super(GINConvLayer, self).__init__()
         emb_dim = node_dim + edge_dim
         self.mlp = torch.nn.Sequential(torch.nn.Linear(emb_dim, emb_dim), torch.nn.BatchNorm1d(emb_dim), torch.nn.ReLU(), torch.nn.Linear(emb_dim, node_dim))
         self.dropout = nn.Dropout(dropout)
+        self.output_layer = output_layer
 
     def message_func(self, edges):
         h_e = self.mlp(torch.cat([edges.src["h"], edges.data["e"]], dim=1))
@@ -46,8 +116,9 @@ class GINConvLayer(nn.Module):
         h = g.ndata["h"]
         e = g.edata["e"]
 
-        h = F.relu(h)  # non-linear activation
-        e = F.relu(e)  # non-linear activation
+        if not self.output_layer:
+            h = F.relu(h)  # non-linear activation
+            e = F.relu(e)  # non-linear activation
 
         h = self.dropout(h)
         e = self.dropout(e)
@@ -61,17 +132,17 @@ class GatedGCNLayer(nn.Module):
         Param: []
     """
 
-    def __init__(self, input_dim, dropout, batch_norm, residual=False):
+    def __init__(self, node_dim, edge_dim, dropout):
         super().__init__()
+        assert node_dim == edge_dim
+        input_dim = node_dim
+
         output_dim = input_dim
         self.in_channels = input_dim
         self.out_channels = output_dim
         self.dropout = dropout
-        self.batch_norm = batch_norm
-        self.residual = residual
-
-        if input_dim != output_dim:
-            self.residual = False
+        self.batch_norm = True
+        self.residual = True
 
         self.A = nn.Linear(input_dim, output_dim, bias=True)
         self.B = nn.Linear(input_dim, output_dim, bias=True)
@@ -138,41 +209,45 @@ class GatedGCNLayer(nn.Module):
         )
 
 
-class GatedGCNNet(nn.Module):
-    def __init__(self, in_dim, in_dim_edge, hidden_dim, out_dim, dropout, n_layers):
+class GNN(nn.Module):
+    def __init__(self, node_dim, edge_dim, dropout, n_layers,
+                 layer_type):
         super().__init__()
-        self.out_dim = out_dim
         self.batch_norm = True
         self.residual = True
         self.edge_feat = True
         self.pos_enc = False
-        if self.pos_enc:
-            pos_enc_dim = 100
-            self.embedding_pos_enc = nn.Linear(pos_enc_dim, hidden_dim)
+
+        if layer_type == "GIN":
+            layer_cls = GINConvLayer
+        elif layer_type == "GGCNN":
+            layer_cls = GatedGCNLayer
+        elif layer_type == "Transformer":
+            layer_cls = NeighborhoodTransformer
+        else:
+            raise ValueError(layer_type)
 
         self.layers = nn.ModuleList(
             [
-                GINConvLayer(
-                    in_dim, in_dim_edge, dropout
+                layer_cls(
+                    node_dim=node_dim,
+                    edge_dim=edge_dim,
+                    dropout=dropout
                 )
-                for _ in range(n_layers)
-            ]
+                for _ in range(n_layers-1)])
+        self.layers.append(
+            layer_cls(
+                node_dim=node_dim,
+                edge_dim=edge_dim,
+                dropout=dropout,
+                output_layer=True
+            )
         )
 
-    def forward(self, g, h, e, h_pos_enc=None):
-
-        # h = self.embedding_h(h.float())
-        if self.pos_enc:
-            h_pos_enc = self.embedding_pos_enc(h_pos_enc.float())
-            h = h + h_pos_enc
-        if not self.edge_feat:
-            e = torch.ones_like(e).to(self.device)
-        # e = self.embedding_e(e.float())
-
-        # convnets
+    def forward(self, g, h, e):
         for conv in self.layers:
-            h, e = conv(g, h, e)
+            h = conv(g, h, e)
         g.ndata["h"] = h
-        g.edata["e"] = e
 
-        return h, e
+        return h
+

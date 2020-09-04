@@ -1,0 +1,17 @@
+{
+  "linearize": true,
+  "model": "bert",
+  "train": "events/data/BioNLP-ST_2013_PC_training_data",
+  "dev": "events/data/BioNLP-ST_2013_PC_development_data",
+  "test": "events/data/BioNLP-ST_2013_PC_test_data",
+  "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
+  "trigger_detector": "events/trigger_detection_models/bionlp2013_pc_triggers/best-model.pt",
+  "trigger_ordering": "position",
+  "loss_weight_td": 0,
+  "loss_weight_eg": 1,
+  "loss_weight_tt": 0,
+  "gnn": "Transformer",
+  "hidden_dim": 768,
+  "dropout": 0.0,
+  "small": false
+}
