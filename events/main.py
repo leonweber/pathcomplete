@@ -8,12 +8,14 @@ import pytorch_lightning as pl
 from pprint import pprint
 
 import torch
+from flair.data import Sentence
 from flair.models import SequenceTagger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.logging import WandbLogger
 
 from events.model import EventExtractor
 from util.utils import Tee
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

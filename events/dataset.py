@@ -10,13 +10,20 @@ import networkx as nx
 import transformers
 import torch
 from flair.data import Span, Sentence
-from flair.tokenization import SciSpacySentenceSplitter
+from flair.tokenization import SciSpacySentenceSplitter, SegtokSentenceSplitter
 from tqdm import tqdm
 import stanza
 
 from events import consts
 from events.parse_standoff import StandoffAnnotation
 
+# Fix incompatibility between pytorch lightning and Flair (lighting assumes that to() returns self)
+sentence_to = Sentence.to
+def sentence_monkey_to(self, device, pin_memory=False):
+    sentence_to(self, device, pin_memory=pin_memory)
+    return self
+
+Sentence.to = sentence_monkey_to
 
 
 def get_triggers(sent, ann: StandoffAnnotation):
@@ -112,15 +119,18 @@ def integrate_predicted_a2_triggers(ann, ann_predicted):
     return new_ann
 
 
-def get_partial_graph(ann, known_events, triggers, trigger_spans):
+def get_partial_graph(ann, known_events, triggers, trigger_spans, sentence):
     graph = ann.event_graph.copy()
+    known_event_triggers = set()
+    entity_triggers = set(i.id for i in ann.entity_triggers)
     for event in known_events:
+        known_event_triggers.add(ann.events[event].trigger.id)
         for u, v, d in ann.event_graph.out_edges(event, data=True):
             if v.startswith("E") and v not in known_events:
                 new_v = ann.events[v].trigger.id
                 graph.add_edge(u, new_v, **d)
-    triggers = [i.id for i in triggers]
-    graph = graph.subgraph(triggers + list(known_events))
+    known_triggers = [i.id for i in triggers if i.id in entity_triggers or i.id in known_event_triggers]
+    graph = graph.subgraph(known_triggers + list(known_events))
 
     node_to_span = {}
     for node in graph.nodes:
@@ -171,7 +181,7 @@ class BioNLPDataset:
                 self.node_type_to_id[i] = len(self.node_type_to_id)
 
         self.edge_type_to_id = {v: i for i, v in enumerate(sorted(self.EDGE_TYPES))}
-        self.sentence_splitter = SciSpacySentenceSplitter()
+        self.sentence_splitter = SegtokSentenceSplitter()
         self.batch_size = batch_size
         self.predict = predict
         self.linearize_events = linearize_events
@@ -202,7 +212,6 @@ class BioNLPDataset:
                 a2_lines = []
             with file.open() as f, file.with_suffix(".a1").open() as f_a1:
                 text = f.read()
-                sentences = self.sentence_splitter.split(text)
                 a1_lines = f_a1.readlines()
                 ann = StandoffAnnotation(a1_lines=a1_lines, a2_lines=a2_lines)
                 # if isinstance(self.trigger_detector, dict):
@@ -293,6 +302,9 @@ class BioNLPDataset:
         examples = []
 
         for sentence in self.sentence_splitter.split(text):
+            if not sentence.tokens:
+                continue
+            # Fix incompatibility of Flair with Lightning, the to of sentence doesn't return the sentence leading to None's after internal calls to to()
             known_events = set()
             entity_triggers, event_triggers = get_triggers(sentence, ann)
             for token in sentence.tokens:
@@ -309,41 +321,70 @@ class BioNLPDataset:
                                                  known_events=known_events,
                                                  sentence=sentence,
                                                  trigger_spans=trigger_spans,
-                                                 trigger=trigger)
+                                                 )
                     # if len(example["graph"].nodes) > 1:
                     examples.append(example)
                     known_events.add(event.id)
-                example = self.build_example(ann=ann,
-                                             entity_triggers=entity_triggers,
-                                             event=None,
-                                             event_triggers=event_triggers,
-                                             known_events=known_events,
-                                             sentence=sentence,
-                                             trigger_spans=trigger_spans,
-                                             trigger=trigger)
-                examples.append(example)
+
+            example = self.build_example(ann=ann,
+                                         entity_triggers=entity_triggers,
+                                         event=None,
+                                         event_triggers=event_triggers,
+                                         known_events=known_events,
+                                         sentence=sentence,
+                                         trigger_spans=trigger_spans,
+                                         )
+            examples.append(example)
 
         return examples
 
     def trigger_ordering(self, triggers):
         return triggers
 
+    def add_token_nodes(self, graph, sentence):
+        graph = graph.copy()
+        for token in sentence.tokens:
+            graph.add_node(f"token{token.idx-1}", text=token.text, idx=token.idx-1,
+                           type="Token")
+        for node, d in graph.nodes(data=True):
+            if node.startswith("T"):
+                for i in range(*d["span"]):
+                    graph.add_edge(node, f"token{i}", type="HasToken")
+
+        return graph
+
+
     def build_example(self, ann, entity_triggers, event,
-                      event_triggers, known_events, sentence, trigger_spans,
-                      trigger):
+                      event_triggers, known_events, sentence, trigger_spans ):
         edges_to_predict = {}
+
+        graph = get_partial_graph(ann, known_events,
+                                              triggers=entity_triggers + event_triggers,
+                                              trigger_spans=trigger_spans,
+                                              sentence=sentence)
+
+        graph = self.add_token_nodes(graph, sentence)
+        # FIXME Event-to-token edges are missing here, because trigger is not yet known
         if event:
             for u, v, d in ann.text_graph.out_edges(event.id, data=True):
-                edges_to_predict[(event.id, v)] = d["type"]
+                # if d["type"] == "Trigger":
+                for _, w, d2 in graph.out_edges(v, data=True):
+                    if d2["type"] == "HasToken": # predict edges from event to tokens to model trigger detection
+                        edges_to_predict[(event.id, w)] = d["type"]
+                # else:
+                #     edges_to_predict[(event.id, v)] = d["type"]
+                #     for _, w, d2 in graph.out_edges(v, data=True):
+                #         if d2["type"] == "HasToken": # predict edges from event to tokens to model trigger detection
+                #             edges_to_predict[(event.id, w)] = d["Type"]
             event_id = event.id
         else:
             event_id = "None"
 
+
         example = {"sentence": sentence,
-                   "trigger": trigger.id, "event_id": event_id,
-                   "graph": get_partial_graph(ann, known_events,
-                                              triggers=entity_triggers + event_triggers,
-                                              trigger_spans = trigger_spans),
+                   "event_id": event_id,
+                   "event_type": event.type if event else "None",
+                   "graph": graph,
                    "edges_to_predict": edges_to_predict,
                    }
 

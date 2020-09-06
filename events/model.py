@@ -118,8 +118,8 @@ class EventExtractor(pl.LightningModule):
         self.loss_weight_eg = self.loss_weight_eg / weight_sum
 
         self.max_span_width = 10
-        # self.embeddings = TransformerWordEmbeddings(config["bert"], fine_tune=True, layers="-1", batch_size=16)
-        self.embeddings =  WordEmbeddings("pubmed")
+        self.embeddings = TransformerWordEmbeddings(config["bert"], fine_tune=True, layers="-1", batch_size=16)
+        # self.embeddings =  WordEmbeddings("pubmed")
 
         tag_dictionary = Dictionary(add_unk=False)
         tag_dictionary.multi_label = False
@@ -171,7 +171,7 @@ class EventExtractor(pl.LightningModule):
         # self.trigger_classifier = nn.Linear(768*3, len(self.train_dataset.node_type_to_id))
         self.loss_fn = nn.CrossEntropyLoss()
         self.span_poolings = nn.ModuleList([nn.AvgPool1d(kernel_size=i, stride=1) for i in range(1, self.max_span_width+1)])
-        self.max_events_per_trigger = 10
+        self.max_events_per_sentence = 30
 
         self.id_to_edge_type = {
             v: k for k, v in self.train_dataset.edge_type_to_id.items()
@@ -333,33 +333,43 @@ class EventExtractor(pl.LightningModule):
                 self.remove_invalid_events(graph)
 
 
+    def get_token_embs(self, sentences):
+        all_token_embs = []
+
+        for sentence in sentences:
+            all_token_embs.append([i.embedding for i in sentence.tokens])
+
+        return all_token_embs
+
+
     def get_graphs(self, batch):
         nx_graphs = []
         dgl_graphs = []
-        for sentence, trigger, graph, event_id in zip(
+        all_token_embs = self.get_token_embs(batch["eg_sentence"])
+        for sentence, graph, event_id, event_type, token_embs in zip(
                 batch["eg_sentence"],
-                batch["eg_trigger"],
                 batch["eg_graph"],
-                batch["eg_event_id"]
+                batch["eg_event_id"],
+                batch["eg_event_type"],
+                all_token_embs
         ):
             graph: nx.DiGraph
             graph = graph.copy()
-            graph.add_node(event_id, type=graph.nodes[trigger]["type"], span=graph.nodes[trigger]["span"])
-            trigger_embs = []
+            graph.add_node(event_id, type=event_type)
+            node_embs = []
             node_types = []
             for node, d in graph.nodes(data=True):
-                trigger_embs.append(
-                    torch.cat([sentence.tokens[d["span"][0]].embedding,
-                               sentence.tokens[d["span"][1]].embedding])
-                )
+                if node.startswith("token"):
+                    node_embs.append(token_embs[d["idx"]])
+                else:
+                    node_embs.append(torch.zeros(token_embs[0].shape[-1]).to(self.device))
                 node_types.append(self.train_dataset.node_type_to_id[d["type"]])
-            node_embs = self.node_embedder(torch.stack(trigger_embs))
-            node_types = torch.tensor(node_types).to(self.device)
 
-            graph.add_edge(trigger, event_id, type="Trigger")
+            node_embs = torch.stack(node_embs)
+
             for node in graph.nodes:
                 graph.add_edge(node, node, type="Self")
-                if node.startswith("T"):
+                if node.startswith("T") or node.startswith("token"):
                     graph.add_edge(event_id, node, type="Candidate")
 
             edge_types = []
@@ -380,14 +390,13 @@ class EventExtractor(pl.LightningModule):
                 vs.append(v)
             dgl_graph = dgl.graph((us, vs)).to(self.device)
             dgl_graph.ndata["h"] = node_embs
-            dgl_graph.ndata["type"] = node_types
             dgl_graph.edata["e"] = edge_embs
+            dgl_graph.ndata["type"] = torch.tensor(node_types).to(self.device)
 
             dgl_graphs.append(dgl_graph)
             nx_graphs.append(graph)
 
         return dgl.batch(dgl_graphs), nx_graphs
-
 
 
     def forward(self, batch):
@@ -515,6 +524,8 @@ class EventExtractor(pl.LightningModule):
         sentences = self.train_dataset.sentence_splitter.split(text)
         self.node_detector.predict(sentences, embedding_storage_mode="cpu")
 
+        # TODO adapt prediction to new problem formulation
+
         a2_lines = [l.strip() for l in ann.a2_lines if l.startswith("T")]
         # a2_lines = get_event_trigger_lines_from_sentences(sentences, len(a1_lines))
         ann = StandoffAnnotation(a1_lines, a2_lines)
@@ -525,56 +536,58 @@ class EventExtractor(pl.LightningModule):
             trigger_spans = get_trigger_spans(entity_triggers + event_triggers, sentence)
             event_trigger_ids = set(i.id for i in event_triggers)
 
-            for i_trigger, marked_trigger in enumerate(self.train_dataset.trigger_ordering(event_triggers, ann)):
-                for i_generated in range(self.max_events_per_trigger):
-                    ann = StandoffAnnotation(a1_lines, a2_lines)
-                    # if marked_trigger.id not in set(i.id for i in ann.event_triggers):
-                    #     continue
+            for i_generated in range(self.max_events_per_sentence):
+                ann = StandoffAnnotation(a1_lines, a2_lines)
+                # if marked_trigger.id not in set(i.id for i in ann.event_triggers):
+                #     continue
 
-                    events_in_sentence = {e.id for e in ann.events.values() if e.trigger.id in event_trigger_ids}
+                events_in_sentence = {e.id for e in ann.events.values() if e.trigger.id in event_trigger_ids}
 
-                    event_id = get_free_event_id(predicted_graph)
-                    batch = {"eg_sentence": [sentence],
-                             "eg_trigger": [marked_trigger.id],
-                             "eg_graph": [get_partial_graph(ann, events_in_sentence,
-                                                            triggers=entity_triggers + event_triggers,
-                                                            trigger_spans = trigger_spans)],
-                             "eg_event_id": [event_id]}
-                    batches.append(batch)
+                event_id = get_free_event_id(predicted_graph)
+                batch = {"eg_sentence": [sentence],
+                         "eg_graph": [get_partial_graph(ann, events_in_sentence,
+                                                        triggers=entity_triggers + event_triggers,
+                                                        trigger_spans=trigger_spans,
+                                                        sentence=sentence
+                                                        )],
+                         "eg_event_id": [event_id],
+                         "eg_event_type": ["None"]
+                         }
+                batches.append(batch)
 
-                    nx_graphs, dgl_graphs = self.forward(batch)
-                    dgl_graph = dgl_graphs[0]
-                    nx_graph = nx_graphs[0]
+                nx_graphs, dgl_graphs = self.forward(batch)
+                dgl_graph = dgl_graphs[0]
+                nx_graph = nx_graphs[0]
 
-                    edge_types = self.mdn_sample_edge_types(dgl_graph, nx_graph)
+                edge_types = self.mdn_sample_edge_types(dgl_graph, nx_graph)
 
-                    if all(i == "None" for i in edge_types.values()):
-                        break
+                if all(i == "None" for i in edge_types.values()):
+                    break
+                else:
+                    event_node_idx = list(nx_graphs[0].nodes).index(event_id)
+                    # event_type = self.id_to_node_type[dgl_graph.ndata["logits"][event_node_idx].argmax().item()]
+                    # if event_type not in self.train_dataset.EVENT_TYPES:
+                    #     event_type = "None"
+                    event_type = marked_trigger.type
+                    predicted_graph.add_node(event_id, type=event_type)
+
+                    if predicted_graph.nodes[marked_trigger.id]["type"] == "None" or predicted_graph.nodes[marked_trigger.id]["type"] == event_type:
+                        predicted_graph.add_edge(marked_trigger.id, event_id, type="Trigger")
+                        predicted_graph.nodes[marked_trigger.id]["type"] = event_type
                     else:
-                        event_node_idx = list(nx_graphs[0].nodes).index(event_id)
-                        # event_type = self.id_to_node_type[dgl_graph.ndata["logits"][event_node_idx].argmax().item()]
-                        # if event_type not in self.train_dataset.EVENT_TYPES:
-                        #     event_type = "None"
-                        event_type = marked_trigger.type
-                        predicted_graph.add_node(event_id, type=event_type)
+                        new_trigger_id = get_free_trigger_id(predicted_graph)
+                        predicted_graph.add_node(new_trigger_id, type=event_type,
+                                                 orig_span=(marked_trigger.start, marked_trigger.end),
+                                                 text=marked_trigger.text
+                                                 )
+                        predicted_graph.add_edge(new_trigger_id, event_id, type="Trigger")
 
-                        if predicted_graph.nodes[marked_trigger.id]["type"] == "None" or predicted_graph.nodes[marked_trigger.id]["type"] == event_type:
-                            predicted_graph.add_edge(marked_trigger.id, event_id, type="Trigger")
-                            predicted_graph.nodes[marked_trigger.id]["type"] = event_type
-                        else:
-                            new_trigger_id = get_free_trigger_id(predicted_graph)
-                            predicted_graph.add_node(new_trigger_id, type=event_type,
-                                                     orig_span=(marked_trigger.start, marked_trigger.end),
-                                                     text=marked_trigger.text
-                                                     )
-                            predicted_graph.add_edge(new_trigger_id, event_id, type="Trigger")
+                    for (u, v), edge_type in edge_types.items():
+                        if edge_type != "None":
+                            predicted_graph.add_edge(u, v, type=edge_type)
 
-                        for (u, v), edge_type in edge_types.items():
-                            if edge_type != "None":
-                                predicted_graph.add_edge(u, v, type=edge_type)
-
-                        self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False)
-                        a2_lines = get_a2_lines_from_graph(predicted_graph, event_types=self.train_dataset.EVENT_TYPES)
+                    self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False)
+                    a2_lines = get_a2_lines_from_graph(predicted_graph, event_types=self.train_dataset.EVENT_TYPES)
 
         self.clean_up_graph(predicted_graph, remove_unlifted=True, remove_invalid=True)
         a2_lines = get_a2_lines_from_graph(predicted_graph, event_types=self.train_dataset.EVENT_TYPES)
@@ -627,7 +640,7 @@ class EventExtractor(pl.LightningModule):
 
                 trigger_queue = sentence_to_trigger_queue[i_sentence]
 
-                if sentence_to_trigger_count[i_sentence] >= self.max_events_per_trigger and trigger_queue:
+                if sentence_to_trigger_count[i_sentence] >= self.max_events_per_sentence and trigger_queue:
                     trigger_queue.popleft()
                     sentence_to_trigger_count[i_sentence] = 0
 

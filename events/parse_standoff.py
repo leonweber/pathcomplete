@@ -274,7 +274,7 @@ def events_to_nx(events, triggers):
                    )
     for event in events.values():
         G.add_node(event.id, type=event.type)
-        G.add_edge(event.trigger.id, event.id, type="Trigger")
+        G.add_edge(event.id, event.trigger.id, type="Trigger")
         for role, dst in event.roles:
             G.add_edge(event.id, dst.id, type=role)
     return G
@@ -298,7 +298,7 @@ def events_to_text_graph(events, triggers):
         if event_signature not in added_signatures:
             added_signatures.add(event_signature)
             G.add_node(event.id, type=event.type)
-            G.add_edge(event.trigger.id, event.id, type="Trigger")
+            G.add_edge(event.id, event.trigger.id, type="Trigger")
             for role, dst in event.roles:
                 if dst.id in triggers:
                     trigger_id = dst.id

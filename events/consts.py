@@ -12,9 +12,9 @@ PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
 
 PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
                      "Cellular_component", "None", "Protein", "Entity", "Protein_modification",
-                     "Protein_catabolism"}
+                     "Protein_catabolism", "Token"}
 PC13_EDGE_TYPES = {"None", "Theme", "Product", "Cause", "Site", "AtLoc", "FromLoc", "ToLoc",
-                    "Participant", "Trigger",  "CSite", "Candidate", "Self"}
+                    "Participant", "Trigger",  "CSite", "Candidate", "Self", "HasToken"}
 PC13_EDGE_TYPES_TO_MOD = {
     "Product": "resulting",
     "Site": "at",
