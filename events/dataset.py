@@ -9,7 +9,7 @@ from pathlib import Path
 import networkx as nx
 import transformers
 import torch
-from flair.tokenization import SciSpacySentenceSplitter
+from flair.tokenization import SciSpacySentenceSplitter, SegtokSentenceSplitter
 from tqdm import tqdm
 
 from events import consts
@@ -432,17 +432,23 @@ class BioNLPDataset:
     def __init__(self, path: Path, tokenizer: Path,
                  linearize_events: bool = False, batch_size: int = 16, predict: bool = False,
                  trigger_ordering: str = "position", predict_entities: bool = False,
-                 max_span_width: int = 10, trigger_detector = None
+                 max_span_width: int = 10, trigger_detector = None, small=False
                  ):
         self.trigger_detector = trigger_detector
         self.text_files = [f for f in path.glob('*.txt')]
+        if small:
+            self.text_files = self.text_files[:5]
+
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
             if i not in self.node_type_to_id:
                 self.node_type_to_id[i] = len(self.node_type_to_id)
 
         self.edge_type_to_id = {v: i for i, v in enumerate(sorted(self.EDGE_TYPES))}
-        self.sentence_splitter = SciSpacySentenceSplitter()
+        if small:
+            self.sentence_splitter = SegtokSentenceSplitter()
+        else:
+            self.sentence_splitter = SciSpacySentenceSplitter()
         self.batch_size = batch_size
         self.predict = predict
         self.linearize_events = linearize_events
@@ -744,11 +750,12 @@ class PC13Dataset(BioNLPDataset):
 
     def __init__(self, path: Path, bert_path: Path,
                  batch_size: int = 16, predict=False, trigger_ordering="position",
-                 linearize_events: bool = False, trigger_detector=None):
+                 linearize_events: bool = False, trigger_detector=None, small=False):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
                          linearize_events=linearize_events,
                          trigger_ordering=trigger_ordering,
-                         trigger_detector=trigger_detector
+                         trigger_detector=trigger_detector,
+                         small=small
                          )
 
     def is_valid_argument_type(self, event_type, arg, reftype, refid):
@@ -811,11 +818,12 @@ class GE13Dataset(BioNLPDataset):
 
     def __init__(self, path: Path, bert_path: Path,
                  batch_size: int = 16, predict=False, trigger_ordering="position",
-                 linearize_events: bool = False, trigger_detector=None):
+                 linearize_events: bool = False, trigger_detector=None, small=False):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
                          linearize_events=linearize_events,
                          trigger_ordering=trigger_ordering,
-                         trigger_detector=trigger_detector)
+                         trigger_detector=trigger_detector,
+                         small=small)
 
     def is_valid_argument_type(self, arg, reftype):
         if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):

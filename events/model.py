@@ -132,19 +132,22 @@ class EventExtractor(pl.LightningModule):
             config["bert"],
             linearize_events=self.linearize_events,
             trigger_ordering=config["trigger_ordering"],
-            trigger_detector = self.trigger_detector
+            trigger_detector = self.trigger_detector,
+            small=config["small"]
         )
         self.dev_dataset = DatasetType(
             Path(config["dev"]), config["bert"], linearize_events=self.linearize_events,
             predict=True,
             trigger_ordering=config["trigger_ordering"],
-            trigger_detector = self.trigger_detector
+            trigger_detector = self.trigger_detector,
+            small=config["small"]
         )
         self.test_dataset = DatasetType(
             Path(config["test"]), config["bert"], linearize_events=self.linearize_events,
             predict=True,
             trigger_ordering=config["trigger_ordering"],
-            trigger_detector = self.trigger_detector
+            trigger_detector = self.trigger_detector,
+            small=config["small"]
         )
 
         bert_config = BertConfig.from_pretrained(config["bert"])
@@ -173,55 +176,54 @@ class EventExtractor(pl.LightningModule):
         self.hidden2 = nn.Linear(1000, 1000)
         self.edge_classifier = nn.Linear(1000, len(self.train_dataset.edge_type_to_id))
 
+        def split_args(self, graph):
+            for event in [n for n in graph.nodes if n.startswith("E")]:
+                singular_edges_by_type = defaultdict(set)
+                valid_edges = []
+                event_type = graph.nodes[event]["type"]
+                for u, v, edge_data in graph.out_edges(event, data=True):
+                    edge_type = edge_data["type"]
+                    edge = u, v, edge_type
+                    if (event_type, edge_type) not in self.train_dataset.DUPLICATES_ALLOWED:
+                        singular_edges_by_type[edge_type].add(edge)
+                    else:
+                        valid_edges.append(edge)
 
-    def split_args(self, graph):
-        # TODO check whether this all-combinations strategy yields too many results and leads to bad scores
+                multiple_args_by_type = {}
+                for type, edges in singular_edges_by_type.items():
+                    if len(edges) == 1:
+                        valid_edges.append(list(edges)[0])
+                    else:
+                        multiple_args_by_type[type] = edges
 
-        for event in [n for n in graph.nodes if n.startswith("E")]:
-            singular_edges_by_type = defaultdict(set)
-            valid_edges = []
-            event_type = graph.nodes[event]["type"]
-            for u, v, edge_data in graph.out_edges(event, data=True):
-                edge_type = edge_data["type"]
-                edge = u, v, edge_type
-                if (event_type, edge_type) not in self.train_dataset.DUPLICATES_ALLOWED:
-                    singular_edges_by_type[edge_type].add(edge)
-                else:
-                    valid_edges.append(edge)
+                if multiple_args_by_type.values():
+                    products = list(itertools.product(*multiple_args_by_type.values()))
+                    for product in products:
+                        new_event = get_free_event_id(graph)
+                        graph.add_node(new_event, type=event_type)
 
-            multiple_args_by_type = {}
-            for type, edges in singular_edges_by_type.items():
-                if len(edges) == 1:
-                    valid_edges.append(list(edges)[0])
-                else:
-                    multiple_args_by_type[type] = edges
+                        # add out-edges of new event
+                        for old_event, v, edge_type in itertools.chain(product, valid_edges):
+                            graph.add_edge(new_event, v, type=edge_type)
 
-            if multiple_args_by_type.values():
-                products = list(itertools.product(*multiple_args_by_type.values()))
-                for product in products:
-                    new_event = get_free_event_id(graph)
-                    graph.add_node(new_event, type=event_type)
+                        # add in-edges of old event
+                        for u, old_event, edge_data in graph.in_edges(event, data=True):
+                            edge_type = edge_data["type"]
+                            graph.add_edge(u, new_event, type=edge_type)
 
-                    # add out-edges of new event
-                    for old_event, v, edge_type in itertools.chain(product, valid_edges):
-                        graph.add_edge(new_event, v, type=edge_type)
-
-                    # add in-edges of old event
-                    for u, old_event, edge_data in graph.in_edges(event, data=True):
-                        edge_type = edge_data["type"]
-                        graph.add_edge(u, new_event, type=edge_type)
-
-                # delete old event if we had to split
-                graph.remove_node(event)
-
+                    # delete old event if we had to split
+                    graph.remove_node(event)
 
     def remove_invalid_events(self, graph):
         for event in [n for n in graph.nodes if n.startswith("E")]:
             edge_types = [i[2]["type"] for i in graph.out_edges(event, data=True)]
             event_type = graph.nodes[event]["type"]
+            triggers = [u for u, v, d in graph.in_edges(event, data=True) if d["type"] == "Trigger"]
             if not edge_types:
                 graph.remove_node(event)
             elif "Theme" not in edge_types and event_type not in self.train_dataset.NO_THEME_ALLOWED:
+                graph.remove_node(event)
+            elif not triggers:
                 graph.remove_node(event)
 
     def remove_invalid_edges(self, graph):
@@ -234,15 +236,31 @@ class EventExtractor(pl.LightningModule):
                 if not self.train_dataset.is_valid_argument_type(event_type=event_type, arg=edge_type, reftype=v_type, refid=v):
                     graph.remove_edge(u, v)
 
-    def clean_up_graph(self, graph: nx.DiGraph):
+    def lift_event_edges(self, graph, remove_unlifted):
+        for trigger in [n for n in graph.nodes if n.startswith("T")]:
+            if graph.nodes[trigger]["type"] in self.train_dataset.EVENT_TYPES:
+                events = [v for _, v, d in graph.out_edges(trigger, data=True) if d["type"] == "Trigger"]
+                for u, _, d in list(graph.in_edges(trigger, data=True)):
+                    for event in events:
+                        graph.add_edge(u, event, **d)
+                    if events or remove_unlifted:
+                        graph.remove_edge(u, trigger)
+
+
+    def clean_up_graph(self, graph: nx.DiGraph, remove_unlifted=False,
+                   remove_invalid=False):
         old_nodes = None
         while old_nodes != list(graph.nodes()):
-            lift_event_edges(graph)
-            self.remove_invalid_edges(graph)
+            old_nodes = list(graph.nodes())
+            self.lift_event_edges(graph, remove_unlifted)
+
+            if remove_invalid:
+                self.remove_invalid_edges(graph)
             break_up_cycles(graph)
             self.split_args(graph)
-            self.remove_invalid_events(graph)
-            old_nodes = list(graph.nodes())
+
+            if remove_invalid:
+                self.remove_invalid_events(graph)
 
     def adjacency_matrix_to_edge_types(self, adjacency_matrix,
                                        node_spans_text,
@@ -691,7 +709,10 @@ class EventExtractor(pl.LightningModule):
                             if edge_type != "None":
                                 predicted_graph.add_edge(event_id, edge_trigger, type=edge_type)
 
-                        self.clean_up_graph(predicted_graph)
+                        self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False)
                         a2_event_lines = get_a2_lines_from_graph(predicted_graph)
+
+        self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False)
+        a2_event_lines = get_a2_lines_from_graph(predicted_graph)
 
         return "\n".join(a2_trigger_lines + a2_event_lines)
