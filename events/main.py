@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -15,6 +16,8 @@ from pytorch_lightning.logging import WandbLogger
 from events.model import EventExtractor
 from util.utils import Tee
 
+logging.basicConfig(level=logging.INFO)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=Path, required=True)
@@ -23,6 +26,7 @@ if __name__ == '__main__':
                         help="Overwrite the content of the output directory")
     parser.add_argument('--disable_wandb', action='store_true')
     parser.add_argument('--train', action='store_true')
+    parser.add_argument('--resume', action='store_true')
     parser.add_argument('--dev', action='store_true')
     parser.add_argument('--test', action='store_true')
 
@@ -41,46 +45,47 @@ if __name__ == '__main__':
     os.makedirs(args.output_dir, exist_ok=True)
     shutil.copy(args.config, args.output_dir)
 
-    if config["loss_weight_eg"] > 0:
+    if not config["small"]:
         checkpoint_callback = ModelCheckpoint(filepath=args.output_dir,
-                                              save_weights_only=True,
-                                              verbose=True,
-                                              monitor="val_f1",
-                                              mode="max",
-                                              save_top_k=1)
+                                                  save_weights_only=True,
+                                                  verbose=True,
+                                                  monitor="val_f1",
+                                                  mode="max",
+                                                  save_top_k=1)
     else:
-        checkpoint_callback = ModelCheckpoint(filepath=args.output_dir,
-                                              save_weights_only=True,
-                                              verbose=True,
-                                              monitor="val_f1_td",
-                                              mode="max",
-                                              save_top_k=1)
+        checkpoint_callback = None
 
 
     logger = []
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
-    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1,
+    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=100,
                          checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
+                         num_sanity_val_steps=0
                          )
     if args.train:
-        with Tee(args.output_dir/"train.log", "w"):
+        # with Tee(args.output_dir/"train.log", "w"):
+        if args.resume:
+            latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+            model = EventExtractor.load_from_checkpoint(latest_checkpoint, config=config)
+        else:
             model = EventExtractor(config=config)
-            trainer.fit(model)
+        trainer.fit(model)
 
     if args.dev:
         latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
-        latest_checkpoint = torch.load(latest_checkpoint)
+        print("loading " + str(latest_checkpoint))
+        # latest_checkpoint = torch.load(latest_checkpoint)
 
         with Tee(args.output_dir/"test.log", "w"):
-            model = EventExtractor(config=config)
-            model.load_state_dict(latest_checkpoint["state_dict"], strict=False)
+            model = EventExtractor.load_from_checkpoint(latest_checkpoint, config=config)
+            # model.load_state_dict(latest_checkpoint["state_dict"], strict=False)
             # model.trigger_detector = SequenceTagger.load(config["trigger_detector"])
-            # trainer.test(model, model.val_dataloader())
-            model.validation_step = model.validation_step_gold
-            model.dev_dataset.predict = False
-            model.validation_epoch_end = model.validation_epoch_end_gold
-            trainer.test(model, model.val_gold_dataloader())
+            trainer.test(model, model.val_dataloader())
+            # model.validation_step = model.validation_step_gold
+            # model.dev_dataset.predict = False
+            # model.validation_epoch_end = model.validation_epoch_end_gold
+            # trainer.test(model, model.val_gold_dataloader())
 
     if args.test:
         latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]

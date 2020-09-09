@@ -9,5 +9,5 @@
   "trigger_ordering": "position",
   "loss_weight_td": 1,
   "loss_weight_eg": 1,
-  "small": false
+  "small": true
 }

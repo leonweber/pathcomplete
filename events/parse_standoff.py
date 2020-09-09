@@ -3,6 +3,8 @@ import re
 import copy
 import networkx as nx
 
+from util.utils import overlaps
+
 ENTITY_TRIGGER_TYPES = ['complex',
  'dna',
  'drug',
@@ -47,7 +49,8 @@ EVENT_TRIGGER_TYPES = ['conversion',
  'transport',
  'hydroxylation',
  'dehydroxylation',
- 'protein_modification'
+ 'protein_modification',
+ 'none'
                        ]
 
 
@@ -260,10 +263,10 @@ def parse_a1_a2( a1_file_path, a2_file_path):
 def events_to_nx(events, triggers):
     G = nx.DiGraph()
     for trigger in triggers.values():
-        G.add_node(trigger.id, type=trigger.type)
+        G.add_node(trigger.id, type=trigger.type, text=trigger.text, span=(trigger.start, trigger.end))
     for event in events.values():
         G.add_node(event.id, type=event.type)
-        G.add_edge(event.trigger.id, event.id, type="Trigger")
+        G.add_edge(event.id, event.trigger.id, type="Trigger")
         for role, dst in event.roles:
             G.add_edge(event.id, dst.id, type=role)
     return G
@@ -273,7 +276,7 @@ def events_to_text_graph(events, triggers):
     G = nx.DiGraph()
     added_signatures = set()
     for trigger in triggers.values():
-        G.add_node(trigger.id, type=trigger.type)
+        G.add_node(trigger.id, type=trigger.type, text=trigger.text, span=(trigger.start, trigger.end))
     for event in events.values():
         event_signature = [(event.trigger.id, "Trigger")]
         for role, dst in event.roles:
@@ -287,7 +290,7 @@ def events_to_text_graph(events, triggers):
         if event_signature not in added_signatures:
             added_signatures.add(event_signature)
             G.add_node(event.id, type=event.type)
-            G.add_edge(event.trigger.id, event.id, type="Trigger")
+            G.add_edge(event.id, event.trigger.id, type="Trigger")
             for role, dst in event.roles:
                 if dst.id in triggers:
                     trigger_id = dst.id
@@ -304,4 +307,40 @@ class StandoffAnnotation:
         self.text_graph = events_to_text_graph(self.events, self.triggers)
         self.a1_lines = a1_lines
         self.a2_lines = a2_lines
+
+    def contains_event(self, event):
+        trigger_span = (event.trigger.start, event.trigger.end)
+        for event_cand in self.events.values():
+            if event_cand.type != event_cand.type:
+                continue
+
+            if not overlaps((event_cand.trigger.start, event_cand.trigger.end),
+                            trigger_span):
+                continue
+
+            matched_roles = []
+            for _, role in event.roles:
+                try:
+                    role_pos = (role.start, role.end)
+                except AttributeError:
+                    role_pos = (role.trigger.start, role.trigger.end)
+
+                for _, role_cand in event_cand.roles:
+                    try:
+                        role_cand_pos = (role_cand.start, role_cand.end)
+                    except AttributeError:
+                        role_cand_pos = (role_cand.trigger.start, role_cand.trigger.end)
+
+                    if overlaps(role_pos, role_cand_pos):
+                        matched_roles.append(role)
+                        break
+
+            if len(matched_roles) == len(event.roles):
+                return True
+
+        return False
+
+
+
+
 

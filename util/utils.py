@@ -6,10 +6,13 @@ class Tee:
 
     def __enter__(self):
         self.stdout = sys.stdout
+        self.stderr = sys.stderr
         sys.stdout = self
+        sys.stderr = self
 
     def __exit__(self, type, value, traceback):
         sys.stdout = self.stdout
+        sys.stderr = self.stderr
         self.file.close()
 
     def write(self, data):
@@ -18,3 +21,8 @@ class Tee:
 
     def flush(self):
         self.file.flush()
+
+def overlaps(a, b):
+    a = [int(i) for i in a]
+    b = [int(i) for i in b]
+    return max(0, min(a[1], b[1]) - max(a[0], b[0]))

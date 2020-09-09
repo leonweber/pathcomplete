@@ -16,11 +16,11 @@ from events import consts
 from events.parse_standoff import StandoffAnnotation
 
 THIRD_PARTY_DIR = Path(__file__).parent / '3rd_party'
-logging.basicConfig(level=logging.DEBUG)
 
 def get_statistics_from_ann(ann_pred, ann_gold):
-    triggers_pred = {(i.start, i.end, i.type, i.text) for i in ann_pred.triggers.values()}
-    triggers_gold = {(i.start, i.end, i.type, i.text) for i in ann_gold.triggers.values()}
+    entity_triggers = set(i.id for i in ann_gold.entity_triggers)
+    triggers_pred = {(i.start, i.end, i.type, i.text) for k, i in ann_pred.triggers.items() if k not in entity_triggers}
+    triggers_gold = {(i.start, i.end, i.type, i.text) for k, i in ann_gold.triggers.items() if k not in entity_triggers}
 
     tp = triggers_gold & triggers_pred
     fp = triggers_pred - triggers_gold
@@ -51,12 +51,19 @@ class Evaluator:
 
         for a2_file in Path(self.data_dir).glob("*.a2"):
             with a2_file.open() as f:
-                ann_gold = StandoffAnnotation(a1_lines=[], a2_lines=f.readlines())
+                a2_lines = f.readlines()
+
+            with a2_file.with_suffix(".a1").open() as f:
+                a1_lines = f.readlines()
+
+            ann_gold = StandoffAnnotation(a1_lines=a1_lines, a2_lines=a2_lines)
+
             if a2_file.with_suffix(".txt").name in predicted_a2:
                 lines_pred = predicted_a2[a2_file.with_suffix(".txt").name].split("\n")
             else:
-                lines_pred = []
-            ann_pred = StandoffAnnotation(a1_lines=[],
+                continue
+
+            ann_pred = StandoffAnnotation(a1_lines=a1_lines,
                                           a2_lines=lines_pred)
             for k, v in get_statistics_from_ann(ann_pred, ann_gold).items():
                 statistics[k] += v
@@ -87,7 +94,7 @@ class Evaluator:
                 print(line)
             match = re.match(self.result_re, line)
             if match:
-                p, r, f = float(match.group(1)), float(match.group(2)), float(match.group(3))
+                r, p, f = float(match.group(1)), float(match.group(2)), float(match.group(3))
                 if p == r == f == 100:
                     p = r = f = 0.0
         try:

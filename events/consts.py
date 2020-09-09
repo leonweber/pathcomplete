@@ -25,7 +25,8 @@ PC13_EDGE_TYPES_TO_MOD = {
 }
 PC13_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 PC13_EVAL_SCRIPT = 'evaluation-PC.py'
-PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product")}
+PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product"),
+                           ("Pathway", "Participant")}
 PC13_NO_THEME_ALLOWED = {"Conversion", "Pathway", "Binding", "Dissociation"}
 PC13_MOLECULE = {"Simple_chemical", "Gene_or_gene_product", "Complex"}
 
