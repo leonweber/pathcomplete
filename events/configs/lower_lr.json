@@ -5,11 +5,8 @@
   "dev": "events/data/BioNLP-ST_2013_PC_development_data",
   "test": "events/data/BioNLP-ST_2013_PC_test_data",
   "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
-  "trigger_detector": "events/trigger_detection_models/bionlp2013_pc_triggers/best-model.pt",
-  "trigger_ordering": "position",
-  "loss_weight_td": 1,
-  "loss_weight_eg": 1,
+  "small": false,
   "use_dagger": false,
   "lr": 3e-5,
-  "small": false
+  "event_order": "position"
 }

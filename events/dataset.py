@@ -18,7 +18,7 @@ from events import consts
 from events.parse_standoff import StandoffAnnotation
 
 
-MAX_LEN = 256 + 128
+MAX_LEN = 312
 
 
 def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
@@ -140,7 +140,8 @@ def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None
 
 
 def get_event_linearization(graph, tokenizer, node_type_to_id,
-                            edge_types_to_mod, event_ordering, known_events=None):
+                            edge_types_to_mod, event_ordering, known_events=None,
+                            known_triggers=None):
     linearization = ""
     node_char_spans = []
     node_types = []
@@ -168,7 +169,9 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
                 linearization=linearization,
                 node_char_spans=node_char_spans,
                 node_types=node_types,
-                node_ids=node_ids)
+                node_ids=node_ids,
+                known_nodes=known_triggers
+            )
 
             linearization += " causes"
 
@@ -179,7 +182,9 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
             linearization=linearization,
             node_char_spans=node_char_spans,
             node_types=node_types,
-            node_ids=node_ids)
+            node_ids=node_ids,
+            known_nodes=known_triggers
+        )
 
         if "Theme" in edge_type_to_trigger:
             themes = sorted(edge_type_to_trigger["Theme"])
@@ -193,7 +198,9 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
                 linearization=linearization,
                 node_char_spans=node_char_spans,
                 node_types=node_types,
-                node_ids=node_ids)
+                node_ids=node_ids,
+                known_nodes=known_triggers
+            )
 
             for trigger in themes[1:]:
                 linearization += " and"
@@ -203,7 +210,9 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
                     linearization=linearization,
                     node_char_spans=node_char_spans,
                     node_types=node_types,
-                    node_ids=node_ids)
+                    node_ids=node_ids,
+                    known_nodes=known_triggers
+                )
 
         # add rest
         for edge_type, mod in sorted(edge_types_to_mod.items()):
@@ -218,7 +227,9 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
                     linearization=linearization,
                     node_char_spans=node_char_spans,
                     node_types=node_types,
-                    node_ids=node_ids)
+                    node_ids=node_ids,
+                    known_nodes=known_triggers
+                )
 
                 for trigger in triggers[1:]:
                     linearization += " and"
@@ -229,7 +240,9 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
                         linearization=linearization,
                         node_char_spans=node_char_spans,
                         node_types=node_types,
-                        node_ids=node_ids)
+                        node_ids=node_ids,
+                        known_nodes=known_triggers
+                    )
 
 
         linearization += " |"
@@ -248,9 +261,12 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
 
 
 def add_text_to_linearization(graph, linearization, node_char_spans, node_types, node_ids,
-                              node_id):
+                              node_id, known_nodes):
     text = graph.nodes[node_id]["text"]
-    node_type = graph.nodes[node_id]["type"]
+    if known_nodes is None or node_id in known_nodes:
+        node_type = graph.nodes[node_id]["type"]
+    else:
+        node_type = "None"
     start = len(linearization) + 1
     end = start + len(text)
     node_char_spans.append((start, end))
@@ -262,17 +278,6 @@ def add_text_to_linearization(graph, linearization, node_char_spans, node_types,
     return linearization
 
 
-def get_triggers(sent, ann: StandoffAnnotation):
-    entity_trigger_ids = []
-    event_trigger_ids = []
-    for trigger_id, trigger in ann.triggers.items():
-        if sent.end_pos > int(trigger.start) >= sent.start_pos:
-            if trigger in ann.entity_triggers:
-                entity_trigger_ids.append(trigger_id)
-            else:
-                event_trigger_ids.append(trigger_id)
-
-    return entity_trigger_ids, event_trigger_ids
 
 def get_events(sent, ann):
     events = []
@@ -285,18 +290,19 @@ def get_events(sent, ann):
 
 
 
-def get_trigger_to_position(sent, ann: StandoffAnnotation):
+def get_trigger_to_position(sent, graph):
     trigger_to_position = {}
-    for trigger_id, trigger in ann.triggers.items():
-        if sent.end_pos > int(trigger.start) >= sent.start_pos:
-            trigger_to_position[trigger_id] = (int(trigger.start) - sent.start_pos,
-                                               int(trigger.end) - sent.start_pos)
+    for n, d in graph.nodes(data=True):
+        if n.startswith("T"):
+            trigger_to_position[n] = (int(d["span"][0]) - sent.start_pos,
+                                      int(d["span"][1]) - sent.start_pos)
     return trigger_to_position
 
 
-def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length, nodes,
-                                     trigger_to_position, node_type_to_id, ann,
-                                     return_token_starts=False):
+def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length,
+                                     graph, node_type_to_id, trigger_to_position,
+                                     return_token_starts=False, known_triggers=None):
+
     if trigger_pos:
         marker_start, marker_end = trigger_pos
         marked_text = text[:marker_start] + "@ " + text[ marker_start:marker_end] + " @" + text[
@@ -310,16 +316,16 @@ def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length, n
     token_starts = [i for i, _
                      in tokenizer.encode_plus(text, return_offsets_mapping=True,
                                               add_special_tokens=True)["offset_mapping"]]
-    node_spans = get_trigger_spans(triggers=nodes, token_starts=token_starts[1:-1],
+    node_spans = get_trigger_spans(triggers=sorted(trigger_to_position),
+                                   token_starts=token_starts[1:-1],
                                    marker_start=marker_start, marker_end=marker_end,
                                    trigger_to_position=trigger_to_position, text=text,
                                    encoding_text=encoding_text, tokenizer=tokenizer)
     node_types_text = torch.zeros(len(encoding_text["input_ids"]))
     node_types_text[:] = node_type_to_id["None"]
-    for node, span in zip(nodes, node_spans):
-        node = ann.triggers[node]
-        node_types_text[span[0]:span[1]] = node_type_to_id[node.type]
-
+    for node, span in zip(sorted(trigger_to_position), node_spans):
+        if known_triggers is None or node in known_triggers:
+            node_types_text[span[0]:span[1]] = node_type_to_id[graph.nodes[node]["type"]]
 
     if not return_token_starts:
         return encoding_text, node_spans, node_types_text
@@ -464,12 +470,13 @@ class BioNLPDataset:
 
     def __init__(self, path: Path, tokenizer: Path,
                  linearize_events: bool = False, batch_size: int = 16, predict: bool = False,
-                 predict_entities: bool = False,
+                 predict_entities: bool = False, event_order: str = "position",
                  max_span_width: int = 10, small=False
                  ):
         self.text_files = [f for f in path.glob('*.txt')]
         if small:
-            self.text_files = self.text_files[3:4]
+            # self.text_files = [i for i in self.text_files if "PMID-10551809" in str(i)]
+            self.text_files = self.text_files[:3]
 
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
@@ -479,8 +486,10 @@ class BioNLPDataset:
         self.edge_type_to_id = {v: i for i, v in enumerate(sorted(self.EDGE_TYPES))}
         self.label_to_id = {"O": 0}
         for edge_type in sorted(self.EDGE_TYPES) + sorted(self.EVENT_TYPES):
-            self.label_to_id["B-" + edge_type] = len(self.label_to_id)
-            self.label_to_id["I-" + edge_type] = len(self.label_to_id)
+            if "B-" + edge_type not in self.label_to_id:
+                self.label_to_id["B-" + edge_type] = len(self.label_to_id)
+            if "I-" + edge_type not in self.label_to_id:
+                self.label_to_id["I-" + edge_type] = len(self.label_to_id)
 
         if small:
             self.sentence_splitter = SegtokSentenceSplitter()
@@ -492,13 +501,12 @@ class BioNLPDataset:
         self.predict_entities = predict_entities
         self.max_span_width = max_span_width
 
-        # if trigger_ordering  == "id":
-        #     self.event_ordering = lambda x, y: x
-        # elif trigger_ordering == "position":
-        #     self.event_ordering = self.sort_triggers_by_position
-        # elif trigger_ordering == "simple_first":
-        #     self.event_ordering = self.sort_triggers_by_simple_first
-        self.event_ordering = self.sort_events_by_position
+        if event_order == "id":
+            self.event_ordering = self.sort_events_by_id
+        elif event_order == "position":
+            self.event_ordering = self.sort_events_by_position
+        else:
+            raise ValueError(event_order)
 
         self.tokenizer = transformers.BertTokenizerFast.from_pretrained(str(tokenizer))
         self.tokenizer.add_special_tokens({'additional_special_tokens': ["@"]})
@@ -523,7 +531,7 @@ class BioNLPDataset:
                 self.ann_by_fname[file.name] = ann
 
         self.fnames = sorted(self.predict_example_by_fname)
-        # self.print_statistics()
+        self.print_statistics()
 
     def print_statistics(self):
         if not self.predict:
@@ -536,6 +544,23 @@ class BioNLPDataset:
                     n_cross_sentence += 1
             print(f"{n_truncated}/{len(self)} truncated")
             print(f"{n_cross_sentence}/{len(self)} cross sentence")
+
+    def get_triggers(self, sent, graph):
+        entity_triggers = []
+        event_triggers = []
+        for n, d in graph.nodes(data=True):
+            if n.startswith("T"):
+                if not (sent.end_pos > int(d["span"][0]) >= sent.start_pos):
+                    continue
+
+                if d["type"] in self.EVENT_TYPES:
+                    event_triggers.append(n)
+                elif d["type"] in self.ENTITY_TYPES:
+                    entity_triggers.append(n)
+                else:
+                    raise ValueError((n, d["type"]))
+
+        return entity_triggers, event_triggers
 
     def sort_events_by_position(self, text_graph):
         n_max_roles = 10
@@ -569,6 +594,10 @@ class BioNLPDataset:
             sorted_events += sort_tuple_to_events[sort_tuple]
 
         return sorted_events
+
+    def sort_events_by_id(self, graph):
+        events = [n for n in graph.nodes if n.startswith("E")]
+        return sorted(events)
 
     def sort_triggers_by_simple_first(self, triggers, ann):
         triggers_with_info = []
@@ -627,12 +656,12 @@ class BioNLPDataset:
         examples = []
 
         for sentence in self.sentence_splitter.split(text):
-            entity_triggers, event_triggers = get_triggers(sentence, ann)
-            trigger_to_position = get_trigger_to_position(sentence, ann)
+            graph = filter_graph_to_sentence(ann.text_graph, sentence)
+            entity_triggers, event_triggers = self.get_triggers(sentence, graph)
+            trigger_to_position = get_trigger_to_position(sentence, graph)
 
             known_events = []
 
-            graph = filter_graph_to_sentence(ann.text_graph, sentence)
 
             for event in self.event_ordering(graph):
                 example = self.build_example(ann=ann,
@@ -659,36 +688,42 @@ class BioNLPDataset:
                                          known_events=known_events)
             examples.append(example)
 
-        for example in examples:
-            self.print_example(example)
+        # for example in examples:
+        #     self.print_example(example)
         return examples
 
 
     def build_example(self, ann, entity_triggers, event,
                       event_triggers, graph, sentence,
-                      trigger_to_position, known_events, encoding_graph=None):
+                      trigger_to_position, known_events, encoding_graph=None,
+                      ):
         example = {}
+
+        known_triggers = set(entity_triggers + [ann.events[i].trigger.id for i in known_events])
         if encoding_graph is None:
-            encoding_graph = get_event_linearization(
-                graph=graph, edge_types_to_mod=self.EDGE_TYPES_TO_MOD, known_events=known_events,
-                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id, event_ordering=self.event_ordering)[0]
+            encoding_graph, node_types_graph = get_event_linearization(
+                graph=graph, edge_types_to_mod=self.EDGE_TYPES_TO_MOD, known_events=known_events, known_triggers=known_triggers,
+                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id, event_ordering=self.event_ordering)[:2]
 
         remaining_length = MAX_LEN - len(encoding_graph["input_ids"])
+        trigger_to_position = get_trigger_to_position(sentence, graph)
 
         encoding_text, node_spans_text, node_types_text = get_text_encoding_and_node_spans(
             text=sentence.to_original_text(),
             tokenizer=self.tokenizer,
             max_length=remaining_length,
-            nodes=entity_triggers + event_triggers,
             node_type_to_id=self.node_type_to_id,
-            ann=ann,
+            trigger_to_position=trigger_to_position,
             trigger_pos=None,
-            trigger_to_position=trigger_to_position)
+            graph=graph,
+            known_triggers=known_triggers
+        )
 
         input_ids = torch.cat([torch.tensor(encoding_text["input_ids"]),
                                torch.tensor(encoding_graph["input_ids"])])
         token_type_ids = torch.zeros(input_ids.size(0))
         token_type_ids[len(encoding_text["input_ids"]):] = 1
+        node_types = torch.cat([node_types_text, node_types_graph])
 
         trigger_to_span = {}
         for trigger, span in zip(entity_triggers + event_triggers, node_spans_text):
@@ -719,11 +754,21 @@ class BioNLPDataset:
         example["token_type_ids"] = token_type_ids
         example["labels"] = labels
         example["cross_sentence"] = cross_sentence
+        example["node_type_ids"] = node_types
+
+        id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
+
+        foo = []
+        for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()), node_types):
+            foo.append((tok, id_to_node_type[nt.item()]))
+        print(foo[:20])
+        print(foo[-20:])
+
         return example
 
     @staticmethod
     def collate_fn(examples):
-        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "span_mask", "td_labels"}
+        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "node_type_ids"}
         batch = defaultdict(list)
         for example in examples:
             for k, v in example.items():
@@ -741,39 +786,39 @@ class BioNLPDataset:
         return batched_batch
 
     def add_dagger_examples(self, examples, dry_run=False):
-        pass
-        # n_added = 0
-        # existing_trajectories = set(self.example_to_trajectory(i) for i in self.examples)
-        # for pred_example in examples:
-        #     ann_true = self.ann_by_fname[pred_example["fname"][0]]
-        #
-        #     ann_pred = pred_example["ann"][0]
-        #     sentence = pred_example["sentence"][0]
-        #     encoding_graph = pred_example["encoding_graph"][0]
-        #     entity_triggers, event_triggers = get_triggers(sentence, ann_true)
-        #     trigger_to_position = get_trigger_to_position(sentence, ann_true)
-        #     for event in self.event_ordering(ann_true.events.values()):
-        #         if event.trigger.id not in trigger_to_position:
-        #             continue
+        n_added = 0
+        existing_trajectories = set(self.example_to_trajectory(i) for i in self.examples)
+        for pred_example in examples:
+            ann_true = self.ann_by_fname[pred_example["fname"][0]]
 
-                # if not ann_pred.contains_event(event):
-                #     example = self.build_example(ann=ann_true,
-                #                        entity_triggers=entity_triggers,
-                #                        event=event,
-                #                        event_triggers=event_triggers,
-                #                        graph=graph,
-                #                        sentence=sentence,
-                #                        trigger_to_position=trigger_to_position,
-                #                        encoding_graph=encoding_graph
-                #                        )
-                #     if self.example_to_trajectory(example) not in existing_trajectories:
-                #         n_added += 1
-                #         if not dry_run:
-                #             self.examples.append(example)
-                #         self.print_example(example)
-                #     break
+            ann_pred = pred_example["ann"][0]
+            sentence = pred_example["sentence"][0]
+            encoding_graph = pred_example["encoding_graph"][0]
+            graph_pred = filter_graph_to_sentence(ann_pred.text_graph, sentence)
+            graph_true = filter_graph_to_sentence(ann_true.text_graph, sentence)
+            entity_triggers, event_triggers = self.get_triggers(sentence, graph_true)
+            known_events = [n for n in graph_pred.nodes if n.startswith("E")]
+            trigger_to_position = get_trigger_to_position(sentence, ann_true)
+            for event in self.event_ordering(graph_true):
+                event = ann_true.events[event]
+                if not ann_pred.contains_event(event):
+                    example = self.build_example(ann=ann_true, entity_triggers=entity_triggers,
+                                       event=event.id,
+                                       event_triggers=event_triggers,
+                                       graph=graph_true,
+                                       sentence=sentence,
+                                       trigger_to_position=trigger_to_position,
+                                       encoding_graph=encoding_graph,
+                                       known_events=known_events
+                                       )
+                    if self.example_to_trajectory(example) not in existing_trajectories:
+                        n_added += 1
+                        if not dry_run:
+                            self.examples.append(example)
+                        # self.print_example(example)
+                    break
 
-        # logging.info(f"Added {n_added} new examples from Dagger")
+        logging.info(f"Added {n_added} new examples from Dagger")
 
     def example_to_trajectory(self, example):
         tokens = "".join(self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
@@ -793,10 +838,10 @@ class PC13Dataset(BioNLPDataset):
     EDGE_TYPES_TO_MOD = consts.PC13_EDGE_TYPES_TO_MOD
 
     def __init__(self, path: Path, bert_path: Path,
-                 batch_size: int = 16, predict=False,
+                 batch_size: int = 16, predict=False, event_order="position",
                  linearize_events: bool = False, small=False):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events,
+                         linearize_events=linearize_events, event_order=event_order,
                          small=small
                          )
 
@@ -862,10 +907,10 @@ class GE13Dataset(BioNLPDataset):
     EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
 
     def __init__(self, path: Path, bert_path: Path,
-                 batch_size: int = 16, predict=False,
+                 batch_size: int = 16, predict=False, event_order="position",
                  linearize_events: bool = False,  small=False):
         super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events,
+                         linearize_events=linearize_events, event_order=event_order,
                          small=small)
 
     def is_valid_argument_type(self, arg, reftype):

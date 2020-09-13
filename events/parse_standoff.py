@@ -296,7 +296,8 @@ def events_to_text_graph(events, triggers):
                     trigger_id = dst.id
                 else:
                     trigger_id = events[dst.id].trigger.id
-                G.add_edge(event.id, trigger_id, type=role)
+                if trigger_id != event.trigger.id: # No self-loops
+                    G.add_edge(event.id, trigger_id, type=role)
     return G
 
 

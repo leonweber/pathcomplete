@@ -668,7 +668,6 @@ class BertGNNModel(BertPreTrainedModel):
         self,
         input_ids=None,
         attention_mask=None,
-        #edge_type_ids=None,
         token_type_ids=None,
         node_type_ids=None,
         position_ids=None,

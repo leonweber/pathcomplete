@@ -7,7 +7,8 @@
   "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
   "trigger_detector": "events/trigger_detection_models/bionlp2013_pc_triggers/best-model.pt",
   "trigger_ordering": "position",
-  "loss_weight_td": 1,
-  "loss_weight_eg": 1,
-  "small": true
+  "small": true,
+  "use_dagger": false,
+  "lr": 3e-5,
+  "event_order": "position"
 }

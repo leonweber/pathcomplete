@@ -12,6 +12,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from flair.models import SequenceTagger
+from pytorch_lightning.trainer.trainer import _PatchDataLoader
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import BertForTokenClassification, BertTokenizerFast, BertConfig
@@ -23,7 +24,6 @@ from events.dataset import (
     PC13Dataset,
     GE13Dataset,
     get_text_encoding_and_node_spans,
-    get_triggers,
     get_trigger_to_position,
     get_event_linearization,
     get_event_graph,
@@ -106,28 +106,29 @@ class EventExtractor(pl.LightningModule):
         self.dev_path = config["dev"]
         self.linearize_events = config["linearize"]
         self.output_dir = config["output_dir"]
+        self.use_dagger = config["use_dagger"]
+        self.lr = config["lr"]
 
         DatasetType = get_dataset_type(config["train"])
 
-        self.dropout = nn.Dropout(0.2)
 
         self.train_dataset = DatasetType(
             Path(config["train"]),
             config["bert"],
             linearize_events=self.linearize_events,
-            # trigger_ordering=config["trigger_ordering"],
+            event_order=config["event_order"],
             small=config["small"]
         )
         self.dev_dataset = DatasetType(
             Path(config["dev"]), config["bert"], linearize_events=self.linearize_events,
             predict=True,
-            # trigger_ordering=config["trigger_ordering"],
+            event_order=config["event_order"],
             small=config["small"]
         )
         self.test_dataset = DatasetType(
             Path(config["test"]), config["bert"], linearize_events=self.linearize_events,
             predict=True,
-            # trigger_ordering=config["trigger_ordering"],
+            event_order=config["event_order"],
             small=config["small"]
         )
 
@@ -136,9 +137,12 @@ class EventExtractor(pl.LightningModule):
         }
 
         bert_config = BertConfig.from_pretrained(config["bert"])
-        bert_config.num_labels = len(self.id_to_label_type)
-        bert_config.hidden_dropout_prob = 0.0
-        self.bert = BertForTokenClassification.from_pretrained(config["bert"], config=bert_config)
+        bert_config.num_labels = max(self.id_to_label_type) + 1
+        bert_config.node_type_vocab_size = len(self.train_dataset.node_type_to_id)
+        self.bert = BertGNNModel.from_pretrained(config["bert"], config=bert_config)
+        # self.bert = BertForTokenClassification.from_pretrained(config["bert"], config=bert_config)
+        self.dropout = nn.Dropout(0.1)
+        self.token_classifier = nn.Linear(768, bert_config.num_labels)
         self.tokenizer = BertTokenizerFast.from_pretrained(config["bert"])
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
@@ -305,39 +309,17 @@ class EventExtractor(pl.LightningModule):
             input_ids=batch["input_ids"].long(),
             attention_mask=attention_mask,
             token_type_ids=batch["token_type_ids"].long(),
+            node_type_ids=batch["node_type_ids"].long()
         )[0]
 
-        return xs
+        # return xs
 
+        xs = self.dropout(xs)
 
-    def forward_triggers(
-            self,
-            batch
-    ):
+        token_logits = self.token_classifier(xs)
 
-        embeddings = self.bert(
-            batch["td_input_ids"], attention_mask=batch["td_attention_mask"],
-        )[0]
-        span_embeddings = []
-        span_starts = []
-        span_ends = []
-        embeddings_t = embeddings.transpose(1,2)
-        for pool in self.span_poolings:
-            span_width = pool.kernel_size[0]
-            pooled_embeddings = pool(embeddings_t).transpose(1,2)
-            start_embeddings = embeddings[:, :pooled_embeddings.size(1)]
-            end_embeddings = embeddings[:, span_width-1:]
-            span_embedding = torch.cat([start_embeddings, pooled_embeddings, end_embeddings], dim=2)
-            span_embeddings.append(span_embedding)
-            span_starts.append(torch.arange(0, pooled_embeddings.size(1)).repeat([pooled_embeddings.size(0), 1]))
-            span_ends.append(torch.arange(span_width, embeddings.size(1)+1).repeat([pooled_embeddings.size(0), 1]))
-        span_embeddings = torch.cat(span_embeddings, dim=1)
-        span_starts = torch.cat(span_starts, dim=1)
-        span_ends = torch.cat(span_ends, dim=1)
+        return token_logits
 
-        return {"logits": self.trigger_classifier(span_embeddings),
-                "span_starts": span_starts,
-                "span_ends": span_ends}
 
     def training_step(self, batch, batch_idx):
         batch_logits = self.forward(batch)
@@ -358,7 +340,7 @@ class EventExtractor(pl.LightningModule):
         return {"loss": loss, "log": log}
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=5e-5)
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
 
     def train_dataloader(self):
         loader = DataLoader(
@@ -554,18 +536,9 @@ class EventExtractor(pl.LightningModule):
         logging.debug("Predicting " + fname)
         for sentence in sentences:
             for i_generated in range(self.max_events_per_trigger):
-                ann = StandoffAnnotation(a1_lines, a2_lines)
-                entity_triggers, event_triggers = get_triggers(sentence, ann)
-                event_ids_in_sentence = []
-
-                event_to_trigger = {}
-                for event in ann.events.values():
-                    event_to_trigger[event.id] = event.trigger.id
-
-                    if event.trigger.id in event_triggers:
-                        event_ids_in_sentence.append(event.id)
-
+                # ann = StandoffAnnotation(a1_lines, a2_lines)
                 graph = filter_graph_to_sentence(predicted_graph, sentence)
+                entity_triggers, event_triggers = self.train_dataset.get_triggers(sentence, graph)
 
                 (
                     encoding_graph,
@@ -581,16 +554,15 @@ class EventExtractor(pl.LightningModule):
                 if remaining_length <= 0:
                     print("Graph is too large for MAX_LENGTH. Skipping...")
                     continue
-                node_spans_graph = [(a + remaining_length, b + remaining_length) for a,b in node_spans_graph] # because we will append them to the text encoding
-                trigger_to_position = get_trigger_to_position(sentence, ann)
+
+                trigger_to_position = get_trigger_to_position(sentence, graph)
                 encoding_text, node_spans_text, node_types_text, token_starts = get_text_encoding_and_node_spans(
                     text=sentence.to_original_text(),
                     trigger_pos=None,
                     tokenizer=self.tokenizer,
                     max_length=remaining_length,
-                    nodes=entity_triggers + event_triggers,
+                    graph=graph,
                     trigger_to_position=trigger_to_position,
-                    ann=ann,
                     node_type_to_id=self.train_dataset.node_type_to_id,
                     return_token_starts=True
                 )
@@ -603,23 +575,33 @@ class EventExtractor(pl.LightningModule):
                                        torch.tensor(encoding_graph["input_ids"])]).unsqueeze(0).to(self.device)
                 current_batch["token_type_ids"] = torch.zeros_like(current_batch["input_ids"]).to(self.device)
                 current_batch["token_type_ids"][:, len(encoding_text["input_ids"]):] = 1
+                current_batch["node_type_ids"] = torch.cat([node_types_text, node_types_graph]).unsqueeze(0).to(self.device)
                 current_batch["ann"] = [ann]
                 current_batch["sentence"] = [sentence]
                 current_batch["encoding_graph"] = [encoding_graph]
                 current_batch["fname"] = [fname]
+
+                foo = []
+                id_to_node_type = {v: k for k, v in self.train_dataset.node_type_to_id.items()}
+                for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(current_batch["input_ids"][0].tolist()), current_batch["node_type_ids"][0]):
+                    foo.append((tok, id_to_node_type[nt.item()]))
 
                 if return_batches:
                     batches.append(current_batch)
 
                 logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
 
-                logits = self(current_batch)
+                logits = self(current_batch).cpu()
+
                 edge_types = self.get_edge_types_from_logits(logits=logits,
                                                              input_ids=current_batch["input_ids"],
                                                              trigger_ids=entity_triggers + event_triggers,
                                                              trigger_spans=node_spans_text,
                                                              token_starts=token_starts)
-                logging.debug(edge_types)
+                pretty_edge_types = {}
+                for k, v in edge_types.items():
+                    pretty_edge_types[text[k[0]:k[1]]] = v
+                logging.debug(pretty_edge_types)
 
                 if not edge_types:
                     break
@@ -665,27 +647,27 @@ class EventExtractor(pl.LightningModule):
     def training_epoch_end( self, outputs ):
         self.i += 1
 
-        if self.i % 100 == 0:
+        if self.use_dagger or self.i % 5 == 0:
             self.eval()
             with torch.no_grad():
-                for example in self.train_dataset.examples:
-                    foo = {}
-                    foo["input_ids"] = example["input_ids"].unsqueeze(0).to(self.device)
-                    foo["token_type_ids"] = example["token_type_ids"].unsqueeze(0).to(self.device)
-                    seq1_end = torch.where(example["input_ids"] == self.tokenizer.sep_token_id)[0][0]
-                    labels_pred = self.forward(foo)[0].argmax(dim=1).cpu()
-                    if (labels_pred[:seq1_end] != example["labels"][:seq1_end]).any():
-                        foo["input_ids"] = example["input_ids"]
-                        foo["labels"] = labels_pred
-                        self.train_dataset.print_example(example)
-                        self.train_dataset.print_example(foo)
-                        print()
+                # for example in self.train_dataset.examples:
+                #     foo = {}
+                #     foo["input_ids"] = example["input_ids"].unsqueeze(0).to(self.device)
+                #     foo["token_type_ids"] = example["token_type_ids"].unsqueeze(0).to(self.device)
+                #     seq1_end = torch.where(example["input_ids"] == self.tokenizer.sep_token_id)[0][0]
+                #     labels_pred = self.forward(foo)[0].argmax(dim=1).cpu()
+                #     if (labels_pred[:seq1_end] != example["labels"][:seq1_end]).any():
+                #         foo["input_ids"] = example["input_ids"]
+                #         foo["labels"] = labels_pred
+                #         self.train_dataset.print_example(example)
+                #         self.train_dataset.print_example(foo)
+                #         print()
                 predictions = {}
                 all_batches = []
                 for fname, text, ann in tqdm(self.train_dataset.predict_example_by_fname.values(),
                                              desc="Evaluating on train"):
                     predictions[fname], batches = self.predict(text, ann, fname, return_batches=True)
-                    all_batches.append(batches)
+                    all_batches += batches
 
                 self.train()
                 evaluator = Evaluator(
@@ -703,13 +685,13 @@ class EventExtractor(pl.LightningModule):
 
                 print(log)
 
-                # self.train_dataset.add_dagger_examples(batches)
+                if self.use_dagger:
+                    self.train_dataset.add_dagger_examples(all_batches)
 
                 return {
                     "train_f1": torch.tensor(log["train_f1"]),
                     "train_f1_td": torch.tensor(log["train_f1_td"]),
-                    "log": log
-                }
+                    "log": log}
         else:
             return {}
 
