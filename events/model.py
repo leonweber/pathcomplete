@@ -581,10 +581,10 @@ class EventExtractor(pl.LightningModule):
                 current_batch["encoding_graph"] = [encoding_graph]
                 current_batch["fname"] = [fname]
 
-                foo = []
-                id_to_node_type = {v: k for k, v in self.train_dataset.node_type_to_id.items()}
-                for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(current_batch["input_ids"][0].tolist()), current_batch["node_type_ids"][0]):
-                    foo.append((tok, id_to_node_type[nt.item()]))
+                # foo = []
+                # id_to_node_type = {v: k for k, v in self.train_dataset.node_type_to_id.items()}
+                # for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(current_batch["input_ids"][0].tolist()), current_batch["node_type_ids"][0]):
+                #     foo.append((tok, id_to_node_type[nt.item()]))
 
                 if return_batches:
                     batches.append(current_batch)

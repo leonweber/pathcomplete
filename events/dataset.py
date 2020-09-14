@@ -758,11 +758,11 @@ class BioNLPDataset:
 
         id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
 
-        foo = []
-        for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()), node_types):
-            foo.append((tok, id_to_node_type[nt.item()]))
-        print(foo[:20])
-        print(foo[-20:])
+        # foo = []
+        # for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()), node_types):
+        #     foo.append((tok, id_to_node_type[nt.item()]))
+        # print(foo[:20])
+        # print(foo[-20:])
 
         return example
 
