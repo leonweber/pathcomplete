@@ -2,7 +2,6 @@ import itertools
 import math
 import os
 from collections import defaultdict
-from pprint import pprint
 from glob import glob
 from pathlib import Path
 import logging
@@ -108,6 +107,13 @@ class EventExtractor(pl.LightningModule):
         self.output_dir = config["output_dir"]
         self.use_dagger = config["use_dagger"]
         self.lr = config["lr"]
+        self.evaluator = Evaluator(
+            eval_script=consts.PC13_EVAL_SCRIPT,
+            data_dir=self.dev_path,
+            out_dir=self.output_dir/"eval",
+            result_re=consts.PC13_RESULT_RE,
+            verbose=True,
+        )
 
         DatasetType = get_dataset_type(config["train"])
 
@@ -146,7 +152,7 @@ class EventExtractor(pl.LightningModule):
         self.tokenizer = BertTokenizerFast.from_pretrained(config["bert"])
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
-        self.max_events_per_trigger = 10
+        self.max_events_per_sentence = 30
 
 
     def split_args(self, graph):
@@ -462,17 +468,10 @@ class EventExtractor(pl.LightningModule):
         for i in outputs:
             aggregated_outputs.update(i)
 
-        evaluator = Evaluator(
-            eval_script=consts.PC13_EVAL_SCRIPT,
-            data_dir=self.dev_path,
-            out_dir=self.output_dir/"eval",
-            result_re=consts.PC13_RESULT_RE,
-            verbose=True,
-        )
         log = {}
-        for k, v in evaluator.evaluate_event_generation(aggregated_outputs).items():
+        for k, v in self.evaluator.evaluate_event_generation(aggregated_outputs).items():
             log["val_" + k] = v
-        for k, v in evaluator.evaluate_trigger_detection(aggregated_outputs).items():
+        for k, v in self.evaluator.evaluate_trigger_detection(aggregated_outputs).items():
             log["val_" + k] = v
 
         print(log)
@@ -486,6 +485,13 @@ class EventExtractor(pl.LightningModule):
     def val_dataloader(self):
         loader = DataLoader(
             self.dev_dataset, batch_size=1, shuffle=False, collate_fn=lambda x: x,
+        )
+        return loader
+
+    def train_eval_dataloader(self):
+        self.train_dataset.predict = True
+        loader = DataLoader(
+            self.train_dataset, batch_size=1, shuffle=False, collate_fn=lambda x: x,
         )
         return loader
 
@@ -535,7 +541,7 @@ class EventExtractor(pl.LightningModule):
         predicted_graph = ann.event_graph.copy()
         logging.debug("Predicting " + fname)
         for sentence in sentences:
-            for i_generated in range(self.max_events_per_trigger):
+            for i_generated in range(self.max_events_per_sentence):
                 # ann = StandoffAnnotation(a1_lines, a2_lines)
                 graph = filter_graph_to_sentence(predicted_graph, sentence)
                 entity_triggers, event_triggers = self.train_dataset.get_triggers(sentence, graph)
@@ -581,10 +587,11 @@ class EventExtractor(pl.LightningModule):
                 current_batch["encoding_graph"] = [encoding_graph]
                 current_batch["fname"] = [fname]
 
-                # foo = []
-                # id_to_node_type = {v: k for k, v in self.train_dataset.node_type_to_id.items()}
-                # for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(current_batch["input_ids"][0].tolist()), current_batch["node_type_ids"][0]):
-                #     foo.append((tok, id_to_node_type[nt.item()]))
+                foo = []
+                id_to_node_type = {v: k for k, v in self.train_dataset.node_type_to_id.items()}
+                for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(current_batch["input_ids"][0].tolist()), current_batch["node_type_ids"][0]):
+                    foo.append((tok, id_to_node_type[nt.item()]))
+                # print(foo)
 
                 if return_batches:
                     batches.append(current_batch)
@@ -611,25 +618,27 @@ class EventExtractor(pl.LightningModule):
                         if edge_type in self.train_dataset.EVENT_TYPES:
                             triggers.append((span, edge_type))
 
-                    if len(triggers) != 1:
-                        break # This is really bad, but what to do here?
+                    if len(triggers) == 0:
+                        predicted_graph.add_node("Fail", type="Fail")
+                        for dst, edge_type in edge_types.items():
+                            if edge_type in self.train_dataset.EDGE_TYPES:
+                                dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
+                                predicted_graph.add_edge("Fail", dst_trigger, type=edge_type)
 
-                    event_id = get_free_event_id(predicted_graph)
+                    for trigger in triggers:
+                        event_id = get_free_event_id(predicted_graph)
+                        trigger_id = self.get_trigger(span=trigger[0],
+                                                      graph=predicted_graph,
+                                                      text=text,
+                                                      type=trigger[1])
+                        predicted_graph.add_node(event_id, type=predicted_graph.nodes[trigger_id]["type"])
+                        predicted_graph.add_edge(event_id, trigger_id, type="Trigger")
 
-                    trigger = triggers[0]
-
-                    trigger_id = self.get_trigger(span=trigger[0],
-                                                  graph=predicted_graph,
-                                                  text=text,
-                                                  type=trigger[1])
-                    predicted_graph.add_node(event_id, type=predicted_graph.nodes[trigger_id]["type"])
-                    predicted_graph.add_edge(event_id, trigger_id, type="Trigger")
-
-                    for dst, edge_type in edge_types.items():
-                        if edge_type in self.train_dataset.EDGE_TYPES:
-                            dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                            if dst_trigger != trigger_id: # otherwise it would overwrite the trigger edge
-                                predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
+                        for dst, edge_type in edge_types.items():
+                            if edge_type in self.train_dataset.EDGE_TYPES:
+                                dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
+                                if dst_trigger != trigger_id: # otherwise it would overwrite the trigger edge
+                                    predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
 
                     self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False, lift=False)
                     # a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
@@ -647,53 +656,56 @@ class EventExtractor(pl.LightningModule):
     def training_epoch_end( self, outputs ):
         self.i += 1
 
-        if self.use_dagger or self.i % 5 == 0:
-            self.eval()
-            with torch.no_grad():
-                # for example in self.train_dataset.examples:
-                #     foo = {}
-                #     foo["input_ids"] = example["input_ids"].unsqueeze(0).to(self.device)
-                #     foo["token_type_ids"] = example["token_type_ids"].unsqueeze(0).to(self.device)
-                #     seq1_end = torch.where(example["input_ids"] == self.tokenizer.sep_token_id)[0][0]
-                #     labels_pred = self.forward(foo)[0].argmax(dim=1).cpu()
-                #     if (labels_pred[:seq1_end] != example["labels"][:seq1_end]).any():
-                #         foo["input_ids"] = example["input_ids"]
-                #         foo["labels"] = labels_pred
-                #         self.train_dataset.print_example(example)
-                #         self.train_dataset.print_example(foo)
-                #         print()
-                predictions = {}
-                all_batches = []
-                for fname, text, ann in tqdm(self.train_dataset.predict_example_by_fname.values(),
-                                             desc="Evaluating on train"):
-                    predictions[fname], batches = self.predict(text, ann, fname, return_batches=True)
-                    all_batches += batches
-
-                self.train()
-                evaluator = Evaluator(
-                    eval_script=consts.PC13_EVAL_SCRIPT,
-                    data_dir=self.train_path,
-                    out_dir=self.output_dir/"eval",
-                    result_re=consts.PC13_RESULT_RE,
-                    verbose=True,
-                )
-                log = {}
-                for k, v in evaluator.evaluate_event_generation(predictions).items():
-                    log["train_" + k] = v
-                for k, v in evaluator.evaluate_trigger_detection(predictions).items():
-                    log["train_" + k] = v
-
-                print(log)
-
-                if self.use_dagger:
-                    self.train_dataset.add_dagger_examples(all_batches)
-
-                return {
-                    "train_f1": torch.tensor(log["train_f1"]),
-                    "train_f1_td": torch.tensor(log["train_f1_td"]),
-                    "log": log}
+        if self.use_dagger or self.i % 100 == 0:
+            return self.eval_on_train()
         else:
             return {}
+
+    def eval_on_train(self):
+        self.eval()
+        with torch.no_grad():
+            # for example in self.train_dataset.examples:
+            #     foo = {}
+            #     foo["input_ids"] = example["input_ids"].unsqueeze(0).to(self.device)
+            #     foo["token_type_ids"] = example["token_type_ids"].unsqueeze(0).to(self.device)
+            #     seq1_end = torch.where(example["input_ids"] == self.tokenizer.sep_token_id)[0][0]
+            #     labels_pred = self.forward(foo)[0].argmax(dim=1).cpu()
+            #     if (labels_pred[:seq1_end] != example["labels"][:seq1_end]).any():
+            #         foo["input_ids"] = example["input_ids"]
+            #         foo["labels"] = labels_pred
+            #         self.train_dataset.print_example(example)
+            #         self.train_dataset.print_example(foo)
+            #         print()
+            predictions = {}
+            all_batches = []
+            for fname, text, ann in tqdm(self.train_dataset.predict_example_by_fname.values(),
+                                         desc="Evaluating on train"):
+                predictions[fname], batches = self.predict(text, ann, fname, return_batches=True)
+                all_batches += batches
+
+            self.train()
+            evaluator = Evaluator(
+                eval_script=consts.PC13_EVAL_SCRIPT,
+                data_dir=self.train_path,
+                out_dir=self.output_dir/"eval",
+                result_re=consts.PC13_RESULT_RE,
+                verbose=True,
+            )
+            log = {}
+            for k, v in evaluator.evaluate_event_generation(predictions).items():
+                log["train_" + k] = v
+            for k, v in evaluator.evaluate_trigger_detection(predictions).items():
+                log["train_" + k] = v
+
+            print(log)
+
+            if self.use_dagger:
+                self.train_dataset.add_dagger_examples(all_batches)
+
+            return {
+                "train_f1": torch.tensor(log["train_f1"]),
+                "train_f1_td": torch.tensor(log["train_f1_td"]),
+                "log": log}
 
     def get_trigger(self, span, type, graph, text):
         span = (str(span[0]), str(span[1]))

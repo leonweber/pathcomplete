@@ -13,6 +13,8 @@ from flair.models import SequenceTagger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.logging import WandbLogger
 
+from events import consts
+from events.evaluation import Evaluator
 from events.model import EventExtractor
 from util.utils import Tee
 
@@ -29,6 +31,8 @@ if __name__ == '__main__':
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--dev', action='store_true')
     parser.add_argument('--test', action='store_true')
+    parser.add_argument('--eval_train', action='store_true')
+    parser.add_argument('--model')
 
     args = parser.parse_args()
 
@@ -60,44 +64,47 @@ if __name__ == '__main__':
     pl.seed_everything(42)
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
-    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1,
+    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=1000,
                          checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
                          num_sanity_val_steps=0, reload_dataloaders_every_epoch=True
                          )
     if args.train:
         # with Tee(args.output_dir/"train.log", "w"):
         if args.resume:
-            latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
-            model = EventExtractor.load_from_checkpoint(latest_checkpoint, config=config)
+            if not args.model:
+                 args.model = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+            model = EventExtractor.load_from_checkpoint(args.model, config=config)
         else:
             model = EventExtractor(config=config)
         trainer.fit(model)
 
     if args.dev:
-        latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
-        print("loading " + str(latest_checkpoint))
-        # latest_checkpoint = torch.load(latest_checkpoint)
-
         with Tee(args.output_dir/"test.log", "w"):
-            model = EventExtractor.load_from_checkpoint(latest_checkpoint, config=config)
-            # model.load_state_dict(latest_checkpoint["state_dict"], strict=False)
-            # model.trigger_detector = SequenceTagger.load(config["trigger_detector"])
+            if not args.model:
+                args.model = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+            model = EventExtractor.load_from_checkpoint(args.model, config=config)
             trainer.test(model, model.val_dataloader())
-            # model.validation_step = model.validation_step_gold
-            # model.dev_dataset.predict = False
-            # model.validation_epoch_end = model.validation_epoch_end_gold
-            # trainer.test(model, model.val_gold_dataloader())
 
     if args.test:
-        latest_checkpoint = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
-        latest_checkpoint = torch.load(latest_checkpoint)
-
         with Tee(args.output_dir/"test.log", "w"):
-            model = EventExtractor(config=config)
-            model.load_state_dict(latest_checkpoint["state_dict"], strict=False)
-            # model = EventExtractor.load_from_checkpoint(latest_checkpoint, config=config)
-            # model.trigger_detector = SequenceTagger.load(config["trigger_detector"])
+            if not args.model:
+                args.model = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+            model = EventExtractor.load_from_checkpoint(args.model, config=config)
             trainer.test(model, model.test_dataloader())
+
+    if args.eval_train:
+        with Tee(args.output_dir/"test.log", "w"):
+            if not args.model:
+                args.model = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
+            model = EventExtractor.load_from_checkpoint(args.model, config=config)
+            model.evaluator = Evaluator(
+            eval_script=consts.PC13_EVAL_SCRIPT,
+            data_dir=model.train_path,
+            out_dir=model.output_dir/"eval",
+            result_re=consts.PC13_RESULT_RE,
+            verbose=True,
+        )
+            trainer.test(model, model.train_eval_dataloader())
 
     # best_checkpoint = list(args.output_dir.glob("*ckpt"))[0]
     # model = EventExtractor.load_from_checkpoint(best_checkpoint, config=config)

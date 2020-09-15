@@ -8,7 +8,9 @@ PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
                     "Activation", "Inactivation", "Binding",
                     "Dissociation", "Regulation", "Positive_regulation",
                     "Negative_regulation", "Pathway", "Hydroxylation", "Dehydroxylation",
-                    "None"}
+                    "None",
+                    # "Fail"
+                    }
 
 PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
                      "Cellular_component", "None", "Protein", "Entity", "Protein_modification",
@@ -26,7 +28,7 @@ PC13_EDGE_TYPES_TO_MOD = {
 PC13_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 PC13_EVAL_SCRIPT = 'evaluation-PC.py'
 PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product"),
-                           ("Pathway", "Participant")}
+                           ("Pathway", "Participant"), ("Conversion", "Theme")}
 PC13_NO_THEME_ALLOWED = {"Conversion", "Pathway", "Binding", "Dissociation"}
 PC13_MOLECULE = {"Simple_chemical", "Gene_or_gene_product", "Complex"}
 

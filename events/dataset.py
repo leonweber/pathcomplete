@@ -16,6 +16,9 @@ from tqdm import tqdm
 
 from events import consts
 from events.parse_standoff import StandoffAnnotation
+from events import parse_standoff
+
+N_CROSS_SENTENCE = 0
 
 
 MAX_LEN = 312
@@ -424,6 +427,10 @@ def integrate_predicted_a2_triggers(ann, ann_predicted):
 
 
 def filter_graph_to_sentence(text_graph, sent):
+    global N_CROSS_SENTENCE
+
+    event_to_n_edges = {i: len(text_graph.out_edges(i)) for i in text_graph.nodes if i.startswith("E")}
+
     text_graph = text_graph.copy()
     for n, d in [n for n in text_graph.nodes(data=True)]:
         if n.startswith("T") and not (sent.end_pos > int(d["span"][0]) >= sent.start_pos):
@@ -431,6 +438,11 @@ def filter_graph_to_sentence(text_graph, sent):
                 if d["type"] == "Trigger":
                     text_graph.remove_node(u)
             text_graph.remove_node(n)
+
+    for i in text_graph.nodes:
+        if i.startswith("E"):
+            if len(text_graph.out_edges(i)) < event_to_n_edges[i]:
+                N_CROSS_SENTENCE += 1
 
     return text_graph
 
@@ -475,8 +487,8 @@ class BioNLPDataset:
                  ):
         self.text_files = [f for f in path.glob('*.txt')]
         if small:
-            # self.text_files = [i for i in self.text_files if "PMID-10551809" in str(i)]
-            self.text_files = self.text_files[:3]
+            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-10915796" in str(i)]
+            # self.text_files = self.text_files[:3]
 
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
@@ -531,19 +543,11 @@ class BioNLPDataset:
                 self.ann_by_fname[file.name] = ann
 
         self.fnames = sorted(self.predict_example_by_fname)
-        self.print_statistics()
+        self.print_and_reset_statistics()
 
-    def print_statistics(self):
-        if not self.predict:
-            n_truncated = 0
-            n_cross_sentence = 0
-            for example in self:
-                if 0 not in example["input_ids"]:
-                    n_truncated += 1
-                if example["cross_sentence"]:
-                    n_cross_sentence += 1
-            print(f"{n_truncated}/{len(self)} truncated")
-            print(f"{n_cross_sentence}/{len(self)} cross sentence")
+    def print_and_reset_statistics(self):
+        print(f"{N_CROSS_SENTENCE}/{len(self.examples)} cross sentence")
+        print(f"{parse_standoff.N_SELF_LOOPS}/{len(self.examples)} self loops")
 
     def get_triggers(self, sent, graph):
         entity_triggers = []
@@ -726,7 +730,7 @@ class BioNLPDataset:
         node_types = torch.cat([node_types_text, node_types_graph])
 
         trigger_to_span = {}
-        for trigger, span in zip(entity_triggers + event_triggers, node_spans_text):
+        for trigger, span in zip(sorted(trigger_to_position), node_spans_text):
             trigger_to_span[trigger] = span
 
         cross_sentence = False
@@ -758,9 +762,9 @@ class BioNLPDataset:
 
         id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
 
-        # foo = []
-        # for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()), node_types):
-        #     foo.append((tok, id_to_node_type[nt.item()]))
+        foo = []
+        for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()), node_types):
+            foo.append((tok, id_to_node_type[nt.item()]))
         # print(foo[:20])
         # print(foo[-20:])
 

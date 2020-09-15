@@ -5,6 +5,8 @@ import networkx as nx
 
 from util.utils import overlaps
 
+N_SELF_LOOPS = 0
+
 ENTITY_TRIGGER_TYPES = ['complex',
  'dna',
  'drug',
@@ -274,6 +276,7 @@ def events_to_nx(events, triggers):
 
 def events_to_text_graph(events, triggers):
     G = nx.DiGraph()
+    global N_SELF_LOOPS
     added_signatures = set()
     for trigger in triggers.values():
         G.add_node(trigger.id, type=trigger.type, text=trigger.text, span=(trigger.start, trigger.end))
@@ -281,10 +284,10 @@ def events_to_text_graph(events, triggers):
         event_signature = [(event.trigger.id, "Trigger")]
         for role, dst in event.roles:
             if dst.id in triggers:
-                trigger_id = dst.id
+                dst_trigger_id = dst.id
             else:
-                trigger_id = events[dst.id].trigger.id
-            event_signature.append((trigger_id, role))
+                dst_trigger_id = events[dst.id].trigger.id
+            event_signature.append((dst_trigger_id, role))
         event_signature = tuple(sorted(event_signature))
 
         if event_signature not in added_signatures:
@@ -293,11 +296,15 @@ def events_to_text_graph(events, triggers):
             G.add_edge(event.id, event.trigger.id, type="Trigger")
             for role, dst in event.roles:
                 if dst.id in triggers:
-                    trigger_id = dst.id
+                    dst_trigger_id = dst.id
                 else:
-                    trigger_id = events[dst.id].trigger.id
-                if trigger_id != event.trigger.id: # No self-loops
-                    G.add_edge(event.id, trigger_id, type=role)
+                    dst_trigger_id = events[dst.id].trigger.id
+                trigger_span = (event.trigger.start, event.trigger.end)
+                dst_span = (triggers[dst_trigger_id].start, triggers[dst_trigger_id].end)
+                if not overlaps(trigger_span, dst_span): # No self-loops
+                    G.add_edge(event.id, dst_trigger_id, type=role)
+                else:
+                    N_SELF_LOOPS += 1
     return G
 
 
