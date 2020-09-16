@@ -465,14 +465,16 @@ class BioNLPDataset:
 
     def print_example(self, example):
         id_to_label = {v: k for k, v in self.label_to_id.items()}
-        tags = [id_to_label[i.item()] for i in example["labels"]][1:]
+        tags1 = [id_to_label[i.item()] for i in example["edge_labels"]][1:]
+        tags2 = [id_to_label[i.item()] for i in example["trigger_labels"]][1:]
         tokens = self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
                                                       skip_special_tokens=True)
         sentence = Sentence()
-        for token, tag in zip(tokens, tags):
+        for token, tag1, tag2 in zip(tokens, tags1, tags2):
             token = Token(token.replace("##", ""))
             sentence.add_token(token)
-            sentence.tokens[-1].add_label("Edge", tag)
+            sentence.tokens[-1].add_label("Edge", tag1)
+            sentence.tokens[-1].add_label("Trigger", tag2)
         print(sentence.to_tagged_string())
 
 
@@ -488,8 +490,8 @@ class BioNLPDataset:
                  ):
         self.text_files = [f for f in path.glob('*.txt')]
         if small:
-            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-11264371" in str(i)]
-            # self.text_files = self.text_files[:3]
+            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-19303885.txt" in str(i)]
+
 
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):

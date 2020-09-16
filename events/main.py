@@ -18,7 +18,7 @@ from events.evaluation import Evaluator
 from events.model import EventExtractor
 from util.utils import Tee
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

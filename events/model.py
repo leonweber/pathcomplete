@@ -227,11 +227,11 @@ class EventExtractor(pl.LightningModule):
         # graph.remove_edges_from(nx.selfloop_edges(graph))
         for event in [n for n in graph.nodes if n.startswith("E")]:
             event_type = graph.nodes[event]["type"]
-            for u, v, d in list(graph.out_edges(event, data=True)):
+            for u, v, key, d in list(graph.out_edges(event, data=True, keys=True)):
                 edge_type = d["type"]
                 v_type = graph.nodes[v]["type"]
                 if not self.train_dataset.is_valid_argument_type(event_type=event_type, arg=edge_type, reftype=v_type, refid=v):
-                    graph.remove_edge(u, v)
+                    graph.remove_edge(u, v, key)
 
     def get_overlapping_triggers(self, trigger, graph):
         overlapping_triggers = []
@@ -252,7 +252,7 @@ class EventExtractor(pl.LightningModule):
                     for u, _, d in graph.in_edges(t, data=True):
                         if d["type"] == "Trigger":
                             events.append(u)
-                for u, _, d in list(graph.in_edges(trigger, data=True)):
+                for u, _, edge_id, d in list(graph.in_edges(trigger, data=True, keys=True)):
                     if d["type"] != "Trigger":
                         for event in events:
                             if u != "Fail":
@@ -263,7 +263,7 @@ class EventExtractor(pl.LightningModule):
                             if u_trigger != event_trigger:
                                 graph.add_edge(u, event, **d)
                         if events or remove_unlifted:
-                            graph.remove_edge(u, trigger)
+                            graph.remove_edge(u, trigger, edge_id)
 
 
     def clean_up_graph(self, graph: nx.DiGraph, remove_unlifted=False,
@@ -279,7 +279,8 @@ class EventExtractor(pl.LightningModule):
 
             if remove_invalid:
                 self.remove_invalid_edges(graph)
-            # break_up_cycles(graph)
+            if lift: # there shouldn't be any cycles left after lifting
+                break_up_cycles(graph)
             self.split_args(graph)
 
             if remove_invalid:
