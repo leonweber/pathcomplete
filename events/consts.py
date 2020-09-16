@@ -31,6 +31,7 @@ PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product"),
                            ("Pathway", "Participant"), ("Conversion", "Theme")}
 PC13_NO_THEME_ALLOWED = {"Conversion", "Pathway", "Binding", "Dissociation"}
 PC13_MOLECULE = {"Simple_chemical", "Gene_or_gene_product", "Complex"}
+PC13_EVENT_MODS = {"Speculation", "Negation"}
 
 
 PC13_EVENT_TYPE_TO_ORDER = {}

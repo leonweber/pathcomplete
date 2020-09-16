@@ -457,6 +457,7 @@ class BioNLPDataset:
     NO_THEME_ALLOWED = None
     EVENT_TYPE_TO_ORDER = None
     EDGE_TYPES_TO_MOD = None
+    EVENT_MODS = None
 
 
     def is_valid_argument_type(self, arg, reftype):
@@ -487,7 +488,7 @@ class BioNLPDataset:
                  ):
         self.text_files = [f for f in path.glob('*.txt')]
         if small:
-            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-10369669" in str(i)]
+            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-11264371" in str(i)]
             # self.text_files = self.text_files[:3]
 
         self.node_type_to_id = {}
@@ -502,6 +503,7 @@ class BioNLPDataset:
                 self.label_to_id["B-" + edge_type] = len(self.label_to_id)
             if "I-" + edge_type not in self.label_to_id:
                 self.label_to_id["I-" + edge_type] = len(self.label_to_id)
+        self.event_mod_to_id = {v: i for i, v in enumerate(self.EVENT_MODS)}
 
         if small:
             self.sentence_splitter = SegtokSentenceSplitter()
@@ -733,12 +735,11 @@ class BioNLPDataset:
         for trigger, span in zip(sorted(trigger_to_position), node_spans_text):
             trigger_to_span[trigger] = span
 
-        cross_sentence = False
-
         edge_labels = torch.zeros_like(input_ids)
         trigger_labels = torch.zeros_like(input_ids)
         edge_labels[:] = self.label_to_id["O"]
         trigger_labels[:] = self.label_to_id["O"]
+        mod_labels = torch.zeros(len(self.event_mod_to_id))
         if event:
             for u, v, data in graph.out_edges(event, data=True):
                 event_type = graph.nodes[event]["type"]
@@ -754,10 +755,14 @@ class BioNLPDataset:
                         edge_labels[pos[0]] = self.label_to_id["B-" + data["type"]]
                         edge_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + data["type"]]
 
+            for mod in graph.nodes[event]["modifications"]:
+                mod_labels[self.event_mod_to_id[mod]] = 1
+
         example["input_ids"] = input_ids
         example["token_type_ids"] = token_type_ids
         example["edge_labels"] = edge_labels
         example["trigger_labels"] = trigger_labels
+        example["mod_labels"] = mod_labels
         example["node_type_ids"] = node_types
 
         id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
@@ -772,7 +777,8 @@ class BioNLPDataset:
 
     @staticmethod
     def collate_fn(examples):
-        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "node_type_ids"}
+        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "node_type_ids",
+                         "mod_labels"}
         batch = defaultdict(list)
         for example in examples:
             for k, v in example.items():
@@ -840,6 +846,7 @@ class PC13Dataset(BioNLPDataset):
     NO_THEME_ALLOWED = consts.PC13_NO_THEME_ALLOWED
     EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
     EDGE_TYPES_TO_MOD = consts.PC13_EDGE_TYPES_TO_MOD
+    EVENT_MODS = consts.PC13_EVENT_MODS
 
     def __init__(self, path: Path, bert_path: Path,
                  batch_size: int = 16, predict=False, event_order="position",
@@ -902,34 +909,6 @@ class PC13Dataset(BioNLPDataset):
             return False
 
 
-class GE13Dataset(BioNLPDataset):
-    EVENT_TYPES = consts.GE_EVENT_TYPES
-    ENTITY_TYPES = consts.GE_ENTITY_TYPES
-    EDGE_TYPES = consts.GE_EDGE_TYPES
-    DUPLICATES_ALLOWED = consts.GE_DUPLICATES_ALLOWED
-    NO_THEME_FORBIDDEN = consts.GE_NO_THEME_FORBIDDEN
-    EVENT_TYPE_TO_ORDER = consts.PC13_EVENT_TYPE_TO_ORDER
-
-    def __init__(self, path: Path, bert_path: Path,
-                 batch_size: int = 16, predict=False, event_order="position",
-                 linearize_events: bool = False,  small=False):
-        super().__init__(path, bert_path, batch_size=batch_size, predict=predict,
-                         linearize_events=linearize_events, event_order=event_order,
-                         small=small)
-
-    def is_valid_argument_type(self, arg, reftype):
-        if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
-            return reftype in self.ENTITY_TYPES or reftype in self.EVENT_TYPES
-        elif arg in ("ToLoc", "AtLoc", "FromLoc"):
-            return reftype in ("Cellular_component", )
-        elif re.match(r'^C?Site\d*$', arg):
-            return reftype in ("Simple_chemical", )
-        elif re.match(r'^Participant\d*$', arg):
-            return reftype in self.ENTITY_TYPES
-        else:
-            return False
-
-
 
 def get_free_event_id(graph):
     ids = [int(n[1:]) for n in graph.nodes if n.startswith("E")]
@@ -946,6 +925,7 @@ def get_free_trigger_id(graph):
 
 def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
     lines = []
+    n_mods = 0
 
     for trigger, d in graph.nodes(data=True):
         if trigger.startswith("T") and d["type"] in event_types:
@@ -970,6 +950,10 @@ def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
                 args.append(f"{edge_type}{edge_type_count[edge_type]}:{v}") # for Theme2, Product2 etc.
             pass
         lines.append(f"{event}\t{event_type}:{trigger} {' '.join(args)}")
+
+        for mod in graph.nodes[event]["modifications"]:
+            n_mods += 1
+            lines.append(f"M{n_mods}\t{mod} {event}")
 
     return lines
 

@@ -21,7 +21,6 @@ import numpy as np
 from events import consts
 from events.dataset import (
     PC13Dataset,
-    GE13Dataset,
     get_text_encoding_and_node_spans,
     get_trigger_to_position,
     get_event_linearization,
@@ -142,14 +141,20 @@ class EventExtractor(pl.LightningModule):
             v: k for k, v in self.train_dataset.label_to_id.items()
         }
 
+        self.id_to_mod_type = {
+            v: k for k, v in self.train_dataset.event_mod_to_id.items()
+        }
+
         bert_config = BertConfig.from_pretrained(config["bert"])
         bert_config.num_labels = max(self.id_to_label_type) + 1
+        num_mods = max(self.id_to_mod_type) + 1
         bert_config.node_type_vocab_size = len(self.train_dataset.node_type_to_id)
         self.bert = BertGNNModel.from_pretrained(config["bert"], config=bert_config)
         # self.bert = BertForTokenClassification.from_pretrained(config["bert"], config=bert_config)
         self.dropout = nn.Dropout(0.1)
         self.edge_classifier = nn.Linear(768, bert_config.num_labels)
         self.trigger_classifier = nn.Linear(768, bert_config.num_labels)
+        self.modification_classifier = nn.Linear(768, len(self.id_to_mod_type))
         self.tokenizer = BertTokenizerFast.from_pretrained(config["bert"])
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
@@ -180,7 +185,7 @@ class EventExtractor(pl.LightningModule):
                 products = list(itertools.product(*multiple_args_by_type.values()))
                 for product in products:
                     new_event = get_free_event_id(graph)
-                    graph.add_node(new_event, type=event_type)
+                    graph.add_node(new_event, **graph.nodes[event])
 
                     # add out-edges of new event
                     for old_event, v, edge_type in itertools.chain(product, valid_edges):
@@ -250,7 +255,12 @@ class EventExtractor(pl.LightningModule):
                 for u, _, d in list(graph.in_edges(trigger, data=True)):
                     if d["type"] != "Trigger":
                         for event in events:
-                            if u != event:
+                            if u != "Fail":
+                                u_trigger = [i for _, i, d in graph.out_edges(u, data=True) if d["type"] == "Trigger"][0]
+                            else:
+                                u_trigger = "Fail"
+                            event_trigger = [i for _, i, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
+                            if u_trigger != event_trigger:
                                 graph.add_edge(u, event, **d)
                         if events or remove_unlifted:
                             graph.remove_edge(u, trigger)
@@ -259,7 +269,9 @@ class EventExtractor(pl.LightningModule):
     def clean_up_graph(self, graph: nx.DiGraph, remove_unlifted=False,
                    remove_invalid=False, lift=False):
         old_nodes = None
-        while old_nodes != list(graph.nodes()):
+        for i in range(10):
+            if old_nodes == list(graph.nodes()):
+                break
             old_nodes = list(graph.nodes())
 
             if lift:
@@ -341,12 +353,13 @@ class EventExtractor(pl.LightningModule):
 
         edge_logits = self.edge_classifier(xs)
         trigger_logits = self.trigger_classifier(xs)
+        mod_logits = self.modification_classifier(xs[:, 0])
 
-        return trigger_logits, edge_logits
+        return trigger_logits, edge_logits, mod_logits
 
 
     def training_step(self, batch, batch_idx):
-        batch_trigger_logits, batch_edge_logits = self.forward(batch)
+        batch_trigger_logits, batch_edge_logits, batch_mod_logits = self.forward(batch)
 
         loss = 0
         for trigger_logits, edge_logits, input_ids, trigger_labels, edge_labels in zip(
@@ -361,6 +374,8 @@ class EventExtractor(pl.LightningModule):
             loss += nn.CrossEntropyLoss()(edge_logits[:seq1_end], edge_labels[:seq1_end])
 
         loss /= len(batch)
+
+        loss += nn.BCEWithLogitsLoss()(batch_mod_logits, batch["mod_labels"])
 
         log = {"train_loss": loss}
 
@@ -619,7 +634,7 @@ class EventExtractor(pl.LightningModule):
 
                 logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
 
-                trigger_logits, edge_logits = self.forward(current_batch)
+                trigger_logits, edge_logits, mod_logits = self.forward(current_batch)
                 edge_logits = edge_logits.cpu()
                 trigger_logits = trigger_logits.cpu()
 
@@ -634,6 +649,11 @@ class EventExtractor(pl.LightningModule):
                                                              trigger_ids=entity_triggers + event_triggers,
                                                              trigger_spans=node_spans_text,
                                                              token_starts=token_starts)
+
+                modification_types = set()
+                for i, logit in enumerate(mod_logits[0]):
+                    if logit > 0:
+                        modification_types.add(self.id_to_mod_type[i])
 
                 pretty_edge_types = {}
                 for k, v in edge_types.items():
@@ -667,7 +687,8 @@ class EventExtractor(pl.LightningModule):
                                                       graph=predicted_graph,
                                                       text=text,
                                                       type=trigger[1])
-                        predicted_graph.add_node(event_id, type=predicted_graph.nodes[trigger_id]["type"])
+                        predicted_graph.add_node(event_id, type=predicted_graph.nodes[trigger_id]["type"],
+                                                 modifications=modification_types)
                         predicted_graph.add_edge(event_id, trigger_id, type="Trigger")
 
                         for dst, edge_type in edge_types.items():
@@ -690,7 +711,7 @@ class EventExtractor(pl.LightningModule):
     def training_epoch_end( self, outputs ):
         self.i += 1
 
-        if self.use_dagger or self.i % 50 == 0:
+        if self.use_dagger or self.i % 10 == 0:
             return self.eval_on_train()
         else:
             return {}

@@ -1,6 +1,8 @@
 # Helper file for parsing a standoff file
 import re
 import copy
+from collections import defaultdict
+
 import networkx as nx
 
 from util.utils import overlaps
@@ -89,6 +91,7 @@ class Event():
         self.type_lower = None
         self.trigger = None
         self.roles = []
+        self.modifications = set()
         
     def get_roles( self, role, ignore_case = True):
         if ignore_case:
@@ -115,6 +118,7 @@ def parse_line( line):
     event_trigger = None
     event = None
     equivalence = None
+    modification = None
 
     # handling trigger T[0-1]*
     if line.startswith( "T"):
@@ -179,27 +183,34 @@ def parse_line( line):
         if len(split) > 3:
             if split[1] == "Equiv":
                 equivalence = ( split[2], split[3])
+    elif line.startswith("M"):
+        split = line.strip().split('\t')
+        mod_type, mod_dst = split[1].split()
+        modification = (mod_type, mod_dst)
 
         # EVENTS[event.id] = event
-    return ( entity_trigger, event_trigger, event, equivalence)
+    return entity_trigger, event_trigger, event, equivalence, modification
 
 def parse_lines( lines):
     triggers = {} # entities and event triggers
     entity_triggers = [] # entity triggers only
     events = {} # events annotations
     equivalences = []
+    modifications = defaultdict(set)
     for i,line in enumerate(lines):
         try:
-            entity_trigger, event_trigger, event, equivalence = parse_line( line)
-            if entity_trigger != None:
+            entity_trigger, event_trigger, event, equivalence, modification = parse_line(line)
+            if entity_trigger is not None:
                 triggers[entity_trigger.id] =  entity_trigger
                 entity_triggers.append( entity_trigger)
-            if event_trigger != None:
+            if event_trigger is not None:
                 triggers[event_trigger.id] = event_trigger
-            if event != None:
+            if event is not None:
                 events[event.id] = event
-            if equivalence != None:
+            if equivalence is not None:
                 equivalences.append( equivalence)
+            if modification is not None:
+                modifications[modification[1]].add(modification[0])
         except MappingError as e:
             print("ERROR " + ":" + str(i) + ": mapping error:" + e.value)
 
@@ -251,6 +262,7 @@ def parse_lines( lines):
             else:
                 roles.append((role_tuple[0], role_filler))
         event.roles = roles
+        event.modifications = modifications[event.id]
 
     return triggers, entity_triggers, events
 
@@ -292,7 +304,7 @@ def events_to_text_graph(events, triggers):
 
         if event_signature not in added_signatures:
             added_signatures.add(event_signature)
-            G.add_node(event.id, type=event.type)
+            G.add_node(event.id, type=event.type, modifications=event.modifications)
             G.add_edge(event.id, event.trigger.id, type="Trigger")
             for role, dst in event.roles:
                 if dst.id in triggers:
