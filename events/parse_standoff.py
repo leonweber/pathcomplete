@@ -275,7 +275,7 @@ def events_to_nx(events, triggers):
 
 
 def events_to_text_graph(events, triggers):
-    G = nx.DiGraph()
+    G = nx.MultiDiGraph()
     global N_SELF_LOOPS
     added_signatures = set()
     for trigger in triggers.values():
@@ -299,12 +299,10 @@ def events_to_text_graph(events, triggers):
                     dst_trigger_id = dst.id
                 else:
                     dst_trigger_id = events[dst.id].trigger.id
-                trigger_span = (event.trigger.start, event.trigger.end)
-                dst_span = (triggers[dst_trigger_id].start, triggers[dst_trigger_id].end)
-                if not overlaps(trigger_span, dst_span): # No self-loops
-                    G.add_edge(event.id, dst_trigger_id, type=role)
-                else:
-                    N_SELF_LOOPS += 1
+                # trigger_span = (event.trigger.start, event.trigger.end)
+                # dst_span = (triggers[dst_trigger_id].start, triggers[dst_trigger_id].end)
+                # if not overlaps(trigger_span, dst_span): # No self-loops
+                G.add_edge(event.id, dst_trigger_id, type=role)
     return G
 
 

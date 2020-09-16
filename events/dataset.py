@@ -487,7 +487,7 @@ class BioNLPDataset:
                  ):
         self.text_files = [f for f in path.glob('*.txt')]
         if small:
-            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-10915796" in str(i)]
+            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-10369669" in str(i)]
             # self.text_files = self.text_files[:3]
 
         self.node_type_to_id = {}
@@ -735,8 +735,10 @@ class BioNLPDataset:
 
         cross_sentence = False
 
-        labels = torch.zeros_like(input_ids)
-        labels[:] = self.label_to_id["O"]
+        edge_labels = torch.zeros_like(input_ids)
+        trigger_labels = torch.zeros_like(input_ids)
+        edge_labels[:] = self.label_to_id["O"]
+        trigger_labels[:] = self.label_to_id["O"]
         if event:
             for u, v, data in graph.out_edges(event, data=True):
                 event_type = graph.nodes[event]["type"]
@@ -746,18 +748,16 @@ class BioNLPDataset:
                 if v in trigger_to_span:
                     pos = trigger_to_span[v]
                     if data["type"] == "Trigger":
-                        labels[pos[0]] = self.label_to_id["B-" + event_type]
-                        labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + event_type]
+                        trigger_labels[pos[0]] = self.label_to_id["B-" + event_type]
+                        trigger_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + event_type]
                     else:
-                        labels[pos[0]] = self.label_to_id["B-" + data["type"]]
-                        labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + data["type"]]
-                else:
-                    cross_sentence = True
+                        edge_labels[pos[0]] = self.label_to_id["B-" + data["type"]]
+                        edge_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + data["type"]]
 
         example["input_ids"] = input_ids
         example["token_type_ids"] = token_type_ids
-        example["labels"] = labels
-        example["cross_sentence"] = cross_sentence
+        example["edge_labels"] = edge_labels
+        example["trigger_labels"] = trigger_labels
         example["node_type_ids"] = node_types
 
         id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}

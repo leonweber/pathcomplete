@@ -148,7 +148,8 @@ class EventExtractor(pl.LightningModule):
         self.bert = BertGNNModel.from_pretrained(config["bert"], config=bert_config)
         # self.bert = BertForTokenClassification.from_pretrained(config["bert"], config=bert_config)
         self.dropout = nn.Dropout(0.1)
-        self.token_classifier = nn.Linear(768, bert_config.num_labels)
+        self.edge_classifier = nn.Linear(768, bert_config.num_labels)
+        self.trigger_classifier = nn.Linear(768, bert_config.num_labels)
         self.tokenizer = BertTokenizerFast.from_pretrained(config["bert"])
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
@@ -218,7 +219,7 @@ class EventExtractor(pl.LightningModule):
                 continue
 
     def remove_invalid_edges(self, graph):
-        graph.remove_edges_from(nx.selfloop_edges(graph))
+        # graph.remove_edges_from(nx.selfloop_edges(graph))
         for event in [n for n in graph.nodes if n.startswith("E")]:
             event_type = graph.nodes[event]["type"]
             for u, v, d in list(graph.out_edges(event, data=True)):
@@ -227,14 +228,30 @@ class EventExtractor(pl.LightningModule):
                 if not self.train_dataset.is_valid_argument_type(event_type=event_type, arg=edge_type, reftype=v_type, refid=v):
                     graph.remove_edge(u, v)
 
+    def get_overlapping_triggers(self, trigger, graph):
+        overlapping_triggers = []
+
+        for n, d in graph.nodes(data=True):
+            if not n.startswith("T"):
+                continue
+            if overlaps((d["span"]), graph.nodes[trigger]["span"]):
+                overlapping_triggers.append(n)
+
+        return overlapping_triggers
+
     def lift_event_edges(self, graph, remove_unlifted):
         for trigger in [n for n in graph.nodes if n.startswith("T")]:
             if graph.nodes[trigger]["type"] in self.train_dataset.EVENT_TYPES:
-                events = [u for u, _, d in graph.in_edges(trigger, data=True) if d["type"] == "Trigger"]
+                events = []
+                for t in self.get_overlapping_triggers(trigger, graph):
+                    for u, _, d in graph.in_edges(t, data=True):
+                        if d["type"] == "Trigger":
+                            events.append(u)
                 for u, _, d in list(graph.in_edges(trigger, data=True)):
                     if d["type"] != "Trigger":
                         for event in events:
-                            graph.add_edge(u, event, **d)
+                            if u != event:
+                                graph.add_edge(u, event, **d)
                         if events or remove_unlifted:
                             graph.remove_edge(u, trigger)
 
@@ -250,7 +267,7 @@ class EventExtractor(pl.LightningModule):
 
             if remove_invalid:
                 self.remove_invalid_edges(graph)
-            break_up_cycles(graph)
+            # break_up_cycles(graph)
             self.split_args(graph)
 
             if remove_invalid:
@@ -322,22 +339,26 @@ class EventExtractor(pl.LightningModule):
 
         xs = self.dropout(xs)
 
-        token_logits = self.token_classifier(xs)
+        edge_logits = self.edge_classifier(xs)
+        trigger_logits = self.trigger_classifier(xs)
 
-        return token_logits
+        return trigger_logits, edge_logits
 
 
     def training_step(self, batch, batch_idx):
-        batch_logits = self.forward(batch)
+        batch_trigger_logits, batch_edge_logits = self.forward(batch)
 
         loss = 0
-        for logits, input_ids, labels in zip(
-                batch_logits,
+        for trigger_logits, edge_logits, input_ids, trigger_labels, edge_labels in zip(
+                batch_trigger_logits,
+                batch_edge_logits,
                 batch["input_ids"],
-                batch["labels"],
+                batch["trigger_labels"],
+                batch["edge_labels"],
         ):
             seq1_end = torch.where(input_ids == self.tokenizer.sep_token_id)[0][0]
-            loss += nn.CrossEntropyLoss()(logits[:seq1_end], labels[:seq1_end])
+            loss += nn.CrossEntropyLoss()(trigger_logits[:seq1_end], trigger_labels[:seq1_end])
+            loss += nn.CrossEntropyLoss()(edge_logits[:seq1_end], edge_labels[:seq1_end])
 
         loss /= len(batch)
 
@@ -538,7 +559,7 @@ class EventExtractor(pl.LightningModule):
         sentences = self.train_dataset.sentence_splitter.split(text)
         batches = []
         ann = StandoffAnnotation(a1_lines, a2_lines)
-        predicted_graph = ann.event_graph.copy()
+        predicted_graph = ann.text_graph.copy()
         logging.debug("Predicting " + fname)
         for sentence in sentences:
             for i_generated in range(self.max_events_per_sentence):
@@ -598,25 +619,40 @@ class EventExtractor(pl.LightningModule):
 
                 logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
 
-                logits = self(current_batch).cpu()
+                trigger_logits, edge_logits = self.forward(current_batch)
+                edge_logits = edge_logits.cpu()
+                trigger_logits = trigger_logits.cpu()
 
-                edge_types = self.get_edge_types_from_logits(logits=logits,
+                edge_types = self.get_edge_types_from_logits(logits=edge_logits,
                                                              input_ids=current_batch["input_ids"],
                                                              trigger_ids=entity_triggers + event_triggers,
                                                              trigger_spans=node_spans_text,
                                                              token_starts=token_starts)
+
+                trigger_types = self.get_edge_types_from_logits(logits=trigger_logits,
+                                                             input_ids=current_batch["input_ids"],
+                                                             trigger_ids=entity_triggers + event_triggers,
+                                                             trigger_spans=node_spans_text,
+                                                             token_starts=token_starts)
+
                 pretty_edge_types = {}
                 for k, v in edge_types.items():
                     pretty_edge_types[text[k[0]:k[1]]] = v
+
+                pretty_trigger_types = {}
+                for k, v in trigger_types.items():
+                    pretty_trigger_types[text[k[0]:k[1]]] = v
+
+
                 logging.debug(pretty_edge_types)
+                logging.debug(pretty_trigger_types)
 
                 if not edge_types:
                     break
                 else:
                     triggers = []
-                    for span, edge_type in edge_types.items():
-                        if edge_type in self.train_dataset.EVENT_TYPES:
-                            triggers.append((span, edge_type))
+                    for span, edge_type in trigger_types.items():
+                        triggers.append((span, edge_type))
 
                     if len(triggers) == 0:
                         predicted_graph.add_node("Fail", type="Fail")
@@ -635,10 +671,8 @@ class EventExtractor(pl.LightningModule):
                         predicted_graph.add_edge(event_id, trigger_id, type="Trigger")
 
                         for dst, edge_type in edge_types.items():
-                            if edge_type in self.train_dataset.EDGE_TYPES:
-                                dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                                if dst_trigger != trigger_id: # otherwise it would overwrite the trigger edge
-                                    predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
+                            dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
+                            predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
 
                     self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False, lift=False)
                     # a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
@@ -656,7 +690,7 @@ class EventExtractor(pl.LightningModule):
     def training_epoch_end( self, outputs ):
         self.i += 1
 
-        if self.use_dagger or self.i % 100 == 0:
+        if self.use_dagger or self.i % 50 == 0:
             return self.eval_on_train()
         else:
             return {}
