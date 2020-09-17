@@ -106,8 +106,9 @@ class EventExtractor(pl.LightningModule):
         self.output_dir = config["output_dir"]
         self.use_dagger = config["use_dagger"]
         self.lr = config["lr"]
+        self.allow_entity = config["allow_entity"]
         self.evaluator = Evaluator(
-            eval_script=consts.PC13_EVAL_SCRIPT,
+            eval_cmd=config["eval_cmd"],
             data_dir=self.dev_path,
             out_dir=self.output_dir/"eval",
             result_re=consts.PC13_RESULT_RE,
@@ -199,7 +200,7 @@ class EventExtractor(pl.LightningModule):
                 # delete old event if we had to split
                 graph.remove_node(event)
 
-    def remove_invalid_nodes(self, graph):
+    def remove_nones(self, graph):
         for node in [n for n in graph.nodes]:
             if graph.nodes[node]["type"] == "None":
                 graph.remove_node(node)
@@ -244,7 +245,7 @@ class EventExtractor(pl.LightningModule):
 
         return overlapping_triggers
 
-    def lift_event_edges(self, graph, remove_unlifted):
+    def lift_event_edges(self, graph):
         for trigger in [n for n in graph.nodes if n.startswith("T")]:
             if graph.nodes[trigger]["type"] in self.train_dataset.EVENT_TYPES:
                 events = []
@@ -262,12 +263,13 @@ class EventExtractor(pl.LightningModule):
                             event_trigger = [i for _, i, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
                             if u_trigger != event_trigger:
                                 graph.add_edge(u, event, **d)
-                        if events or remove_unlifted:
+                        if events or not self.allow_entity:
                             graph.remove_edge(u, trigger, edge_id)
+                        else:
+                            graph.nodes[trigger]["type"] = "Entity"
 
 
-    def clean_up_graph(self, graph: nx.DiGraph, remove_unlifted=False,
-                   remove_invalid=False, lift=False):
+    def clean_up_graph(self, graph: nx.DiGraph,remove_invalid=False, lift=False):
         old_nodes = None
         for i in range(10):
             if old_nodes == list(graph.nodes()):
@@ -275,7 +277,7 @@ class EventExtractor(pl.LightningModule):
             old_nodes = list(graph.nodes())
 
             if lift:
-                self.lift_event_edges(graph, remove_unlifted)
+                self.lift_event_edges(graph)
 
             if remove_invalid:
                 self.remove_invalid_edges(graph)
@@ -284,7 +286,7 @@ class EventExtractor(pl.LightningModule):
             self.split_args(graph)
 
             if remove_invalid:
-                self.remove_invalid_nodes(graph)
+                self.remove_nones(graph)
                 self.remove_invalid_events(graph)
 
     def adjacency_matrix_to_edge_types(self, adjacency_matrix,
@@ -668,7 +670,7 @@ class EventExtractor(pl.LightningModule):
                 logging.debug(pretty_edge_types)
                 logging.debug(pretty_trigger_types)
 
-                if not edge_types:
+                if not edge_types and not trigger_types:
                     break
                 else:
                     triggers = []
@@ -694,15 +696,21 @@ class EventExtractor(pl.LightningModule):
 
                         for dst, edge_type in edge_types.items():
                             dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                            predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
+                            if not (event_id, dst_trigger) in predicted_graph.edges:
+                                # this fixes a bug where two distinct parts of a trigger
+                                # get predicted as dst leading to multiple edges
+                                predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
 
-                    self.clean_up_graph(predicted_graph, remove_unlifted=False, remove_invalid=False, lift=False)
+                    self.clean_up_graph(predicted_graph, remove_invalid=False, lift=False)
                     # a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
                     # logging.debug("\n".join(a2_lines))
                     # logging.debug("done.")
 
-        self.clean_up_graph(predicted_graph, remove_unlifted=True, remove_invalid=True, lift=True)
+        self.clean_up_graph(predicted_graph, remove_invalid=True, lift=True)
         a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
+
+        if "Cause2" in "".join(a2_lines):
+            __import__("pdb").set_trace()
 
         if return_batches:
             return "\n".join(a2_lines), batches
@@ -712,7 +720,7 @@ class EventExtractor(pl.LightningModule):
     def training_epoch_end( self, outputs ):
         self.i += 1
 
-        if self.use_dagger or self.i % 10 == 0:
+        if self.use_dagger or self.i % 50 == 0:
             return self.eval_on_train()
         else:
             return {}
@@ -741,7 +749,7 @@ class EventExtractor(pl.LightningModule):
 
             self.train()
             evaluator = Evaluator(
-                eval_script=consts.PC13_EVAL_SCRIPT,
+                eval_cmd=self.evaluator.eval_cmd,
                 data_dir=self.train_path,
                 out_dir=self.output_dir/"eval",
                 result_re=consts.PC13_RESULT_RE,

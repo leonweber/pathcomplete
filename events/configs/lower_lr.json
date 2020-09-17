@@ -8,5 +8,7 @@
   "small": false,
   "use_dagger": false,
   "lr": 3e-5,
-  "event_order": "position"
+  "event_order": "position",
+  "eval_cmd": "python2 events/3rd_party/evaluation-PC.py -r %s %s",
+  "allow_entity": false
 }

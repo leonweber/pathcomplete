@@ -8,13 +8,13 @@ PC13_EVENT_TYPES = {"Conversion", "Phosphorylation", "Dephosphorylation",
                     "Activation", "Inactivation", "Binding",
                     "Dissociation", "Regulation", "Positive_regulation",
                     "Negative_regulation", "Pathway", "Hydroxylation", "Dehydroxylation",
-                    "None",
+                    "None","Protein_modification", "Protein_catabolism"
                     # "Fail"
                     }
 
 PC13_ENTITY_TYPES = {"Simple_chemical", "Gene_or_gene_product", "Complex",
-                     "Cellular_component", "None", "Protein", "Entity", "Protein_modification",
-                     "Protein_catabolism"}
+                     "Cellular_component", "None", "Protein", "Entity",
+                     }
 PC13_EDGE_TYPES = {"None", "Theme", "Product", "Cause", "Site", "AtLoc", "FromLoc", "ToLoc",
                     "Participant", "Trigger", "InText", "CSite"}
 PC13_EDGE_TYPES_TO_MOD = {
@@ -25,7 +25,7 @@ PC13_EDGE_TYPES_TO_MOD = {
     "ToLoc": "to",
     "Participant": "with",
 }
-PC13_RESULT_RE = r'.*===\[TOTAL\]===.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
+PC13_RESULT_RE = r'.*==\[(?:ALL-)?TOTAL\]==.*?(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)\s+(\d[\d]?[\d]?\.\d\d)$'
 PC13_EVAL_SCRIPT = 'evaluation-PC.py'
 PC13_DUPLICATES_ALLOWED = {("Binding", "Theme"), ("Dissociation", "Product"),
                            ("Pathway", "Participant"), ("Conversion", "Theme")}

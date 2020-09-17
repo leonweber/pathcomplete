@@ -1,0 +1,14 @@
+{
+  "linearize": true,
+  "model": "bert",
+  "train": "events/data/BioNLP-ST-2013_GE_train_data_rev3",
+  "dev": "events/data/BioNLP-ST-2013_GE_devel_data_rev3",
+  "test": "events/data/BioNLP-ST-2013_GE_test_data_rev1",
+  "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
+  "small": false,
+  "use_dagger": false,
+  "lr": 3e-5,
+  "event_order": "position",
+  "eval_cmd": "perl events/3rd_party/a2-evaluate.pl -g %s -s -p %s",
+  "allow_entity": true
+}

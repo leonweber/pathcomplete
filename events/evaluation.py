@@ -36,9 +36,9 @@ def get_statistics_from_ann(ann_pred, ann_gold):
 
 class Evaluator:
 
-    def __init__(self, eval_script: Path, data_dir: Path, result_re: str,
+    def __init__(self, eval_cmd: str, data_dir: Path, result_re: str,
                  out_dir: Path, verbose: bool = True):
-        self.eval_script = eval_script
+        self.eval_cmd = eval_cmd
         self.data_dir = data_dir
         self.result_re = result_re
         self.verbose = verbose
@@ -86,7 +86,7 @@ class Evaluator:
             with (Path(self.out_dir) / fname).with_suffix('.a2').open('w') as f:
                 f.write(preds)
 
-        cmd = f'python2 {THIRD_PARTY_DIR / self.eval_script} -r {self.data_dir} {" ".join([str(i) for i in Path(self.out_dir).glob("*a2")])}'
+        cmd = self.eval_cmd % (self.data_dir, " ".join([str(i) for i in Path(self.out_dir).glob("*a2")]))
         result = subprocess.run(cmd, capture_output=True, shell=True)
         for line in result.stdout.splitlines():
             line = line.decode()

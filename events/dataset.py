@@ -21,7 +21,7 @@ from events import parse_standoff
 N_CROSS_SENTENCE = 0
 
 
-MAX_LEN = 312
+MAX_LEN = 412
 
 
 def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
@@ -266,7 +266,7 @@ def get_event_linearization(graph, tokenizer, node_type_to_id,
 def add_text_to_linearization(graph, linearization, node_char_spans, node_types, node_ids,
                               node_id, known_nodes):
     text = graph.nodes[node_id]["text"]
-    if known_nodes is None or node_id in known_nodes:
+    if known_nodes is None or node_id in known_nodes and graph.nodes[node_id]["type"] != "Entity":
         node_type = graph.nodes[node_id]["type"]
     else:
         node_type = "None"
@@ -328,7 +328,8 @@ def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length,
     node_types_text[:] = node_type_to_id["None"]
     for node, span in zip(sorted(trigger_to_position), node_spans):
         if known_triggers is None or node in known_triggers:
-            node_types_text[span[0]:span[1]] = node_type_to_id[graph.nodes[node]["type"]]
+            if graph.nodes[node]["type"] != "Entity":
+                node_types_text[span[0]:span[1]] = node_type_to_id[graph.nodes[node]["type"]]
 
     if not return_token_starts:
         return encoding_text, node_spans, node_types_text
@@ -490,7 +491,9 @@ class BioNLPDataset:
                  ):
         self.text_files = [f for f in path.glob('*.txt')]
         if small:
-            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-19303885.txt" in str(i)]
+            self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-10085159" in str(i)]
+        # self.text_files = self.text_files[:2] + [i for i in self.text_files if "PMID-10085159" in str(i)]
+        # self.text_files = self.text_files[226:227]
 
 
         self.node_type_to_id = {}
@@ -898,18 +901,7 @@ class PC13Dataset(BioNLPDataset):
         if "regulation" not in event_type.lower() and reftype not in self.ENTITY_TYPES:
             return False
 
-
-        if arg == "Cause" or re.match(r'^(Theme|Product)\d*$', arg):
-            return reftype in self.ENTITY_TYPES or (reftype in self.EVENT_TYPES and not refid.startswith("T"))
-        elif arg in ("ToLoc", "AtLoc", "FromLoc"):
-            return reftype in ("Cellular_component", )
-        elif re.match(r'^C?Site\d*$', arg):
-            return reftype in ("Simple_chemical", )
-        elif re.match(r'^Participant\d*$', arg):
-            return reftype in self.ENTITY_TYPES
-        else:
-            return False
-
+        return True
 
 
 def get_free_event_id(graph):
@@ -925,12 +917,25 @@ def get_free_trigger_id(graph):
     return free_id
 
 
+def sort_args(args):
+    order = ["Theme","Theme2", "Theme3", "Theme4", "Theme5", "Cause", "Site", "CSite", "AtLoc", "ToLoc"]
+
+    def key(x):
+        if x in order:
+            return order.index(x)
+        else:
+            return len(order)
+
+    return sorted(args, key=key)
+
+
+
 def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
     lines = []
     n_mods = 0
 
     for trigger, d in graph.nodes(data=True):
-        if trigger.startswith("T") and d["type"] in event_types:
+        if trigger.startswith("T") and d["type"] in event_types or d["type"] == "Entity":
             lines.append(f"{trigger}\t{graph.nodes[trigger]['type']} {' '.join(graph.nodes[trigger]['span'])}\t{graph.nodes[trigger]['text']}")
 
     for event in [n for n in graph.nodes if n.startswith("E")]:
@@ -950,7 +955,7 @@ def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
                 args.append(f"{edge_type}:{v}")
             else:
                 args.append(f"{edge_type}{edge_type_count[edge_type]}:{v}") # for Theme2, Product2 etc.
-            pass
+        args = sort_args(args)
         lines.append(f"{event}\t{event_type}:{trigger} {' '.join(args)}")
 
         for mod in graph.nodes[event]["modifications"]:
