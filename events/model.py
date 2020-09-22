@@ -27,6 +27,7 @@ from events.dataset import (
     get_event_graph,
     get_adjacency_matrix, MAX_LEN, BioNLPDataset, get_free_event_id,
     get_a2_lines_from_graph, get_free_trigger_id, filter_graph_to_sentence,
+    get_free_fail_id,
 )
 from events.evaluation import Evaluator
 from events.modeling_bert import BertGNNModel
@@ -65,23 +66,6 @@ def get_entity_trigger_positions(sent, ann):
     return trigger_positions
 
 
-def break_up_cycles(graph):
-    """
-    Break up cycles by removing the first non-Theme edge that is found
-    If it's an all-Theme cycle, just remove some edge
-    """
-    while True:
-        try:
-            last_edge = None
-            for edge in nx.find_cycle(graph):
-                last_edge = edge
-                if graph.edges[edge]["type"] != "Theme":
-                    graph.remove_edge(*edge)
-                    break
-            else:
-                graph.remove_edge(*last_edge)
-        except nx.NetworkXNoCycle:
-            return
 
 
 def get_dataset_type(dataset_path: str) -> BioNLPDataset:
@@ -90,8 +74,6 @@ def get_dataset_type(dataset_path: str) -> BioNLPDataset:
         return PC13Dataset
     elif "2013_PC" in dataset_path:
         return PC13Dataset
-
-
 
 
 
@@ -107,6 +89,7 @@ class EventExtractor(pl.LightningModule):
         self.use_dagger = config["use_dagger"]
         self.lr = config["lr"]
         self.allow_entity = config["allow_entity"]
+        self.eval_train_every = config["eval_train_every"]
         self.evaluator = Evaluator(
             eval_cmd=config["eval_cmd"],
             data_dir=self.dev_path,
@@ -116,6 +99,7 @@ class EventExtractor(pl.LightningModule):
         )
 
         DatasetType = get_dataset_type(config["train"])
+        self.small = config["small"]
 
 
         self.train_dataset = DatasetType(
@@ -162,166 +146,12 @@ class EventExtractor(pl.LightningModule):
         self.max_events_per_sentence = 30
 
 
-    def split_args(self, graph):
-        for event in [n for n in graph.nodes if n.startswith("E")]:
-            singular_edges_by_type = defaultdict(set)
-            valid_edges = []
-            event_type = graph.nodes[event]["type"]
-            for u, v, edge_data in graph.out_edges(event, data=True):
-                edge_type = edge_data["type"]
-                edge = u, v, edge_type
-                if (event_type, edge_type) not in self.train_dataset.DUPLICATES_ALLOWED:
-                    singular_edges_by_type[edge_type].add(edge)
-                else:
-                    valid_edges.append(edge)
-
-            multiple_args_by_type = {}
-            for type, edges in singular_edges_by_type.items():
-                if len(edges) == 1:
-                    valid_edges.append(list(edges)[0])
-                else:
-                    multiple_args_by_type[type] = edges
-
-            if multiple_args_by_type.values():
-                products = list(itertools.product(*multiple_args_by_type.values()))
-                for product in products:
-                    new_event = get_free_event_id(graph)
-                    graph.add_node(new_event, **graph.nodes[event])
-
-                    # add out-edges of new event
-                    for old_event, v, edge_type in itertools.chain(product, valid_edges):
-                        graph.add_edge(new_event, v, type=edge_type)
-
-                    # add in-edges of old event
-                    for u, old_event, edge_data in graph.in_edges(event, data=True):
-                        edge_type = edge_data["type"]
-                        graph.add_edge(u, new_event, type=edge_type)
-
-                # delete old event if we had to split
-                graph.remove_node(event)
-
-    def remove_nones(self, graph):
-        for node in [n for n in graph.nodes]:
-            if graph.nodes[node]["type"] == "None":
-                graph.remove_node(node)
 
 
-    def remove_invalid_events(self, graph):
-        for event in [n for n in graph.nodes if n.startswith("E")]:
-            edge_types = [i[2]["type"] for i in graph.out_edges(event, data=True)]
-            event_type = graph.nodes[event]["type"]
-
-            triggers = [v for _, v, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"]
-            if not edge_types:
-                graph.remove_node(event)
-                continue
-
-            elif "Theme" not in edge_types and event_type not in self.train_dataset.NO_THEME_ALLOWED:
-                graph.remove_node(event)
-                continue
-
-            elif not triggers:
-                graph.remove_node(event)
-                continue
-
-    def remove_invalid_edges(self, graph):
-        # graph.remove_edges_from(nx.selfloop_edges(graph))
-        for event in [n for n in graph.nodes if n.startswith("E")]:
-            event_type = graph.nodes[event]["type"]
-            for u, v, key, d in list(graph.out_edges(event, data=True, keys=True)):
-                edge_type = d["type"]
-                v_type = graph.nodes[v]["type"]
-                if not self.train_dataset.is_valid_argument_type(event_type=event_type, arg=edge_type, reftype=v_type, refid=v):
-                    graph.remove_edge(u, v, key)
-
-    def get_overlapping_triggers(self, trigger, graph):
-        overlapping_triggers = []
-
-        for n, d in graph.nodes(data=True):
-            if not n.startswith("T"):
-                continue
-            if overlaps((d["span"]), graph.nodes[trigger]["span"]):
-                overlapping_triggers.append(n)
-
-        return overlapping_triggers
-
-    def lift_event_edges(self, graph):
-        for trigger in [n for n in graph.nodes if n.startswith("T")]:
-            if graph.nodes[trigger]["type"] in self.train_dataset.EVENT_TYPES:
-                events = []
-                for t in self.get_overlapping_triggers(trigger, graph):
-                    for u, _, d in graph.in_edges(t, data=True):
-                        if d["type"] == "Trigger":
-                            events.append(u)
-                for u, _, edge_id, d in list(graph.in_edges(trigger, data=True, keys=True)):
-                    if d["type"] != "Trigger":
-                        for event in events:
-                            if u != "Fail":
-                                u_trigger = [i for _, i, d in graph.out_edges(u, data=True) if d["type"] == "Trigger"][0]
-                            else:
-                                u_trigger = "Fail"
-                            event_trigger = [i for _, i, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
-                            if u_trigger != event_trigger:
-                                graph.add_edge(u, event, **d)
-                        if events or not self.allow_entity:
-                            graph.remove_edge(u, trigger, edge_id)
-                        else:
-                            graph.nodes[trigger]["type"] = "Entity"
 
 
-    def clean_up_graph(self, graph: nx.DiGraph,remove_invalid=False, lift=False):
-        old_nodes = None
-        for i in range(10):
-            if old_nodes == list(graph.nodes()):
-                break
-            old_nodes = list(graph.nodes())
 
-            if lift:
-                self.lift_event_edges(graph)
 
-            if remove_invalid:
-                self.remove_invalid_edges(graph)
-            if lift: # there shouldn't be any cycles left after lifting
-                break_up_cycles(graph)
-            self.split_args(graph)
-
-            if remove_invalid:
-                self.remove_nones(graph)
-                self.remove_invalid_events(graph)
-
-    def adjacency_matrix_to_edge_types(self, adjacency_matrix,
-                                       node_spans_text,
-                                       node_spans_graph,
-                                       input_ids,
-                                       sep_id
-                                       ):
-        batch_size, length = input_ids.shape
-        attention_mask = torch.zeros((batch_size, length, length))
-        attention_mask[:] = self.train_dataset.edge_type_to_id["None"]
-
-        for i, input_id in enumerate(input_ids):
-            x = torch.where(input_id == sep_id)[0][0]
-            attention_mask[i, :x+1, :x+1] = self.train_dataset.edge_type_to_id["InText"] # Allow intra-text attention
-
-        for i_batch, (m, spans_text, spans_graph) in enumerate(zip(adjacency_matrix,
-                                                                 node_spans_text,
-                                                                 node_spans_graph)):
-            text_to_graph = m["text_to_graph"]
-            graph_to_graph = m["graph_to_graph"]
-
-            for i_u, edge_types in enumerate(text_to_graph):
-                start_u, end_u = spans_text[i_u]
-                for i_v, edge_type in enumerate(edge_types):
-                    start_v, end_v = spans_graph[i_v]
-                    attention_mask[i_batch, start_u:end_u, start_v:end_v] = edge_type
-
-            for i_u, edge_types in enumerate(graph_to_graph):
-                start_u, end_u = spans_graph[i_u]
-                for i_v, edge_type in enumerate(edge_types):
-                    start_v, end_v = spans_graph[i_v]
-                    attention_mask[i_batch, start_u:end_u, start_v:end_v] = edge_type
-
-        return attention_mask
 
     def get_full_attention_mask(self, input_ids):
         attention_mask = torch.ones_like(input_ids, device=self.device).long()
@@ -378,7 +208,7 @@ class EventExtractor(pl.LightningModule):
 
         loss /= len(batch)
 
-        loss += nn.BCEWithLogitsLoss()(batch_mod_logits, batch["mod_labels"])
+        loss += nn.BCEWithLogitsLoss()(batch_mod_logits, batch["mod_labels"].float())
 
         log = {"train_loss": loss}
 
@@ -601,16 +431,19 @@ class EventExtractor(pl.LightningModule):
                     continue
 
                 trigger_to_position = get_trigger_to_position(sentence, graph)
-                encoding_text, node_spans_text, node_types_text, token_starts = get_text_encoding_and_node_spans(
-                    text=sentence.to_original_text(),
-                    trigger_pos=None,
-                    tokenizer=self.tokenizer,
-                    max_length=remaining_length,
-                    graph=graph,
-                    trigger_to_position=trigger_to_position,
-                    node_type_to_id=self.train_dataset.node_type_to_id,
-                    return_token_starts=True
-                )
+                try:
+                    encoding_text, node_spans_text, node_types_text, token_starts = get_text_encoding_and_node_spans(
+                        text=sentence.to_original_text(),
+                        trigger_pos=None,
+                        tokenizer=self.tokenizer,
+                        max_length=remaining_length,
+                        graph=graph,
+                        trigger_to_position=trigger_to_position,
+                        node_type_to_id=self.train_dataset.node_type_to_id,
+                        return_token_starts=True
+                    )
+                except:
+                    break
 
                 token_starts = np.array(token_starts)
                 token_starts += sentence.start_pos
@@ -625,6 +458,9 @@ class EventExtractor(pl.LightningModule):
                 current_batch["sentence"] = [sentence]
                 current_batch["encoding_graph"] = [encoding_graph]
                 current_batch["fname"] = [fname]
+                current_batch["graph"] = predicted_graph.copy()
+                current_batch["trigger_to_position"] = trigger_to_position
+                current_batch["node_spans_text"] = node_types_text
 
                 foo = []
                 id_to_node_type = {v: k for k, v in self.train_dataset.node_type_to_id.items()}
@@ -632,10 +468,8 @@ class EventExtractor(pl.LightningModule):
                     foo.append((tok, id_to_node_type[nt.item()]))
                 # print(foo)
 
-                if return_batches:
-                    batches.append(current_batch)
 
-                logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
+                # logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
 
                 trigger_logits, edge_logits, mod_logits = self.forward(current_batch)
                 edge_logits = edge_logits.cpu()
@@ -666,11 +500,17 @@ class EventExtractor(pl.LightningModule):
                 for k, v in trigger_types.items():
                     pretty_trigger_types[text[k[0]:k[1]]] = v
 
+                current_batch["pred_edge"] = pretty_edge_types
+                current_batch["pred_trigger"] = pretty_trigger_types
+                # logging.debug(pretty_edge_types)
+                # logging.debug(pretty_trigger_types)
 
-                logging.debug(pretty_edge_types)
-                logging.debug(pretty_trigger_types)
+                for k, v in current_batch.items():
+                    if torch.is_tensor(v):
+                        current_batch[k] = v.cpu()
 
                 if not edge_types and not trigger_types:
+                    batches.append(current_batch)
                     break
                 else:
                     triggers = []
@@ -678,11 +518,12 @@ class EventExtractor(pl.LightningModule):
                         triggers.append((span, edge_type))
 
                     if len(triggers) == 0:
-                        predicted_graph.add_node("Fail", type="Fail")
+                        fail_id = get_free_fail_id(predicted_graph)
+                        predicted_graph.add_node(fail_id, type="Fail")
                         for dst, edge_type in edge_types.items():
                             if edge_type in self.train_dataset.EDGE_TYPES:
                                 dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                                predicted_graph.add_edge("Fail", dst_trigger, type=edge_type)
+                                predicted_graph.add_edge(fail_id, dst_trigger, type=edge_type)
 
                     for trigger in triggers:
                         event_id = get_free_event_id(predicted_graph)
@@ -696,21 +537,29 @@ class EventExtractor(pl.LightningModule):
 
                         for dst, edge_type in edge_types.items():
                             dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                            if not (event_id, dst_trigger) in predicted_graph.edges:
+                            if not (event_id, dst_trigger, edge_type) in predicted_graph.edges:
                                 # this fixes a bug where two distinct parts of a trigger
                                 # get predicted as dst leading to multiple edges
                                 predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
 
-                    self.clean_up_graph(predicted_graph, remove_invalid=False, lift=False)
+                    self.train_dataset.clean_up_graph(predicted_graph, remove_invalid=False, lift=False,
+                                                      allow_entity=self.allow_entity)
                     # a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
                     # logging.debug("\n".join(a2_lines))
                     # logging.debug("done.")
 
-        self.clean_up_graph(predicted_graph, remove_invalid=True, lift=True)
-        a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
+                if return_batches:
+                    old_allow_entity = self.allow_entity
+                    self.allow_entity = True
+                    g = predicted_graph.copy()
+                    self.train_dataset.clean_up_graph(g, remove_invalid=False, lift=True, allow_entity=self.allow_entity)
+                    current_batch["a2_lines"] = "\n".join(get_a2_lines_from_graph(g,
+                                                                        self.train_dataset.EVENT_TYPES))
+                    self.allow_entity = old_allow_entity
+                    batches.append(current_batch)
 
-        if "Cause2" in "".join(a2_lines):
-            __import__("pdb").set_trace()
+        self.train_dataset.clean_up_graph(predicted_graph, remove_invalid=True, lift=True)
+        a2_lines = get_a2_lines_from_graph(predicted_graph, self.train_dataset.EVENT_TYPES)
 
         if return_batches:
             return "\n".join(a2_lines), batches
@@ -720,7 +569,7 @@ class EventExtractor(pl.LightningModule):
     def training_epoch_end( self, outputs ):
         self.i += 1
 
-        if self.use_dagger or self.i % 50 == 0:
+        if self.i % self.eval_train_every == 0:
             return self.eval_on_train()
         else:
             return {}

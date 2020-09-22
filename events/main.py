@@ -98,12 +98,12 @@ if __name__ == '__main__':
                 args.model = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
             model = EventExtractor.load_from_checkpoint(args.model, config=config)
             model.evaluator = Evaluator(
-            eval_script=consts.PC13_EVAL_SCRIPT,
-            data_dir=model.train_path,
-            out_dir=model.output_dir/"eval",
-            result_re=consts.PC13_RESULT_RE,
-            verbose=True,
-        )
+                eval_cmd=config["eval_cmd"],
+                data_dir=model.train_path,
+                out_dir=model.output_dir/"eval",
+                result_re=consts.PC13_RESULT_RE,
+                verbose=True,
+            )
             trainer.test(model, model.train_eval_dataloader())
 
     # best_checkpoint = list(args.output_dir.glob("*ckpt"))[0]

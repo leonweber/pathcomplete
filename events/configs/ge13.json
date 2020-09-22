@@ -10,5 +10,6 @@
   "lr": 3e-5,
   "event_order": "position",
   "eval_cmd": "perl events/3rd_party/a2-evaluate.pl -g %s -s -p %s",
-  "allow_entity": true
+  "allow_entity": true,
+  "eval_train_every": 10
 }
