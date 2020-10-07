@@ -143,149 +143,8 @@ def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None
     return encoding, node_type_tensor, node_spans, node_ids
 
 
-def get_event_linearization(graph, tokenizer, node_type_to_id,
-                            edge_types_to_mod, event_ordering, known_events=None,
-                            known_triggers=None):
-    linearization = ""
-    node_char_spans = []
-    node_types = []
-    node_spans = []
-    node_ids = []
-
-    events = event_ordering(graph)
-
-    if known_events is not None:
-        events = [e for e in events if e in known_events]
-
-    for event in events:
-        edge_type_to_trigger = defaultdict(set)
-        for u, v, data in graph.out_edges(event, data=True):
-            edge_type_to_trigger[data["type"]].add(v)
-        try:
-            trigger_id = [v for u, v, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
-        except IndexError:
-            trigger_id = None
-
-        # add Cause
-        if "Cause" in edge_type_to_trigger:
-            for i, trigger in enumerate(edge_type_to_trigger["Cause"]):
-                linearization = add_text_to_linearization(
-                    graph=graph,
-                    node_id=trigger,
-                    linearization=linearization,
-                    node_char_spans=node_char_spans,
-                    node_types=node_types,
-                    node_ids=node_ids,
-                    known_nodes=known_triggers
-                )
-                if i > 0:
-                    linearization += " and"
 
 
-            linearization += " causes"
-
-        if trigger_id is not None:
-            # add trigger (with Theme)
-            linearization = add_text_to_linearization(
-                graph=graph,
-                node_id=trigger_id,
-                linearization=linearization,
-                node_char_spans=node_char_spans,
-                node_types=node_types,
-                node_ids=node_ids,
-                known_nodes=known_triggers
-            )
-
-        if "Theme" in edge_type_to_trigger:
-            themes = sorted(edge_type_to_trigger["Theme"])
-
-            linearization += " of"
-
-            trigger = themes[0]
-            linearization = add_text_to_linearization(
-                graph=graph,
-                node_id=trigger,
-                linearization=linearization,
-                node_char_spans=node_char_spans,
-                node_types=node_types,
-                node_ids=node_ids,
-                known_nodes=known_triggers
-            )
-
-            for trigger in themes[1:]:
-                linearization += " and"
-                linearization = add_text_to_linearization(
-                    graph=graph,
-                    node_id=trigger,
-                    linearization=linearization,
-                    node_char_spans=node_char_spans,
-                    node_types=node_types,
-                    node_ids=node_ids,
-                    known_nodes=known_triggers
-                )
-
-        # add rest
-        for edge_type, mod in sorted(edge_types_to_mod.items()):
-            if edge_type in edge_type_to_trigger:
-                linearization += " " + mod
-                triggers = sorted(edge_type_to_trigger[edge_type])
-
-                trigger = triggers[0]
-                linearization = add_text_to_linearization(
-                    graph=graph,
-                    node_id=trigger,
-                    linearization=linearization,
-                    node_char_spans=node_char_spans,
-                    node_types=node_types,
-                    node_ids=node_ids,
-                    known_nodes=known_triggers
-                )
-
-                for trigger in triggers[1:]:
-                    linearization += " and"
-
-                    linearization = add_text_to_linearization(
-                        graph=graph,
-                        node_id=trigger,
-                        linearization=linearization,
-                        node_char_spans=node_char_spans,
-                        node_types=node_types,
-                        node_ids=node_ids,
-                        known_nodes=known_triggers
-                    )
-
-
-        linearization += " |"
-    linearization += "[SEP]"
-
-    encoding = tokenizer.encode_plus(linearization, return_offsets_mapping=True, add_special_tokens=False)
-    token_starts = [i[0] for i in encoding["offset_mapping"]][:-1]
-    node_type_tensor = torch.zeros(len(encoding["input_ids"]))
-    node_type_tensor[:] = node_type_to_id["None"]
-    for (start, end), node_type in zip(node_char_spans, node_types):
-        start, end = adapt_span(start=start, end=end, token_starts=token_starts)
-        node_type_tensor[start:end] = node_type_to_id[node_type]
-        node_spans.append((start,end))
-
-    return encoding, node_type_tensor, node_spans, node_ids
-
-
-def add_text_to_linearization(graph, linearization, node_char_spans, node_types, node_ids,
-                              node_id, known_nodes):
-    text = graph.nodes[node_id]["text"]
-    if known_nodes is None or node_id in known_nodes and graph.nodes[node_id]["type"] != "Entity":
-        node_type = graph.nodes[node_id]["type"]
-    else:
-        node_type = "None"
-    start = len(linearization) + 1
-    end = start + len(text)
-    node_char_spans.append((start, end))
-    node_ids.append(node_id)
-    node_types.append(node_type)
-    linearization += " " + text
-
-
-    return linearization
 
 
 
@@ -518,6 +377,152 @@ class BioNLPDataset:
             sentence.tokens[-1].add_label("Trigger", tag2)
         print(sentence.to_tagged_string())
 
+    def get_event_linearization(self, graph, tokenizer, node_type_to_id,
+                                edge_types_to_mod, event_ordering, known_events=None,
+                                known_triggers=None):
+        linearization = ""
+        node_char_spans = []
+        node_types = []
+        node_spans = []
+        node_ids = []
+
+        events = event_ordering(graph)
+
+        if known_events is not None:
+            events = [e for e in events if e in known_events]
+
+        for event in events:
+            edge_type_to_trigger = defaultdict(set)
+            for u, v, data in graph.out_edges(event, data=True):
+                edge_type_to_trigger[data["type"]].add(v)
+            try:
+                trigger_id = [v for u, v, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
+            except IndexError:
+                trigger_id = None
+
+            # add Cause
+            if "Cause" in edge_type_to_trigger:
+                for i, trigger in enumerate(edge_type_to_trigger["Cause"]):
+                    linearization = self.add_text_to_linearization(
+                        graph=graph,
+                        node_id=trigger,
+                        linearization=linearization,
+                        node_char_spans=node_char_spans,
+                        node_types=node_types,
+                        node_ids=node_ids,
+                        known_nodes=known_triggers
+                    )
+                    if i > 0:
+                        linearization += " and"
+
+
+                linearization += " causes"
+
+            # if trigger_id is not None:
+                # add trigger (with Theme)
+            linearization = self.add_text_to_linearization(
+                graph=graph,
+                node_id=event,
+                linearization=linearization,
+                node_char_spans=node_char_spans,
+                node_types=node_types,
+                node_ids=node_ids,
+                known_nodes=known_triggers
+            )
+
+            if "Theme" in edge_type_to_trigger:
+                themes = sorted(edge_type_to_trigger["Theme"])
+
+                linearization += " of"
+
+                trigger = themes[0]
+                linearization = self.add_text_to_linearization(
+                    graph=graph,
+                    node_id=trigger,
+                    linearization=linearization,
+                    node_char_spans=node_char_spans,
+                    node_types=node_types,
+                    node_ids=node_ids,
+                    known_nodes=known_triggers
+                )
+
+                for trigger in themes[1:]:
+                    linearization += " and"
+                    linearization = self.add_text_to_linearization(
+                        graph=graph,
+                        node_id=trigger,
+                        linearization=linearization,
+                        node_char_spans=node_char_spans,
+                        node_types=node_types,
+                        node_ids=node_ids,
+                        known_nodes=known_triggers
+                    )
+
+            # add rest
+            for edge_type, mod in sorted(edge_types_to_mod.items()):
+                if edge_type in edge_type_to_trigger:
+                    linearization += " " + mod
+                    triggers = sorted(edge_type_to_trigger[edge_type])
+
+                    trigger = triggers[0]
+                    linearization = self.add_text_to_linearization(
+                        graph=graph,
+                        node_id=trigger,
+                        linearization=linearization,
+                        node_char_spans=node_char_spans,
+                        node_types=node_types,
+                        node_ids=node_ids,
+                        known_nodes=known_triggers
+                    )
+
+                    for trigger in triggers[1:]:
+                        linearization += " and"
+
+                        linearization = self.add_text_to_linearization(
+                            graph=graph,
+                            node_id=trigger,
+                            linearization=linearization,
+                            node_char_spans=node_char_spans,
+                            node_types=node_types,
+                            node_ids=node_ids,
+                            known_nodes=known_triggers
+                        )
+
+
+            linearization += " |"
+        linearization += "[SEP]"
+
+        encoding = tokenizer.encode_plus(linearization, return_offsets_mapping=True, add_special_tokens=False)
+        token_starts = [i[0] for i in encoding["offset_mapping"]][:-1]
+        node_type_tensor = torch.zeros(len(encoding["input_ids"]))
+        node_type_tensor[:] = node_type_to_id["None"]
+        for (start, end), node_type in zip(node_char_spans, node_types):
+            start, end = adapt_span(start=start, end=end, token_starts=token_starts)
+            node_type_tensor[start:end] = node_type_to_id[node_type]
+            node_spans.append((start,end))
+
+        return encoding, node_type_tensor, node_spans, node_ids
+
+    def add_text_to_linearization(self, graph, linearization, node_char_spans, node_types, node_ids,
+                                  node_id, known_nodes):
+
+        if graph.nodes[node_id]["type"] in self.EVENT_TYPES:
+            text = graph.nodes[node_id]["type"]
+        else:
+            text = graph.nodes[node_id]["text"]
+        if known_nodes is None or node_id in known_nodes and graph.nodes[node_id]["type"] != "Entity":
+            node_type = graph.nodes[node_id]["type"]
+        else:
+            node_type = "None"
+        start = len(linearization) + 1
+        end = start + len(text)
+        node_char_spans.append((start, end))
+        node_ids.append(node_id)
+        node_types.append(node_type)
+        linearization += " " + text
+
+        return linearization
+
 
     @staticmethod
     def collate(batch):
@@ -542,6 +547,7 @@ class BioNLPDataset:
                 self.node_type_to_id[i] = len(self.node_type_to_id)
 
         self.edge_type_to_id = {v: i for i, v in enumerate(sorted(self.EDGE_TYPES))}
+        self.trigger_to_id = {v: i for i, v in enumerate(sorted(self.EVENT_TYPES))}
         self.label_to_id = {"O": 0}
         for edge_type in sorted(self.EDGE_TYPES) + sorted(self.EVENT_TYPES):
             if "B-" + edge_type not in self.label_to_id:
@@ -894,7 +900,7 @@ class BioNLPDataset:
             graph = filter_graph_to_sentence(ann.text_graph, sentence)
             n_edge_before = len(graph.edges)
             self.clean_up_graph(graph, remove_invalid=True)
-            n_edge_after = len(graph.edges)
+            # n_edge_after = len(graph.edges)
             # if n_edge_after  < n_edge_before:
             #     print(n_edge_before - n_edge_after)
             entity_triggers, event_triggers = self.get_triggers(sentence, graph)
@@ -943,12 +949,12 @@ class BioNLPDataset:
 
         known_triggers = set(entity_triggers + [ann.events[i].trigger.id for i in known_events])
         if graph_to_encode is not None:
-            encoding_graph, node_types_graph = get_event_linearization(
+            encoding_graph, node_types_graph = self.get_event_linearization(
                 graph=graph_to_encode, edge_types_to_mod=self.EDGE_TYPES_TO_MOD,
                 tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id, event_ordering=self.event_ordering,
                 known_triggers=None, known_events=None)[:2] # this is a fully predicted graph and thus we know everything about it
         else:
-            encoding_graph, node_types_graph = get_event_linearization(
+            encoding_graph, node_types_graph = self.get_event_linearization(
                 graph=graph, edge_types_to_mod=self.EDGE_TYPES_TO_MOD, known_events=known_events, known_triggers=known_triggers,
                 tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id, event_ordering=self.event_ordering)[:2]
 
@@ -985,8 +991,8 @@ class BioNLPDataset:
         trigger_labels[:] = self.label_to_id["O"]
         mod_labels = torch.zeros(len(self.event_mod_to_id))
         if event:
+            event_type = graph.nodes[event]["type"]
             for u, v, data in graph.out_edges(event, data=True):
-                event_type = graph.nodes[event]["type"]
                 if v.startswith("E"):
                     raise ValueError("Text graph should only have Event -> Trigger edges")
 
@@ -1002,10 +1008,15 @@ class BioNLPDataset:
             for mod in graph.nodes[event]["modifications"]:
                 mod_labels[self.event_mod_to_id[mod]] = 1
 
+            trigger_label = torch.tensor(self.trigger_to_id[event_type])
+        else:
+            trigger_label = torch.tensor(self.trigger_to_id["None"])
+
         example["input_ids"] = input_ids.long()
         example["token_type_ids"] = token_type_ids.long()
         example["edge_labels"] = edge_labels.long()
         example["trigger_labels"] = trigger_labels.long()
+        example["trigger_label"] = trigger_label.long()
         example["mod_labels"] = mod_labels.long()
         example["node_type_ids"] = node_types.long()
 
@@ -1022,7 +1033,7 @@ class BioNLPDataset:
     @staticmethod
     def collate_fn(examples):
         keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "node_type_ids",
-                         "mod_labels"}
+                         "mod_labels", "trigger_label"}
         batch = defaultdict(list)
         for example in examples:
             for k, v in example.items():

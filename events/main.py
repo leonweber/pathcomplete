@@ -64,7 +64,7 @@ if __name__ == '__main__':
     pl.seed_everything(42)
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
-    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=5,
+    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=3,
                          checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
                          num_sanity_val_steps=0, reload_dataloaders_every_epoch=True
                          )

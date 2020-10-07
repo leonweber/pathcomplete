@@ -23,7 +23,6 @@ from events.dataset import (
     PC13Dataset,
     get_text_encoding_and_node_spans,
     get_trigger_to_position,
-    get_event_linearization,
     get_event_graph,
     get_adjacency_matrix, MAX_LEN, BioNLPDataset, get_free_event_id,
     get_a2_lines_from_graph, get_free_trigger_id, filter_graph_to_sentence,
@@ -130,16 +129,21 @@ class EventExtractor(pl.LightningModule):
             v: k for k, v in self.train_dataset.event_mod_to_id.items()
         }
 
+        self.id_to_trigger_type = {
+            v: k for k, v in self.train_dataset.trigger_to_id.items()
+        }
+
         bert_config = BertConfig.from_pretrained(config["bert"])
         bert_config.num_labels = max(self.id_to_label_type) + 1
         num_mods = max(self.id_to_mod_type) + 1
+        num_trigger_types = max(self.id_to_trigger_type) + 1
         bert_config.node_type_vocab_size = len(self.train_dataset.node_type_to_id)
         self.bert = BertGNNModel.from_pretrained(config["bert"], config=bert_config)
         # self.bert = BertForTokenClassification.from_pretrained(config["bert"], config=bert_config)
         self.dropout = nn.Dropout(0.1)
         self.edge_classifier = nn.Linear(768, bert_config.num_labels)
         self.trigger_classifier = nn.Linear(768, bert_config.num_labels)
-        self.modification_classifier = nn.Linear(768, len(self.id_to_mod_type))
+        self.modification_classifier = nn.Linear(768, num_trigger_types)
         self.tokenizer = BertTokenizerFast.from_pretrained(config["bert"])
 
         self.tokenizer.add_special_tokens({"additional_special_tokens": ["@"]})
@@ -203,12 +207,14 @@ class EventExtractor(pl.LightningModule):
                 batch["edge_labels"],
         ):
             seq1_end = torch.where(input_ids == self.tokenizer.sep_token_id)[0][0]
-            loss += nn.CrossEntropyLoss()(trigger_logits[:seq1_end], trigger_labels[:seq1_end])
+            # loss += nn.CrossEntropyLoss()(trigger_logits[:seq1_end], trigger_labels[:seq1_end])
             loss += nn.CrossEntropyLoss()(edge_logits[:seq1_end], edge_labels[:seq1_end])
 
         loss /= len(batch)
 
-        loss += nn.BCEWithLogitsLoss()(batch_mod_logits, batch["mod_labels"].float())
+        # loss += nn.BCEWithLogitsLoss()(batch_mod_logits, batch["mod_labels"].float())
+        loss += nn.CrossEntropyLoss()(batch_mod_logits, batch["trigger_label"].long())
+
 
         log = {"train_loss": loss}
 
@@ -420,7 +426,7 @@ class EventExtractor(pl.LightningModule):
                     node_types_graph,
                     node_spans_graph,
                     node_ids_graph,
-                ) = get_event_linearization(graph=graph,
+                ) = self.train_dataset.get_event_linearization(graph=graph,
                                             tokenizer=self.train_dataset.tokenizer,
                                             node_type_to_id=self.train_dataset.node_type_to_id,
                                             edge_types_to_mod=self.train_dataset.EDGE_TYPES_TO_MOD,
@@ -469,11 +475,13 @@ class EventExtractor(pl.LightningModule):
                 # print(foo)
 
 
-                # logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
+                logging.debug(self.tokenizer.decode(current_batch["input_ids"][0].tolist(), skip_special_tokens=True))
 
                 trigger_logits, edge_logits, mod_logits = self.forward(current_batch)
                 edge_logits = edge_logits.cpu()
                 trigger_logits = trigger_logits.cpu()
+
+                event_type = self.id_to_trigger_type[mod_logits[0].argmax().item()]
 
                 edge_types = self.get_edge_types_from_logits(logits=edge_logits,
                                                              input_ids=current_batch["input_ids"],
@@ -481,27 +489,27 @@ class EventExtractor(pl.LightningModule):
                                                              trigger_spans=node_spans_text,
                                                              token_starts=token_starts)
 
-                trigger_types = self.get_edge_types_from_logits(logits=trigger_logits,
-                                                             input_ids=current_batch["input_ids"],
-                                                             trigger_ids=entity_triggers + event_triggers,
-                                                             trigger_spans=node_spans_text,
-                                                             token_starts=token_starts)
+                # trigger_types = self.get_edge_types_from_logits(logits=trigger_logits,
+                #                                              input_ids=current_batch["input_ids"],
+                #                                              trigger_ids=entity_triggers + event_triggers,
+                #                                              trigger_spans=node_spans_text,
+                #                                              token_starts=token_starts)
 
-                modification_types = set()
-                for i, logit in enumerate(mod_logits[0]):
-                    if logit > 0:
-                        modification_types.add(self.id_to_mod_type[i])
+                # modification_types = set()
+                # for i, logit in enumerate(mod_logits[0]):
+                #     if logit > 0:
+                #         modification_types.add(self.id_to_mod_type[i])
 
                 pretty_edge_types = {}
                 for k, v in edge_types.items():
                     pretty_edge_types[text[k[0]:k[1]]] = v
 
-                pretty_trigger_types = {}
-                for k, v in trigger_types.items():
-                    pretty_trigger_types[text[k[0]:k[1]]] = v
+                # pretty_trigger_types = {}
+                # for k, v in trigger_types.items():
+                #     pretty_trigger_types[text[k[0]:k[1]]] = v
 
                 current_batch["pred_edge"] = pretty_edge_types
-                current_batch["pred_trigger"] = pretty_trigger_types
+                # current_batch["pred_trigger"] = pretty_trigger_types
                 # logging.debug(pretty_edge_types)
                 # logging.debug(pretty_trigger_types)
 
@@ -509,38 +517,37 @@ class EventExtractor(pl.LightningModule):
                     if torch.is_tensor(v):
                         current_batch[k] = v.cpu()
 
-                if not edge_types and not trigger_types:
+                if not edge_types and event_type == "None":
                     batches.append(current_batch)
                     break
                 else:
-                    triggers = []
-                    for span, edge_type in trigger_types.items():
-                        triggers.append((span, edge_type))
+                    # triggers = []
+                    # for span, edge_type in trigger_types.items():
+                    #     triggers.append((span, edge_type))
+                    #
+                    # if len(triggers) == 0:
+                    #     fail_id = get_free_fail_id(predicted_graph)
+                    #     predicted_graph.add_node(fail_id, type="Fail")
+                    #     for dst, edge_type in edge_types.items():
+                    #         if edge_type in self.train_dataset.EDGE_TYPES:
+                    #             dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
+                    #             predicted_graph.add_edge(fail_id, dst_trigger, type=edge_type)
 
-                    if len(triggers) == 0:
-                        fail_id = get_free_fail_id(predicted_graph)
-                        predicted_graph.add_node(fail_id, type="Fail")
-                        for dst, edge_type in edge_types.items():
-                            if edge_type in self.train_dataset.EDGE_TYPES:
-                                dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                                predicted_graph.add_edge(fail_id, dst_trigger, type=edge_type)
+                    # for trigger in triggers:
+                    event_id = get_free_event_id(predicted_graph)
+                        # trigger_id = self.get_trigger(span=trigger[0],
+                        #                               graph=predicted_graph,
+                        #                               text=text,
+                        #                               type=trigger[1])
+                    predicted_graph.add_node(event_id, type=event_type )
+                        # predicted_graph.add_edge(event_id, trigger_id, type="Trigger")
 
-                    for trigger in triggers:
-                        event_id = get_free_event_id(predicted_graph)
-                        trigger_id = self.get_trigger(span=trigger[0],
-                                                      graph=predicted_graph,
-                                                      text=text,
-                                                      type=trigger[1])
-                        predicted_graph.add_node(event_id, type=predicted_graph.nodes[trigger_id]["type"],
-                                                 modifications=modification_types)
-                        predicted_graph.add_edge(event_id, trigger_id, type="Trigger")
-
-                        for dst, edge_type in edge_types.items():
-                            dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
-                            if not (event_id, dst_trigger, edge_type) in predicted_graph.edges:
-                                # this fixes a bug where two distinct parts of a trigger
-                                # get predicted as dst leading to multiple edges
-                                predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
+                    for dst, edge_type in edge_types.items():
+                        dst_trigger = self.get_trigger(span=dst, type=None, graph=predicted_graph, text=text)
+                        if not (event_id, dst_trigger, edge_type) in predicted_graph.edges:
+                            # this fixes a bug where two distinct parts of a trigger
+                            # get predicted as dst leading to multiple edges
+                            predicted_graph.add_edge(event_id, dst_trigger, type=edge_type)
 
                     self.train_dataset.clean_up_graph(predicted_graph, remove_invalid=False, lift=False,
                                                       allow_entity=self.allow_entity)
@@ -553,8 +560,8 @@ class EventExtractor(pl.LightningModule):
                     self.allow_entity = True
                     g = predicted_graph.copy()
                     self.train_dataset.clean_up_graph(g, remove_invalid=False, lift=True, allow_entity=self.allow_entity)
-                    current_batch["a2_lines"] = "\n".join(get_a2_lines_from_graph(g,
-                                                                        self.train_dataset.EVENT_TYPES))
+                    # current_batch["a2_lines"] = "\n".join(get_a2_lines_from_graph(g,
+                    #                                                     self.train_dataset.EVENT_TYPES))
                     self.allow_entity = old_allow_entity
                     batches.append(current_batch)
 

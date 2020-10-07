@@ -7,11 +7,11 @@
   "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
   "trigger_detector": "events/trigger_detection_models/bionlp2013_pc_triggers/best-model.pt",
   "trigger_ordering": "position",
-  "small": true,
+  "small": false,
   "use_dagger": false,
   "lr": 3e-5,
   "event_order": "simple_first",
   "eval_cmd": "python2 events/3rd_party/evaluation-PC.py -r %s %s",
   "allow_entity": false,
-  "eval_train_every": 1
+  "eval_train_every": 50
 }
