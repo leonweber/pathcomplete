@@ -1,4 +1,6 @@
 import sys
+import string
+import random
 
 class Tee:
     def __init__(self, name, mode):
@@ -26,3 +28,6 @@ def overlaps(a, b):
     a = [int(i) for i in a]
     b = [int(i) for i in b]
     return max(0, min(a[1], b[1]) - max(a[0], b[0]))
+
+def get_id(size=20, chars=string.ascii_uppercase + string.digits + string.ascii_lowercase):
+    return ''.join(random.choice(chars) for _ in range(size))

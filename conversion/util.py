@@ -3,9 +3,17 @@ import sys
 from collections import defaultdict
 
 import re
-import requests
-from networkx.utils import UnionFind
+from operator import itemgetter
 
+import requests
+from flair.tokenization import SegtokTokenizer
+from networkx.utils import UnionFind
+from sklearn.metrics.pairwise import cosine_similarity
+
+def overlaps(a, b):
+    a = [int(i) for i in a]
+    b = [int(i) for i in b]
+    return max(0, min(a[1], b[1]) - max(a[0], b[0]))
 
 def geneid_to_uniprot(symbol, mg):
     try:
@@ -153,3 +161,35 @@ def slugify(value):
     value = re.sub('[-\s]+', '-', value)
 
     return value
+
+
+def find_matches_sent2vec(substrings, string, embeddings, threshold=None):
+    tokenizer = SegtokTokenizer()
+    string_tokens = tokenizer.tokenize(string.lower().replace("-", " "))
+    found_spans = []
+    matches = []
+    for substring in substrings:
+        substring = substring.lower().replace("-", " ")
+        substring_tok = " ".join(t.text for t in tokenizer.tokenize(substring))
+        substring_emb = embeddings.embed_sentence(substring_tok)
+        for ws in range(1, len(substring_tok.split())+3):
+            for i in range(len(string_tokens) - ws + 1):
+                start = i
+                end = i +ws -1
+                span = (string_tokens[start].start_pos, string_tokens[end].end_pos)
+
+                if any(overlaps(span, s) for s in found_spans):
+                    continue
+
+                window = " ".join(t.text for t in string_tokens[i:i+ws])
+                window_emb = embeddings.embed_sentence(window)
+                dist = 1 - cosine_similarity(substring_emb, window_emb).squeeze()
+
+                if threshold is None or dist < threshold:
+                    matches.append((span, dist))
+                    found_spans.append(span)
+
+    matches = sorted(matches, key=itemgetter(1), reverse=True)
+
+    return [i[0] for i in matches]
+

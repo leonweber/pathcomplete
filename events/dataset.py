@@ -8,19 +8,22 @@ from operator import attrgetter, itemgetter
 from pathlib import Path
 
 import networkx as nx
+from bioc import BioCJSONReader
 from flair.data import Sentence, Token
 import transformers
 import torch
 from flair.tokenization import SciSpacySentenceSplitter, SegtokSentenceSplitter
+from indra.statements import Statement, Agent, BoundCondition, ModCondition
+from indra import statements
+from indra.assemblers.english.assembler import _assemble_agent_str, EnglishAssembler
 from tqdm import tqdm
 
 from events import consts
 from events.parse_standoff import StandoffAnnotation
 from events import parse_standoff
-from util.utils import overlaps
+from util.utils import overlaps, get_id
 
 N_CROSS_SENTENCE = 0
-
 
 MAX_LEN = 412
 
@@ -52,7 +55,8 @@ def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
 
         if not isinstance(node_id, set):
             node_id = {node_id}
-        if list(node_id)[0].startswith("E"): # This is an event and thus there's only a single node in the set => Replace with trigger
+        if list(node_id)[0].startswith(
+                "E"):  # This is an event and thus there's only a single node in the set => Replace with trigger
             trigger_id = {event_to_trigger[list(node_id)[0]]}
         else:
             trigger_id = node_id
@@ -69,7 +73,7 @@ def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
         for j, v_trigger in enumerate(trigger_ids_graph):
             if not isinstance(v_trigger, set):
                 v_trigger = set(v_trigger)
-            if u_trigger in v_trigger: # This gets an edge if the token is the trigger for any of the nodes in the set
+            if u_trigger in v_trigger:  # This gets an edge if the token is the trigger for any of the nodes in the set
                 text_to_graph[i, j] = edge_type_to_id["Trigger"]
 
     # Graph to graph
@@ -87,6 +91,7 @@ def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
 
     return {"text_to_graph": text_to_graph,
             "graph_to_graph": graph_to_graph}
+
 
 def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None):
     text = ""
@@ -107,7 +112,7 @@ def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None
     for entity in entities:
         entity = ann.triggers[entity]
         if entity.text not in entity_text_to_pos:
-            start = len(text)+1 if text else 0
+            start = len(text) + 1 if text else 0
             if text:
                 text += " " + entity.text
             else:
@@ -119,33 +124,27 @@ def get_event_graph(entities, ann, tokenizer, node_type_to_id, known_events=None
         else:
             node_ids[entity_text_to_pos[entity.text]].add(entity.id)
 
-
     for event in events:
         start = len(text) + 1
-        node_char_spans.append((start, start+len(event.trigger.text)))
+        node_char_spans.append((start, start + len(event.trigger.text)))
         node_types.append(event.trigger.type)
         node_ids.append({event.id})
         text += " " + event.trigger.text
 
     text += "[SEP]"
-    encoding = tokenizer.encode_plus(text, return_offsets_mapping=True, add_special_tokens=False)
+    encoding = tokenizer.encode_plus(text, return_offsets_mapping=True,
+                                     add_special_tokens=False)
     token_starts = [i[0] for i in encoding["offset_mapping"]][1:-1]
     node_type_tensor = torch.zeros(len(encoding["input_ids"]))
     node_type_tensor[:] = node_type_to_id["None"]
     for (start, end), node_type in zip(node_char_spans, node_types):
         start, end = adapt_span(start=start, end=end, token_starts=token_starts)
         node_type_tensor[start:end] = node_type_to_id[node_type]
-        start += 1 # because adapt_span assumes there's an unhandled [CLS] token at the start
+        start += 1  # because adapt_span assumes there's an unhandled [CLS] token at the start
         end += 1
-        node_spans.append((start,end))
-
+        node_spans.append((start, end))
 
     return encoding, node_type_tensor, node_spans, node_ids
-
-
-
-
-
 
 
 def get_events(sent, ann):
@@ -155,8 +154,6 @@ def get_events(sent, ann):
             events.append(event)
 
     return events
-
-
 
 
 def get_trigger_to_position(sent, graph):
@@ -171,24 +168,25 @@ def get_trigger_to_position(sent, graph):
 def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length,
                                      graph, node_type_to_id, trigger_to_position,
                                      return_token_starts=False, known_triggers=None):
-
     if trigger_pos:
         marker_start, marker_end = trigger_pos
-        marked_text = text[:marker_start] + "@ " + text[ marker_start:marker_end] + " @" + text[
-                                                                               marker_end:]
+        marked_text = text[:marker_start] + "@ " + text[
+                                                   marker_start:marker_end] + " @" + text[
+                                                                                     marker_end:]
     else:
         marked_text = text
         marker_start = None
         marker_end = None
-    encoding_text = tokenizer.encode_plus(marked_text, return_offsets_mapping=True, max_length=max_length, add_special_tokens=True,
+    encoding_text = tokenizer.encode_plus(marked_text, return_offsets_mapping=True,
+                                          max_length=max_length, add_special_tokens=True,
                                           pad_to_max_length=True, truncation=True)
 
     if 0 not in encoding_text['input_ids']:
         raise ValueError("Truncated")
 
     token_starts = [i for i, _
-                     in tokenizer.encode_plus(text, return_offsets_mapping=True,
-                                              add_special_tokens=True)["offset_mapping"]]
+                    in tokenizer.encode_plus(text, return_offsets_mapping=True,
+                                             add_special_tokens=True)["offset_mapping"]]
     node_spans = get_trigger_spans(triggers=sorted(trigger_to_position),
                                    token_starts=token_starts[1:-1],
                                    marker_start=marker_start, marker_end=marker_end,
@@ -199,15 +197,13 @@ def get_text_encoding_and_node_spans(text, trigger_pos, tokenizer, max_length,
     for node, span in zip(sorted(trigger_to_position), node_spans):
         if known_triggers is None or node in known_triggers:
             if graph.nodes[node]["type"] != "Entity":
-                node_types_text[span[0]:span[1]] = node_type_to_id[graph.nodes[node]["type"]]
+                node_types_text[span[0]:span[1]] = node_type_to_id[
+                    graph.nodes[node]["type"]]
 
     if not return_token_starts:
         return encoding_text, node_spans, node_types_text
     else:
         return encoding_text, node_spans, node_types_text, token_starts
-
-
-
 
 
 def adapt_span(start, end, token_starts):
@@ -223,16 +219,18 @@ def adapt_span(start, end, token_starts):
     return new_start, new_end
 
 
-def get_trigger_spans(triggers, token_starts, marker_start, marker_end, trigger_to_position,
+def get_trigger_spans(triggers, token_starts, marker_start, marker_end,
+                      trigger_to_position,
                       text=None, tokenizer=None, encoding_text=None):
     trigger_spans = []
 
     for node in triggers:
         char_start, char_end = trigger_to_position[node]
-        token_start, token_end = adapt_span(start=char_start, end=char_end, token_starts=token_starts)
+        token_start, token_end = adapt_span(start=char_start, end=char_end,
+                                            token_starts=token_starts)
         # account for [CLS]
         token_start += 1
-        token_end +=1
+        token_end += 1
 
         # adjust for inserted markers
         if marker_start is not None and char_start >= marker_start:
@@ -245,7 +243,8 @@ def get_trigger_spans(triggers, token_starts, marker_start, marker_end, trigger_
         if marker_end is not None and char_end > marker_end:
             token_end += 1
 
-        if token_start >= len(encoding_text["input_ids"]): # default to [SEP] if sentence is too long
+        if token_start >= len(
+                encoding_text["input_ids"]):  # default to [SEP] if sentence is too long
             token_start = len(encoding_text["input_ids"]) - 1
             token_end = len(encoding_text["input_ids"])
 
@@ -261,7 +260,8 @@ def get_trigger_spans(triggers, token_starts, marker_start, marker_end, trigger_
 
 
 def triggers_are_overlapping(trigger1, trigger2):
-    return max(int(trigger1.start), int(trigger2.start)) <= min(int(trigger1.end), int(trigger2.end))
+    return max(int(trigger1.start), int(trigger2.start)) <= min(int(trigger1.end),
+                                                                int(trigger2.end))
 
 
 def integrate_predicted_a2_triggers(ann, ann_predicted):
@@ -271,7 +271,7 @@ def integrate_predicted_a2_triggers(ann, ann_predicted):
     original_triggers = set(e.trigger for e in ann.events.values())
 
     for predicted_trigger in ann_predicted.triggers.values():
-        predicted_trigger.id = None # only overlapping triggers receive an id for now
+        predicted_trigger.id = None  # only overlapping triggers receive an id for now
 
     for original_trigger in original_triggers:
         for predicted_trigger in ann_predicted.triggers.values():
@@ -281,7 +281,7 @@ def integrate_predicted_a2_triggers(ann, ann_predicted):
                     new_a2_lines.append(predicted_trigger.to_a_star())
                     added_triggers.add(original_trigger.id)
                 break
-        else: # didn't find an overlap
+        else:  # didn't find an overlap
             for _, event in ann.event_graph.out_edges(original_trigger.id):
                 new_graph.remove_node(event)
 
@@ -300,11 +300,13 @@ def integrate_predicted_a2_triggers(ann, ann_predicted):
 def filter_graph_to_sentence(text_graph, sent):
     global N_CROSS_SENTENCE
 
-    event_to_n_edges = {i: len(text_graph.out_edges(i)) for i in text_graph.nodes if i.startswith("E")}
+    event_to_n_edges = {i: len(text_graph.out_edges(i)) for i in text_graph.nodes if
+                        i.startswith("E")}
 
     text_graph = text_graph.copy()
     for n, d in [n for n in text_graph.nodes(data=True)]:
-        if n.startswith("T") and not (sent.end_pos > int(d["span"][0]) >= sent.start_pos):
+        if n.startswith("T") and not (
+                sent.end_pos > int(d["span"][0]) >= sent.start_pos):
             for u, _, d in [e for e in text_graph.in_edges(n, data=True)]:
                 if d["type"] == "Trigger":
                     text_graph.remove_node(u)
@@ -324,7 +326,8 @@ def event_in_graph(event, graph):
         if graph.nodes[event_cand]["type"] != event.type:
             continue
 
-        trigger_cand = [i for _, i, d in graph.out_edges(event_cand, data=True) if d["type"] == "Trigger"][0]
+        trigger_cand = [i for _, i, d in graph.out_edges(event_cand, data=True) if
+                        d["type"] == "Trigger"][0]
 
         if not overlaps(graph.nodes[trigger_cand]["span"],
                         trigger_span):
@@ -338,7 +341,8 @@ def event_in_graph(event, graph):
                 role_pos = (role.trigger.start, role.trigger.end)
 
             for _, role_cand, d in graph.out_edges(event_cand, data=True):
-                if overlaps(role_pos, graph.nodes[role_cand]["span"]) and d["type"] == role_type:
+                if overlaps(role_pos, graph.nodes[role_cand]["span"]) and d[
+                    "type"] == role_type:
                     matched_roles.append(role)
                     break
 
@@ -358,7 +362,6 @@ class BioNLPDataset:
     EVENT_TYPE_TO_ORDER = None
     EDGE_TYPES_TO_MOD = None
     EVENT_MODS = None
-
 
     def is_valid_argument_type(self, arg, reftype):
         raise NotImplementedError
@@ -396,7 +399,8 @@ class BioNLPDataset:
             for u, v, data in graph.out_edges(event, data=True):
                 edge_type_to_trigger[data["type"]].add(v)
             try:
-                trigger_id = [v for u, v, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
+                trigger_id = [v for u, v, d in graph.out_edges(event, data=True) if
+                              d["type"] == "Trigger"][0]
             except IndexError:
                 trigger_id = None
 
@@ -415,11 +419,10 @@ class BioNLPDataset:
                     if i > 0:
                         linearization += " and"
 
-
                 linearization += " causes"
 
             # if trigger_id is not None:
-                # add trigger (with Theme)
+            # add trigger (with Theme)
             linearization = self.add_text_to_linearization(
                 graph=graph,
                 node_id=event,
@@ -488,29 +491,31 @@ class BioNLPDataset:
                             known_nodes=known_triggers
                         )
 
-
             linearization += " |"
         linearization += "[SEP]"
 
-        encoding = tokenizer.encode_plus(linearization, return_offsets_mapping=True, add_special_tokens=False)
+        encoding = tokenizer.encode_plus(linearization, return_offsets_mapping=True,
+                                         add_special_tokens=False)
         token_starts = [i[0] for i in encoding["offset_mapping"]][:-1]
         node_type_tensor = torch.zeros(len(encoding["input_ids"]))
         node_type_tensor[:] = node_type_to_id["None"]
         for (start, end), node_type in zip(node_char_spans, node_types):
             start, end = adapt_span(start=start, end=end, token_starts=token_starts)
             node_type_tensor[start:end] = node_type_to_id[node_type]
-            node_spans.append((start,end))
+            node_spans.append((start, end))
 
         return encoding, node_type_tensor, node_spans, node_ids
 
-    def add_text_to_linearization(self, graph, linearization, node_char_spans, node_types, node_ids,
+    def add_text_to_linearization(self, graph, linearization, node_char_spans,
+                                  node_types, node_ids,
                                   node_id, known_nodes):
 
         if graph.nodes[node_id]["type"] in self.EVENT_TYPES:
             text = graph.nodes[node_id]["type"]
         else:
             text = graph.nodes[node_id]["text"]
-        if known_nodes is None or node_id in known_nodes and graph.nodes[node_id]["type"] != "Entity":
+        if known_nodes is None or node_id in known_nodes and graph.nodes[node_id][
+            "type"] != "Entity":
             node_type = graph.nodes[node_id]["type"]
         else:
             node_type = "None"
@@ -523,14 +528,14 @@ class BioNLPDataset:
 
         return linearization
 
-
     @staticmethod
     def collate(batch):
         assert len(batch) == 1
         return batch[0]
 
     def __init__(self, path: Path, tokenizer: Path,
-                 linearize_events: bool = False, batch_size: int = 16, predict: bool = False,
+                 linearize_events: bool = False, batch_size: int = 16,
+                 predict: bool = False,
                  predict_entities: bool = False, event_order: str = "position",
                  max_span_width: int = 10, small=False
                  ):
@@ -539,7 +544,6 @@ class BioNLPDataset:
             # self.text_files = [i for i in self.text_files if "PMID-10593988" in str(i)]
             self.text_files = self.text_files[23:24]
         # self.text_files = self.text_files[226:227]
-
 
         self.node_type_to_id = {}
         for i in sorted(itertools.chain(self.EVENT_TYPES, self.ENTITY_TYPES)):
@@ -648,11 +652,12 @@ class BioNLPDataset:
                     role_starts.append(role_start)
                     role_types.append(role_type)
 
-                if trigger_start is None: # this is a Fail sort by rightmost role
+                if trigger_start is None:  # this is a Fail sort by rightmost role
                     trigger_start = sorted([i[0] for i in roles])[-1]
                     trigger_type = "Fail"
 
-                sort_tuple = tuple([trigger_start] + role_starts + [trigger_type] + role_types)
+                sort_tuple = tuple(
+                    [trigger_start] + role_starts + [trigger_type] + role_types)
                 sort_tuple_to_events[sort_tuple].append(n)
 
         for sort_tuple in sorted(sort_tuple_to_events):
@@ -690,15 +695,13 @@ class BioNLPDataset:
 
         return order
 
-
-
-
     def sort_triggers_by_simple_first(self, triggers, ann):
         triggers_with_info = []
         for trigger in triggers:
             triggers_with_info.append((trigger,
-                                      ann.triggers[trigger].start,
-                                      self.EVENT_TYPE_TO_ORDER[ann.triggers[trigger].type]))
+                                       ann.triggers[trigger].start,
+                                       self.EVENT_TYPE_TO_ORDER[
+                                           ann.triggers[trigger].type]))
 
         sorted_triggers = sorted(triggers_with_info, key=itemgetter(2, 1))
 
@@ -774,7 +777,8 @@ class BioNLPDataset:
             edge_types = [i[2]["type"] for i in graph.out_edges(event, data=True)]
             event_type = graph.nodes[event]["type"]
 
-            triggers = [v for _, v, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"]
+            triggers = [v for _, v, d in graph.out_edges(event, data=True) if
+                        d["type"] == "Trigger"]
             if not edge_types or edge_types == ["Trigger"]:
                 if event_type not in self.NO_ARGUMENT_ALLOWED:
                     graph.remove_node(event)
@@ -795,7 +799,8 @@ class BioNLPDataset:
             for u, v, key, d in list(graph.out_edges(event, data=True, keys=True)):
                 edge_type = d["type"]
                 v_type = graph.nodes[v]["type"]
-                if not self.is_valid_argument_type(event_type=event_type, arg=edge_type, reftype=v_type, refid=v):
+                if not self.is_valid_argument_type(event_type=event_type, arg=edge_type,
+                                                   reftype=v_type, refid=v):
                     graph.remove_edge(u, v, key)
 
     def remove_nones(self, graph):
@@ -816,7 +821,7 @@ class BioNLPDataset:
 
             if remove_invalid:
                 self.remove_invalid_edges(graph)
-            if lift: # there shouldn't be any cycles left after lifting
+            if lift:  # there shouldn't be any cycles left after lifting
                 self.break_up_cycles(graph)
             self.split_args(graph)
 
@@ -850,14 +855,19 @@ class BioNLPDataset:
                     for u, _, d in graph.in_edges(t, data=True):
                         if d["type"] == "Trigger":
                             events.append(u)
-                for u, _, edge_id, d in list(graph.in_edges(trigger, data=True, keys=True)):
+                for u, _, edge_id, d in list(
+                        graph.in_edges(trigger, data=True, keys=True)):
                     if d["type"] != "Trigger":
                         for event in events:
                             if not u.startswith("Fail"):
-                                u_trigger = [i for _, i, d in graph.out_edges(u, data=True) if d["type"] == "Trigger"][0]
+                                u_trigger = \
+                                [i for _, i, d in graph.out_edges(u, data=True) if
+                                 d["type"] == "Trigger"][0]
                             else:
                                 u_trigger = u
-                            event_trigger = [i for _, i, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
+                            event_trigger = \
+                            [i for _, i, d in graph.out_edges(event, data=True) if
+                             d["type"] == "Trigger"][0]
                             if u_trigger != event_trigger:
                                 graph.add_edge(u, event, **d)
                         if events or not allow_entity:
@@ -908,7 +918,6 @@ class BioNLPDataset:
 
             known_events = []
 
-
             for event in self.event_ordering(graph):
                 example = self.build_example(ann=ann,
                                              entity_triggers=entity_triggers,
@@ -940,23 +949,27 @@ class BioNLPDataset:
         #     self.print_example(example)
         return examples
 
-
     def build_example(self, ann, entity_triggers, event,
                       event_triggers, graph, sentence,
                       trigger_to_position, known_events, graph_to_encode=None,
                       ):
         example = {}
 
-        known_triggers = set(entity_triggers + [ann.events[i].trigger.id for i in known_events])
+        known_triggers = set(
+            entity_triggers + [ann.events[i].trigger.id for i in known_events])
         if graph_to_encode is not None:
             encoding_graph, node_types_graph = self.get_event_linearization(
                 graph=graph_to_encode, edge_types_to_mod=self.EDGE_TYPES_TO_MOD,
-                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id, event_ordering=self.event_ordering,
-                known_triggers=None, known_events=None)[:2] # this is a fully predicted graph and thus we know everything about it
+                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id,
+                event_ordering=self.event_ordering,
+                known_triggers=None, known_events=None)[
+                                               :2]  # this is a fully predicted graph and thus we know everything about it
         else:
             encoding_graph, node_types_graph = self.get_event_linearization(
-                graph=graph, edge_types_to_mod=self.EDGE_TYPES_TO_MOD, known_events=known_events, known_triggers=known_triggers,
-                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id, event_ordering=self.event_ordering)[:2]
+                graph=graph, edge_types_to_mod=self.EDGE_TYPES_TO_MOD,
+                known_events=known_events, known_triggers=known_triggers,
+                tokenizer=self.tokenizer, node_type_to_id=self.node_type_to_id,
+                event_ordering=self.event_ordering)[:2]
 
         remaining_length = MAX_LEN - len(encoding_graph["input_ids"])
         trigger_to_position = get_trigger_to_position(sentence, graph)
@@ -994,16 +1007,19 @@ class BioNLPDataset:
             event_type = graph.nodes[event]["type"]
             for u, v, data in graph.out_edges(event, data=True):
                 if v.startswith("E"):
-                    raise ValueError("Text graph should only have Event -> Trigger edges")
+                    raise ValueError(
+                        "Text graph should only have Event -> Trigger edges")
 
                 if v in trigger_to_span:
                     pos = trigger_to_span[v]
                     if data["type"] == "Trigger":
                         trigger_labels[pos[0]] = self.label_to_id["B-" + event_type]
-                        trigger_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + event_type]
+                        trigger_labels[pos[0] + 1: pos[1]] = self.label_to_id[
+                            "I-" + event_type]
                     else:
                         edge_labels[pos[0]] = self.label_to_id["B-" + data["type"]]
-                        edge_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + data["type"]]
+                        edge_labels[pos[0] + 1: pos[1]] = self.label_to_id[
+                            "I-" + data["type"]]
 
             for mod in graph.nodes[event]["modifications"]:
                 mod_labels[self.event_mod_to_id[mod]] = 1
@@ -1023,7 +1039,8 @@ class BioNLPDataset:
         id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
 
         foo = []
-        for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()), node_types):
+        for tok, nt in zip(self.tokenizer.convert_ids_to_tokens(input_ids.tolist()),
+                           node_types):
             foo.append((tok, id_to_node_type[nt.item()]))
         # print(foo[:20])
         # print(foo[-20:])
@@ -1032,7 +1049,8 @@ class BioNLPDataset:
 
     @staticmethod
     def collate_fn(examples):
-        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask", "node_type_ids",
+        keys_to_batch = {"input_ids", "token_type_ids", "attention_mask",
+                         "node_type_ids",
                          "mod_labels", "trigger_label"}
         batch = defaultdict(list)
         for example in examples:
@@ -1062,7 +1080,8 @@ class BioNLPDataset:
             for event in self.event_ordering(graph_true):
                 if not event_in_graph(ann_true.events[event], pred_example["graph"]):
                     example = self.build_dagger_example(pred_example=pred_example,
-                                                        event=event, true_graph=graph_true,
+                                                        event=event,
+                                                        true_graph=graph_true,
                                                         sentence=sentence)
                     break
             else:
@@ -1076,12 +1095,12 @@ class BioNLPDataset:
                     self.examples.append(example)
                 # self.print_example(example)
 
-
         logging.info(f"Added {n_added} new examples from Dagger")
 
     def example_to_trajectory(self, example):
-        tokens = "".join(self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
-                                                      skip_special_tokens=True))
+        tokens = "".join(
+            self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
+                                                 skip_special_tokens=True))
         edge_labels = tuple(example["edge_labels"].tolist())
         trigger_labels = tuple(example["trigger_labels"].tolist())
 
@@ -1117,16 +1136,19 @@ class BioNLPDataset:
             for u, v, data in true_graph.out_edges(event, data=True):
                 event_type = true_graph.nodes[event]["type"]
                 if v.startswith("E"):
-                    raise ValueError("Text graph should only have Event -> Trigger edges")
+                    raise ValueError(
+                        "Text graph should only have Event -> Trigger edges")
 
                 if v in trigger_to_span:
                     pos = trigger_to_span[v]
                     if data["type"] == "Trigger":
                         trigger_labels[pos[0]] = self.label_to_id["B-" + event_type]
-                        trigger_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + event_type]
+                        trigger_labels[pos[0] + 1: pos[1]] = self.label_to_id[
+                            "I-" + event_type]
                     else:
                         edge_labels[pos[0]] = self.label_to_id["B-" + data["type"]]
-                        edge_labels[pos[0]+1: pos[1]] = self.label_to_id["I-" + data["type"]]
+                        edge_labels[pos[0] + 1: pos[1]] = self.label_to_id[
+                            "I-" + data["type"]]
 
             for mod in true_graph.nodes[event]["modifications"]:
                 mod_labels[self.event_mod_to_id[mod]] = 1
@@ -1139,7 +1161,6 @@ class BioNLPDataset:
         example["node_type_ids"] = pred_example['node_type_ids'][0].long()
 
         return example
-
 
 
 class PC13Dataset(BioNLPDataset):
@@ -1186,7 +1207,8 @@ class PC13Dataset(BioNLPDataset):
                 return False
 
         if event_type == "Conversion":
-            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc", "Participant"}:
+            if arg in {"Cause", "AtLoc", "Site", "ToLoc", "Loc", "FromLoc",
+                       "Participant"}:
                 return False
 
         if event_type == "Degradation":
@@ -1220,7 +1242,6 @@ class PC13Dataset(BioNLPDataset):
         if "regulation" not in event_type.lower() and reftype not in self.ENTITY_TYPES:
             return False
 
-
         if "loc" in arg.lower():
             if reftype not in {"Entity", "Cellular_component"}:
                 return False
@@ -1231,25 +1252,27 @@ class PC13Dataset(BioNLPDataset):
 def get_free_event_id(graph):
     ids = [int(n[1:]) for n in graph.nodes if n.startswith("E")]
     max_id = max(ids) if ids else 0
-    free_id = f"E{max_id+1}"
+    free_id = f"E{max_id + 1}"
     return free_id
+
 
 def get_free_trigger_id(graph):
     ids = [int(n[1:]) for n in graph.nodes if n.startswith("T")]
     max_id = max(ids) if ids else 0
-    free_id = f"T{max_id+1}"
+    free_id = f"T{max_id + 1}"
     return free_id
+
 
 def get_free_fail_id(graph):
     ids = [int(n[4:]) for n in graph.nodes if n.startswith("Fail")]
     max_id = max(ids) if ids else 0
-    free_id = f"Fail{max_id+1}"
+    free_id = f"Fail{max_id + 1}"
     return free_id
 
 
-
 def sort_args(args):
-    order = ["Theme","Theme2", "Theme3", "Theme4", "Theme5", "Cause", "Site", "CSite", "AtLoc", "ToLoc"]
+    order = ["Theme", "Theme2", "Theme3", "Theme4", "Theme5", "Cause", "Site", "CSite",
+             "AtLoc", "ToLoc"]
 
     def key(x):
         if x in order:
@@ -1260,18 +1283,19 @@ def sort_args(args):
     return sorted(args, key=key)
 
 
-
 def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
     lines = []
     n_mods = 0
 
     for trigger, d in graph.nodes(data=True):
         if trigger.startswith("T") and d["type"] in event_types or d["type"] == "Entity":
-            lines.append(f"{trigger}\t{graph.nodes[trigger]['type']} {' '.join(graph.nodes[trigger]['span'])}\t{graph.nodes[trigger]['text']}")
+            lines.append(
+                f"{trigger}\t{graph.nodes[trigger]['type']} {' '.join(graph.nodes[trigger]['span'])}\t{graph.nodes[trigger]['text']}")
 
     for event in [n for n in graph.nodes if n.startswith("E")]:
         try:
-            trigger = [v for u, v, d in graph.out_edges(event, data=True) if d["type"] == "Trigger"][0]
+            trigger = [v for u, v, d in graph.out_edges(event, data=True) if
+                       d["type"] == "Trigger"][0]
         except IndexError:
             __import__("ipdb").set_trace()
         event_type = graph.nodes[event]["type"]
@@ -1285,7 +1309,8 @@ def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
             if edge_type_count[edge_type] == 1:
                 args.append(f"{edge_type}:{v}")
             else:
-                args.append(f"{edge_type}{edge_type_count[edge_type]}:{v}") # for Theme2, Product2 etc.
+                args.append(
+                    f"{edge_type}{edge_type_count[edge_type]}:{v}")  # for Theme2, Product2 etc.
         args = sort_args(args)
         lines.append(f"{event}\t{event_type}:{trigger} {' '.join(args)}")
 
@@ -1295,3 +1320,294 @@ def get_a2_lines_from_graph(graph: nx.DiGraph, event_types):
 
     return lines
 
+
+class INDRADataset:
+    def __init__(self, path, tokenizer):
+        reader = BioCJSONReader(path)
+        reader.read()
+        self.documents = reader.collection.documents
+        self.node_type_to_id, self.edge_type_to_id = self._get_dicts()
+        self.edge_label_to_id = {}
+        for edge_type in self.edge_type_to_id:
+            self.edge_label_to_id["B-" + edge_type] = len(self.edge_label_to_id)
+            self.edge_label_to_id["I-" + edge_type] = len(self.edge_label_to_id)
+
+        self.tokenizer = transformers.BertTokenizerFast.from_pretrained(tokenizer)
+        self.examples = self._get_examples()
+
+    def _get_dicts(self):
+        node_type_to_id = {}
+        edge_type_to_id = {}
+        for document in self.documents:
+            stmts = []
+            for passage in document.passages:
+                for stmt_json in passage.infons["indra"]:
+                    stmt = Statement._from_json(stmt_json)
+                    stmts.append(stmt)
+            G_full = self.stmts_to_graph(stmts)
+            for _, d in G_full.nodes(data=True):
+                if d["type"] not in node_type_to_id:
+                    node_type_to_id[d["type"]] = len(node_type_to_id)
+            for _, _, d in G_full.edges(data=True):
+                if d["type"] not in edge_type_to_id:
+                    edge_type_to_id[d["type"]] = len(edge_type_to_id)
+
+        return node_type_to_id, edge_type_to_id
+
+    def _get_examples(self):
+        examples = []
+        for document in self.documents:
+            for passage in document.passages:
+                stmts = []
+                text1 = passage.text
+                for stmt_json in passage.infons["indra"]:
+                    stmt = Statement._from_json(stmt_json)
+                    stmts.append(stmt)
+
+                G_full = self.stmts_to_graph(stmts)
+
+                node_to_pos = defaultdict(list)
+                for ann in passage.annotations:
+                    ann_id = (ann.infons["type"], ann.infons["id"])
+                    found_node = None
+                    for n, d in G_full.nodes(data=True):
+                        if "db_refs" in d:
+                            db_refs = [tuple(i) for i in d["db_refs"].items()]
+                            if ann_id in db_refs:
+                                found_node = n
+                                break
+
+                    if found_node:
+                        for loc in ann.locations:
+                            node_to_pos[found_node].append((int(loc.offset),
+                                                            int(loc.offset) + int(loc.length)))
+
+
+                known_nodes = [u for u, d in G_full.nodes(data=True) if
+                               d["type"] == "entity"]
+                for node in self.node_order(G_full):
+                    if G_full.nodes[node]["type"] != "entity":
+                        example = self._build_example(node, G_full=G_full,
+                                                      known_nodes=known_nodes,
+                                                      text1=text1, node_to_pos1=node_to_pos)
+                        known_nodes.append(node)
+                        examples.append(example)
+
+                return examples
+
+
+    def stmts_to_graph(self, stmts):
+        G = nx.MultiDiGraph()
+        agent_to_node = {}
+        for i, stmt in enumerate(stmts):
+            stmt_id = get_id()
+            G.add_node(stmt_id, type="stmt_" + stmt.__class__.__name__)
+            for ag_name in stmt._agent_order:
+                agents = getattr(stmt, ag_name)
+                if not isinstance(agents, list):
+                    agents = [agents]
+                for i, agent in enumerate(agents):
+                    if agent.matches_key() not in agent_to_node:
+                        if agent.bound_conditions:
+                            node, G_agent = self.bound_agent_to_graph(agent)
+                            G.add_nodes_from(G_agent.nodes(data=True))
+                            G.add_edges_from(G_agent.edges(data=True))
+                        elif agent.mods:
+                            node, G_agent = self.modified_agent_to_graph(agent)
+                            G.add_nodes_from(G_agent.nodes(data=True))
+                            G.add_edges_from(G_agent.edges(data=True))
+                        else:
+                            G.add_node(agent.name, type="entity", db_refs=agent.db_refs)
+                            node = agent.name
+                        agent_to_node[agent.matches_key()] = node
+                    node = agent_to_node[agent.matches_key()]
+                    G.add_edge(stmt_id, node, type=ag_name)
+
+            try:
+                if stmt.residue and stmt.position:
+                    site = stmt.residue + stmt.position
+                    G.add_node(site, db_refs={"RESIDUE": site}, type="entity")
+                    G.add_edge(stmt_id, site, type="site")
+            except AttributeError:
+                pass
+
+        return G
+
+    def bound_agent_to_graph(self, agent):
+        G = nx.MultiDiGraph()
+        complex_id = get_id()
+        G.add_node(complex_id, type="complex")
+        if agent.mods:
+            new_agent, G_agent = self.modified_agent_to_graph(agent)
+            G.add_nodes_from(G_agent.nodes(data=True))
+            G.add_edges_from(G_agent.edges(data=True))
+        else:
+            G.add_node(agent.name, db_refs=agent.db_refs, type="entity")
+            new_agent = agent.name
+
+        G.add_edge(complex_id, new_agent, type="has_member")
+        for bc in agent.bound_conditions:
+            if bc.agent.mods:
+                new_agent, G_agent = self.modified_agent_to_graph(bc.agent)
+                G.add_nodes_from(G_agent.nodes(data=True))
+                G.add_edges_from(G_agent.edges(data=True))
+            else:
+                G.add_node(bc.agent.name, db_refs=bc.agent.db_refs, type="entity")
+                new_agent = bc.agent.name
+            G.add_edge(complex_id, new_agent, type="has_member")
+
+        return complex_id, G
+
+    def modified_agent_to_graph(self, agent):
+        G = nx.MultiDiGraph()
+        mod_agent_id = get_id()
+        G.add_node(mod_agent_id, type="modified_entity")
+        G.add_node(agent.name, type="entity")
+        G.add_edge(mod_agent_id, agent.name, type="theme")
+        for mod in agent.mods:
+            site = mod.residue + mod.position
+            G.add_node(site, db_refs={"RESIDUE": site}, type="entity")
+            G.add_edge(mod_agent_id, site, type=mod.mod_type + "_at")
+
+        return mod_agent_id, G
+
+    def __getitem__(self, item):
+        return self.examples[item]
+
+    def __len__(self):
+        return len(self.examples)
+
+    def _build_example(self, node, G_full, known_nodes, text1, node_to_pos1):
+        G_known = G_full.subgraph(known_nodes)
+        text2, node_to_pos2 = self.linearize_graph(G_known)
+        for node, (start, end) in node_to_pos2.items():
+            node_to_pos2[node] = (start + len(text1), end + len(text1))
+        node_to_pos = {}
+        node_to_pos.update(node_to_pos1)
+        node_to_pos.update(node_to_pos2)
+        encoding = self.tokenizer.encode_plus(text1, text2, padding="max_length",
+                                              truncation="only_first",
+                                              return_tensors="pt",
+                                              return_offsets_mapping=True,
+                                              max_length=MAX_LEN)
+        token_starts = [0, 0] + list(itertools.takewhile(lambda x: x > 0, encoding["offset_mapping"][0, 2:, 0].tolist()))
+        labels = torch.zeros_like(encoding["input_ids"])
+        labels[0, 0] = self.node_type_to_id[G_full.nodes[node]["type"]] # Predict node type with [CLS]
+        # TODO take care of multilabel here
+        for _, v, d in G_full.out_edges(node, data=True):
+            for start, end in node_to_pos[v]:
+                span = adapt_span(start, end, token_starts)
+                labels[0, span[0]] = self.edge_label_to_id["B-" + d["type"]]
+                for i in range(span[0]+1, span[1]):
+                    labels[0, i] = self.edge_label_to_id["I-" + d["type"]]
+
+        encoding["labels"] = labels
+
+        return encoding
+
+    def node_order(self, G):
+        G = G.copy()
+        order = []
+        zero_outdegree = [u for u, d in G.out_degree() if d == 0]
+
+        while zero_outdegree:
+            sort_tuple_to_events = defaultdict(list)
+            sort_tuple = []
+            for node in zero_outdegree:
+                sort_tuple.append(G.nodes[node]["type"])
+                sort_tuple_to_events[tuple(sort_tuple)].append(node)
+                G.remove_node(node)
+
+            for sort_tuple in sorted(sort_tuple_to_events):
+                order += sort_tuple_to_events[sort_tuple]
+
+            zero_outdegree = [u for u, d in G.out_degree() if d == 0]
+
+        return order
+
+    def linearize_graph(self, G):
+        linearization = ""
+        node_to_pos = {}
+
+        node_to_stmt = self.graph_to_statements(G)
+        for node in self.node_order(G):
+            node_type = G.nodes[node]["type"]
+            if node in node_to_stmt:
+                if node_type.startswith("stmt"):
+                    text = EnglishAssembler([node_to_stmt[node]]).make_model()
+                else:
+                    text = _assemble_agent_str(node_to_stmt[node]).agent_str + "."
+                start = len(linearization)
+                linearization += text + " "
+                end = len(linearization)
+                node_to_pos[node] = [(start, end)]
+
+        return linearization, node_to_pos
+
+    def graph_to_statements(self, G: nx.MultiDiGraph):
+        def subgraph_to_statement(n):
+            kwargs = {}
+            for _, v, d in G.out_edges(n, data=True):
+                agent = subgraph_to_agent(v)
+                if d["type"] == "site":
+                    kwargs["residue"] = v[0]
+                    kwargs["position"] = v[1:]
+                    continue
+
+                if d["type"] in kwargs:
+                    if not isinstance(kwargs[d["type"]], list):
+                        kwargs[d["type"]] = [kwargs[d["type"]]]
+                    kwargs[d["type"]].append(agent)
+                else:
+                    kwargs[d["type"]] = agent
+
+            stmt = getattr(statements, G.nodes[n]["type"][len("stmt_"):])(**kwargs)
+            return stmt
+
+        def subgraph_to_agent(n):
+            if G.nodes[n]["type"] == "complex":
+                members = []
+                for _, v, d in G.out_edges(n, data=True):
+                    if d["type"] == "has_member":
+                        members.append(subgraph_to_agent(v))
+                agent = members[0]
+                for i in members[1:]:
+                    agent.bound_conditions.append(BoundCondition(i))
+
+            elif G.nodes[n]["type"] == "modified_entity":
+                theme = [v for _, v, d in G.out_edges(n, data=True) if d["type"] == "Theme"][0]
+                agent = subgraph_to_agent(theme)
+                for _, v, d in G.out_edges(n, data=True):
+                    if d["type"].endswith("_at"):
+                        mod_type = d["type"][:len("_at")]
+                        pos = v[1:]
+                        res = v[:1]
+                        agent.mods.append(ModCondition(mod_type, position=pos, residue=res))
+            elif G.nodes[n]["type"] == "entity":
+                agent = Agent(n)
+                agent.db_refs = G.nodes[n]["db_refs"]
+            else:
+                raise ValueError(G.nodes[n]["type"])
+
+            return agent
+
+        node_to_stmt = {}
+
+        nodes = []
+        for n, d in G.nodes(data=True):
+            if d["type"] != "entity":
+                nodes.append(n)
+
+        for n in nodes:
+            if G.nodes[n]["type"].startswith("stmt_"):
+                node_to_stmt[n] = subgraph_to_statement(n)
+            else:
+                node_to_stmt[n] = subgraph_to_agent(n)
+
+        return node_to_stmt
+
+
+
+if __name__ == '__main__':
+    INDRADataset("foo.json",
+                 tokenizer="/vol/fob-vol1/mi15/weberple/glusterfs/data/scibert_scivocab_uncased")

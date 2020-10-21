@@ -22,30 +22,6 @@ MAX_EDIT_DIST = 10
 STOPWORDS = set(i.lower() for i in stopwords.words("english") + list(string.punctuation) + ["also"])
 
 
-def find_best_match(substrings, string):
-    tokenizer = SegtokTokenizer()
-    string_tokens = tokenizer.tokenize(string.lower())
-    min_dist = float('inf')
-    best_span = None
-    for substring in substrings:
-        substring = substring.lower().replace("-", " ")
-        substring_tok = " ".join(t.text for t in tokenizer.tokenize(substring))
-        substring_emb = embeddings.embed_sentence(substring_tok)
-        # ws = len(substring_tokens)
-        for ws in range(1, len(substring_tok.split())+3):
-            for i in range(len(string_tokens) - ws):
-                window = " ".join(t.text for t in string_tokens[i:i+ws])
-                window_emb = embeddings.embed_sentence(window)
-                dist = 1 - cosine_similarity(substring_emb, window_emb).squeeze()
-
-                if dist < min_dist:
-                    start = i
-                    end = i +ws -1
-                    min_dist = dist
-                    best_span = (string_tokens[start].start_pos, string_tokens[end].end_pos)
-                    pass
-
-    return best_span
 
 
 if __name__ == '__main__':
