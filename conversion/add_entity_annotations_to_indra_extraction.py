@@ -3,7 +3,7 @@ from bioc import BioCJSONReader, BioCCollection, BioCDocument, BioCAnnotation, B
 from indra.statements import Statement
 import csv
 
-from conversion.util import find_matches_sent2vec
+from conversion.utils import find_matches_sent2vec
 
 
 

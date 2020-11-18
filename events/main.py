@@ -11,7 +11,7 @@ from pprint import pprint
 import torch
 from flair.models import SequenceTagger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.logging import WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 
 from events import consts
 from events.evaluation import Evaluator
@@ -53,7 +53,7 @@ if __name__ == '__main__':
         checkpoint_callback = ModelCheckpoint(filepath=args.output_dir,
                                                   save_weights_only=True,
                                                   verbose=True,
-                                                  monitor="val_f1",
+                                                  monitor="val_acc",
                                                   mode="max",
                                                   save_top_k=1)
     else:
@@ -64,9 +64,8 @@ if __name__ == '__main__':
     pl.seed_everything(42)
     if not args.disable_wandb:
         logger.append(WandbLogger(project="events"))
-    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1, check_val_every_n_epoch=3,
-                         checkpoint_callback=checkpoint_callback, logger=logger, use_amp=True,
-                         num_sanity_val_steps=0, reload_dataloaders_every_epoch=True
+    trainer = pl.Trainer(gpus=1, accumulate_grad_batches=1,
+                         checkpoint_callback=checkpoint_callback, logger=logger, precision=16
                          )
     if args.train:
         # with Tee(args.output_dir/"train.log", "w"):

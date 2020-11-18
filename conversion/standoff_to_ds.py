@@ -9,7 +9,7 @@ import spacy
 from tqdm import tqdm
 from mygene import MyGeneInfo
 
-from .util import natural_language_to_uniprot
+from .utils import natural_language_to_uniprot
 unmappable = set()
 
 ENTITY_TYPES = {'Gene_or_gene_product', 'Protein'}

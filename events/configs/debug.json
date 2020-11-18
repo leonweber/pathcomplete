@@ -1,9 +1,8 @@
 {
   "linearize": true,
   "model": "bert",
-  "train": "events/data/BioNLP-ST_2013_PC_training_data",
-  "dev": "events/data/BioNLP-ST_2013_PC_development_data",
-  "test": "events/data/BioNLP-ST_2013_PC_test_data",
+  "train": "events/data/BioCreative_BEL_Track/train.bioc.xml",
+  "dev": "events/data/BioCreative_BEL_Track/dev.bioc.xml",
   "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
   "event_order": "position",
   "use_dagger": false,

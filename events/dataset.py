@@ -8,7 +8,7 @@ from operator import attrgetter, itemgetter
 from pathlib import Path
 
 import networkx as nx
-from bioc import BioCJSONReader
+from bioc import BioCJSONReader, BioCXMLReader
 from flair.data import Sentence, Token
 import transformers
 import torch
@@ -17,6 +17,7 @@ from indra.statements import Statement, Agent, BoundCondition, ModCondition
 from indra import statements
 from indra.assemblers.english.assembler import _assemble_agent_str, EnglishAssembler
 from tqdm import tqdm
+from lxml import etree
 
 from events import consts
 from events.parse_standoff import StandoffAnnotation
@@ -861,13 +862,13 @@ class BioNLPDataset:
                         for event in events:
                             if not u.startswith("Fail"):
                                 u_trigger = \
-                                [i for _, i, d in graph.out_edges(u, data=True) if
-                                 d["type"] == "Trigger"][0]
+                                    [i for _, i, d in graph.out_edges(u, data=True) if
+                                     d["type"] == "Trigger"][0]
                             else:
                                 u_trigger = u
                             event_trigger = \
-                            [i for _, i, d in graph.out_edges(event, data=True) if
-                             d["type"] == "Trigger"][0]
+                                [i for _, i, d in graph.out_edges(event, data=True) if
+                                 d["type"] == "Trigger"][0]
                             if u_trigger != event_trigger:
                                 graph.add_edge(u, event, **d)
                         if events or not allow_entity:
@@ -1327,10 +1328,12 @@ class INDRADataset:
         reader.read()
         self.documents = reader.collection.documents
         self.node_type_to_id, self.edge_type_to_id = self._get_dicts()
-        self.edge_label_to_id = {}
+        self.label_to_id = {"O": 0}
         for edge_type in self.edge_type_to_id:
-            self.edge_label_to_id["B-" + edge_type] = len(self.edge_label_to_id)
-            self.edge_label_to_id["I-" + edge_type] = len(self.edge_label_to_id)
+            self.label_to_id["B-" + edge_type] = len(self.label_to_id)
+            self.label_to_id["I-" + edge_type] = len(self.label_to_id)
+        for node_type in self.node_type_to_id:
+            self.label_to_id[node_type] = len(self.label_to_id)
 
         self.tokenizer = transformers.BertTokenizerFast.from_pretrained(tokenizer)
         self.examples = self._get_examples()
@@ -1380,8 +1383,8 @@ class INDRADataset:
                     if found_node:
                         for loc in ann.locations:
                             node_to_pos[found_node].append((int(loc.offset),
-                                                            int(loc.offset) + int(loc.length)))
-
+                                                            int(loc.offset) + int(
+                                                                loc.length)))
 
                 known_nodes = [u for u, d in G_full.nodes(data=True) if
                                d["type"] == "entity"]
@@ -1389,12 +1392,12 @@ class INDRADataset:
                     if G_full.nodes[node]["type"] != "entity":
                         example = self._build_example(node, G_full=G_full,
                                                       known_nodes=known_nodes,
-                                                      text1=text1, node_to_pos1=node_to_pos)
+                                                      text1=text1,
+                                                      node_to_pos1=node_to_pos)
                         known_nodes.append(node)
                         examples.append(example)
 
-                return examples
-
+        return examples
 
     def stmts_to_graph(self, stmts):
         G = nx.MultiDiGraph()
@@ -1431,7 +1434,16 @@ class INDRADataset:
             except AttributeError:
                 pass
 
-        return G
+        G_new = nx.DiGraph()
+        G_new.add_nodes_from(G.nodes(data=True))
+        edge_to_types = defaultdict(set)
+        for u, v, d in G.edges(data=True):
+            edge_to_types[(u, v)].add(d["type"])
+        for (u, v), types in edge_to_types.items():
+            combined_type = ",".join(sorted(types))
+            G_new.add_edge(u, v, type=combined_type)
+
+        return G_new
 
     def bound_agent_to_graph(self, agent):
         G = nx.MultiDiGraph()
@@ -1462,7 +1474,7 @@ class INDRADataset:
         G = nx.MultiDiGraph()
         mod_agent_id = get_id()
         G.add_node(mod_agent_id, type="modified_entity")
-        G.add_node(agent.name, type="entity")
+        G.add_node(agent.name, type="entity", db_refs=agent.db_refs)
         G.add_edge(mod_agent_id, agent.name, type="theme")
         for mod in agent.mods:
             site = mod.residue + mod.position
@@ -1480,26 +1492,37 @@ class INDRADataset:
     def _build_example(self, node, G_full, known_nodes, text1, node_to_pos1):
         G_known = G_full.subgraph(known_nodes)
         text2, node_to_pos2 = self.linearize_graph(G_known)
-        for node, (start, end) in node_to_pos2.items():
-            node_to_pos2[node] = (start + len(text1), end + len(text1))
-        node_to_pos = {}
-        node_to_pos.update(node_to_pos1)
-        node_to_pos.update(node_to_pos2)
+        # for u, positions in node_to_pos2.items():
+        #     node_to_pos2[u] = [(s+len(text1), e+len(text1)) for s, e in positions]
         encoding = self.tokenizer.encode_plus(text1, text2, padding="max_length",
                                               truncation="only_first",
                                               return_tensors="pt",
                                               return_offsets_mapping=True,
                                               max_length=MAX_LEN)
-        token_starts = [0, 0] + list(itertools.takewhile(lambda x: x > 0, encoding["offset_mapping"][0, 2:, 0].tolist()))
+        for k, v in encoding.items():
+            encoding[k] = v.squeeze()
+        seq2_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][1].item()
+        pad_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][2].item()
+        token_starts1 = encoding["offset_mapping"][:seq2_start, 0].tolist()
+        token_starts2 = encoding["offset_mapping"][seq2_start:pad_start, 0].tolist()
         labels = torch.zeros_like(encoding["input_ids"])
-        labels[0, 0] = self.node_type_to_id[G_full.nodes[node]["type"]] # Predict node type with [CLS]
-        # TODO take care of multilabel here
+        labels[0] = self.label_to_id[
+            G_full.nodes[node]["type"]]  # Predict node type with [CLS]
         for _, v, d in G_full.out_edges(node, data=True):
+            if v in node_to_pos1:
+                node_to_pos = node_to_pos1
+                token_starts = token_starts1
+                offset = 0
+            else:
+                node_to_pos = node_to_pos2
+                token_starts = token_starts2
+                offset = seq2_start
+
             for start, end in node_to_pos[v]:
                 span = adapt_span(start, end, token_starts)
-                labels[0, span[0]] = self.edge_label_to_id["B-" + d["type"]]
-                for i in range(span[0]+1, span[1]):
-                    labels[0, i] = self.edge_label_to_id["I-" + d["type"]]
+                labels[span[0] + offset] = self.label_to_id["B-" + d["type"]]
+                for i in range(span[0] + 1 + offset, span[1] + offset):
+                    labels[i] = self.label_to_id["I-" + d["type"]]
 
         encoding["labels"] = labels
 
@@ -1539,7 +1562,7 @@ class INDRADataset:
                     text = _assemble_agent_str(node_to_stmt[node]).agent_str + "."
                 start = len(linearization)
                 linearization += text + " "
-                end = len(linearization)
+                end = len(linearization) - 1
                 node_to_pos[node] = [(start, end)]
 
         return linearization, node_to_pos
@@ -1549,19 +1572,21 @@ class INDRADataset:
             kwargs = {}
             for _, v, d in G.out_edges(n, data=True):
                 agent = subgraph_to_agent(v)
-                if d["type"] == "site":
-                    kwargs["residue"] = v[0]
-                    kwargs["position"] = v[1:]
-                    continue
+                types = d["type"].split(",")
+                for t in types:
+                    if t == "site":
+                        kwargs["residue"] = v[0]
+                        kwargs["position"] = v[1:]
+                        continue
+                    if t in kwargs:
+                        if not isinstance(kwargs[t], list):
+                            kwargs[t] = [kwargs[t]]
+                        kwargs[t].append(agent)
+                    else:
+                        kwargs[t] = agent
 
-                if d["type"] in kwargs:
-                    if not isinstance(kwargs[d["type"]], list):
-                        kwargs[d["type"]] = [kwargs[d["type"]]]
-                    kwargs[d["type"]].append(agent)
-                else:
-                    kwargs[d["type"]] = agent
-
-            stmt = getattr(statements, G.nodes[n]["type"][len("stmt_"):])(**kwargs)
+            stmt_type = G.nodes[n]["type"][len("stmt_"):]
+            stmt = getattr(statements, stmt_type)(**kwargs)
             return stmt
 
         def subgraph_to_agent(n):
@@ -1575,14 +1600,16 @@ class INDRADataset:
                     agent.bound_conditions.append(BoundCondition(i))
 
             elif G.nodes[n]["type"] == "modified_entity":
-                theme = [v for _, v, d in G.out_edges(n, data=True) if d["type"] == "Theme"][0]
+                theme = \
+                [v for _, v, d in G.out_edges(n, data=True) if d["type"] == "theme"][0]
                 agent = subgraph_to_agent(theme)
                 for _, v, d in G.out_edges(n, data=True):
                     if d["type"].endswith("_at"):
-                        mod_type = d["type"][:len("_at")]
+                        mod_type = d["type"][:-len("_at")]
                         pos = v[1:]
                         res = v[:1]
-                        agent.mods.append(ModCondition(mod_type, position=pos, residue=res))
+                        agent.mods.append(
+                            ModCondition(mod_type, position=pos, residue=res))
             elif G.nodes[n]["type"] == "entity":
                 agent = Agent(n)
                 agent.db_refs = G.nodes[n]["db_refs"]
@@ -1606,8 +1633,453 @@ class INDRADataset:
 
         return node_to_stmt
 
+    def print_example(self, example):
+        id_to_label = {v: k for k, v in self.label_to_id.items()}
+        tags = [id_to_label[i.item()] for i in example["labels"]]
+        tokens = ["CLS"] + self.tokenizer.convert_ids_to_tokens(
+            example["input_ids"].tolist(),
+            skip_special_tokens=True)
+        sentence = Sentence()
+        for token, tag in zip(tokens, tags):
+            token = Token(token.replace("##", ""))
+            sentence.add_token(token)
+            sentence.tokens[-1].add_label("Label", tag)
+        print(sentence.to_tagged_string())
+
+    def example_to_brat(self, example):
+        id_to_label = {v: k for k, v in self.label_to_id.items()}
+        tags = [id_to_label[i.item()] for i in example["labels"]]
+        tokens = self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
+                                                      skip_special_tokens=False)
+        tokens = [i for i in tokens if i != "[PAD]"]
+        sentence = Sentence()
+        for token, tag in zip(tokens, tags):
+            whitespace_before = False
+            if "##" in token:
+                token = token.replace("##", "")
+            else:
+                whitespace_before = True
+            start = len(sentence.to_original_text()) + 1
+            if not whitespace_before:
+                start -= 1
+            sentence.add_token(Token(token, start_position=start))
+            sentence.tokens[-1].add_label("Label", tag)
+        a1_lines = []
+        for i, span in enumerate(sentence.get_spans("Label")):
+            mention = sentence.to_original_text()[span.start_pos:span.end_pos]
+            a1_lines.append(
+                f"T{i}\t{span.tag} {span.start_pos} {span.end_pos}\t{mention}")
+
+        return sentence.to_original_text(), "\n".join(a1_lines)
+
+
+class BELDataset:
+    supported_functions = {"complexAbundance", "proteinModification", "degradation",
+                           "translocation", "molecularActivity"}
+    supported_relations = {"increases", "directlyIncreases", "decreases",
+                           "directlyDecreases", "-|", "=|", "->", "=>"}
+    relation_to_simplified = {
+        "increases": "increases",
+        "directlyIncreases": "increases",
+        "->": "increases",
+        "=>": "increases",
+        "decreases": "decreases",
+        "directlyDecreases": "decreases",
+        "-|": "decreases",
+        "=|": "decreases"
+    }
+
+    function_type_to_shortened = {
+        "abundance": "a",
+        "activity": "act",
+        "biologicalProcess": "bp",
+        "cellSecretion": "sec",
+        "cellSurfaceExpression": "surf",
+        "complexAbundance": "complex",
+        "compositeAbundance": "composite",
+        "degradation": "deg",
+        "fragment": "frag",
+        "fusion": "fus",
+        "geneAbundance": "g",
+        "location": "loc",
+        "microRNAAbundance": "m",
+        "molecularActivity": "ma",
+        "pathology": "path",
+        "proteinAbundance": "p",
+        "proteinModification": "pmod",
+        "reaction": "rxn",
+        "rnaAbundance": "r",
+        "translocation": "tloc",
+        "variant": "var",
+    }
+
+    def __init__(self, path, tokenizer, simplify_activations=True,
+                 remove_graphs_with_unsupported_functions=True,
+                 simplify_relations=True):
+        self.simplify_activations = simplify_activations
+        self.remove_graphs_with_unsupported_functions = remove_graphs_with_unsupported_functions
+        self.simplify_relations = simplify_relations
+        text_to_graphs = self.read_bioc(path)
+        self.text_to_graph = {}
+        for text, graphs in text_to_graphs.items():
+            graphs = self.rename_and_filter_graphs(graphs)
+            if graphs:
+                G = self.merge_graphs(graphs)
+                self.text_to_graph[text] = G
+        self.node_type_to_id, self.edge_type_to_id = self._get_dicts()
+        self.label_to_id = {'O': 0,
+                            'B-self': 1,
+                            'I-self': 2,
+                            'B-cause': 3,
+                            'I-cause': 4,
+                            'B-theme': 5,
+                            'I-theme': 6,
+                            'B-member': 7,
+                            'I-member': 8,
+                            'proteinAbundance': 9,
+                            'entity': 10,
+                            'increases': 11,
+                            'molecularActivity': 12,
+                            'abundance': 13,
+                            'rnaAbundance': 14,
+                            'biologicalProcess': 15,
+                            'complexAbundance': 16,
+                            'degradation': 17,
+                            'pathology': 18,
+                            'decreases': 19,
+                            'translocation': 20}
+
+        self.tokenizer = transformers.BertTokenizerFast.from_pretrained(tokenizer)
+        self.examples = self._get_examples()
+
+    def _get_dicts(self):
+        node_type_to_id = {}
+        edge_type_to_id = {}
+        for i, G in enumerate(self.text_to_graph.values()):
+            for _, d in G.nodes(data=True):
+                if d["type"] not in node_type_to_id:
+                    node_type_to_id[d["type"]] = len(node_type_to_id)
+            for _, _, d in G.edges(data=True):
+                if d["type"] not in edge_type_to_id:
+                    edge_type_to_id[d["type"]] = len(edge_type_to_id)
+
+        return node_type_to_id, edge_type_to_id
+
+    def merge_graphs(self, graphs):
+        G_merged = nx.DiGraph()
+        for graph in graphs:
+            G_merged.add_nodes_from(graph.nodes(data=True))
+            G_merged.add_edges_from(graph.edges(data=True))
+        return G_merged
+
+    def rename_and_filter_graphs(self, graphs):
+        filtered_graphs = []
+        for G in graphs:
+            G_new = nx.DiGraph()
+            for u, v, d in G.edges(data=True):
+                name_u = self.node_to_bel(u, G)
+                name_v = self.node_to_bel(v, G)
+                e = (name_u, name_v)
+
+                if e in G_new.edges and d["type"] != G_new.edges[e][
+                    "type"]:  # remove self-loops
+                    print("removed: ", e)
+                    print(d["type"], G_new.edges[e]["type"])
+                    print()
+
+                    break
+
+                G_new.add_node(name_u, **G.nodes[u])
+                G_new.add_node(name_v, **G.nodes[v])
+                G_new.add_edge(name_u, name_v, **d)
+            else:
+                filtered_graphs.append(G_new)
+
+        return filtered_graphs
+
+    def example_to_sentence(self, input_ids, labels):
+        id_to_label = {v: k for k, v in self.label_to_id.items()}
+        tokens = ["CLS"] + self.tokenizer.convert_ids_to_tokens(input_ids.tolist(),
+                                                                skip_special_tokens=True)
+        tags = [id_to_label[i.item()] for i in labels]
+        sentence = Sentence()
+        for token, tag in zip(tokens, tags):
+            token = Token(token.replace("##", ""))
+            sentence.add_token(token)
+            sentence.tokens[-1].add_label("Label", tag)
+
+        return sentence
+
+    def read_bioc(self, path):
+        tree = etree.parse(str(path))
+        text_to_graphs = defaultdict(list)
+        for document in tqdm(list(tree.xpath('//document'))):
+            for passage in document.xpath("./passage"):
+                G = nx.DiGraph()
+                text = passage.xpath("./text")[0].text
+                for ann in passage.xpath("./annotation"):
+                    type = ann.xpath("./infon[@key='type']")[0].text
+                    if type in {"relationship", "ModificationArgument"}:
+                        continue
+
+                    infon_dict = {}
+                    for infon in ann.xpath("./infon"):
+                        infon_dict[infon.attrib["key"]] = infon.text
+
+                    if "GOCCID" in infon_dict:  # location labeled as gene due to bug
+                        continue
+
+                    locations = ann.xpath("./location")
+                    if locations:
+                        infon_dict["span"] = (int(locations[0].attrib["start"]),
+                                              int(locations[0].attrib["start"]) + int(
+                                                  locations[0].attrib["offset"]))
+                        infon_dict["text"] = ann.xpath("./text")[0].text
+
+                    for namespace in ["EGID", "HGNC", "MGI", "CHEBI", "GOBP", "MESHD"]:
+                        if namespace in infon_dict:
+                            name = infon_dict[namespace]
+                            break
+                    else:
+                        raise ValueError(etree.dump(ann))
+                    G.add_node(name, span=infon_dict["span"], type="entity",
+                               namespace=namespace, text=infon_dict["text"])
+                    del infon_dict["span"]
+                    G.add_node(ann.attrib["id"], **infon_dict)
+                    G.add_edge(ann.attrib["id"], name, type="self")
+
+                for rel in passage.xpath("./relation"):
+                    infon_dict = {}
+
+                    type = rel.xpath("./infon[@key='type']")[0].text
+                    if type == "proteinModification":
+                        mod_type_ref = \
+                        rel.xpath("./node[@role='ModificationType']")[0].attrib["refid"]
+                        mod_type = passage.xpath(
+                            f"./annotation[@id='{mod_type_ref}']/infon[@key='ModificationType']")[
+                            0].text
+                        infon_dict["type"] = type + "_" + mod_type
+                    elif "activity" in type.lower() and self.simplify_activations:
+                        infon_dict["type"] = "molecularActivity"
+                    elif type in self.supported_relations:
+                        if self.simplify_relations:
+                            infon_dict["type"] = self.relation_to_simplified[type]
+                        else:
+                            infon_dict["type"] = type
+
+                    elif type not in self.supported_functions and self.remove_graphs_with_unsupported_functions:
+                        G = None  # signals graph should be removed
+                        break
+                    else:
+                        infon_dict["type"] = type
+
+                    for infon in rel.xpath("./infon"):
+                        if not infon.attrib[
+                                   "key"] == "type":  # already processed type above
+                            infon_dict[infon.attrib["key"]] = infon.text
+                    if type == "translocation":  # fix translocation annotation bug and remove locations
+                        theme = rel.xpath("./node")[0]
+                        theme.attrib['role'] = 'theme'
+                        for loc in rel.xpath('./node')[1:]:
+                            rel.remove(loc)
+                    if G:
+                        G.add_node(rel.attrib["id"], **infon_dict)
+                        for node in rel.xpath("./node"):
+                            if not node.attrib["role"] == "relationship":
+                                G.add_edge(rel.attrib["id"], node.attrib["refid"],
+                                           type=node.attrib["role"])
+                if G:
+                    text_to_graphs[text].append(G)
+
+        return text_to_graphs
+
+    def _build_example(self, node, G_full, known_nodes, text1):
+        G_known = G_full.subgraph(known_nodes)
+        text2 = self.linearize_graph(G_known)
+        encoding = self.tokenizer.encode_plus(text1, text2, padding="max_length",
+                                              truncation="only_first",
+                                              return_tensors="pt",
+                                              return_offsets_mapping=True,
+                                              max_length=MAX_LEN)
+        for k, v in encoding.items():
+            encoding[k] = v.squeeze()
+        seq2_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][1].item()
+        pad_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][2].item()
+        token_starts1 = encoding["offset_mapping"][:seq2_start, 0].tolist()
+        token_starts2 = encoding["offset_mapping"][seq2_start:pad_start, 0].tolist()
+        labels = torch.zeros_like(encoding["input_ids"])
+
+        if node is not None:
+            labels[0] = self.label_to_id[
+                G_full.nodes[node]["type"]]  # Predict node type with [CLS]
+            for _, v, d in G_full.out_edges(node, data=True):
+                if "span2" in G_full.nodes[v]:
+                    span = G_full.nodes[v]["span2"]
+                    token_starts = token_starts2
+                    offset = seq2_start
+                else:
+                    span = G_full.nodes[v]["span"]
+                    token_starts = token_starts1
+                    offset = 0
+
+                span = adapt_span(span[0], span[1], token_starts)
+                labels[span[0] + offset] = self.label_to_id["B-" + d["type"]]
+                for i in range(span[0] + 1 + offset, span[1] + offset):
+                    labels[i] = self.label_to_id["I-" + d["type"]]
+
+        encoding["labels"] = labels
+
+        return encoding
+
+    def linearize_graph(self, G):
+        linearization = ""
+
+        for node in self.node_order(G):
+            if G.nodes[node]["type"] == "entity":
+                continue
+            bel = self.node_to_bel(node, G)
+            start = len(linearization) + 2
+            linearization += "| " + bel + " "
+            end = len(linearization)
+            G.nodes[node]["span2"] = (start, end)
+
+        return linearization
+
+    def node_to_bel(self, node, G):
+        type = self.shorten_bel_type(G.nodes[node]["type"])
+        if type == "entity":
+            return G.nodes[node]["text"]
+        elif type in self.relation_to_simplified:
+            cause = \
+            [i for _, i, d in G.out_edges(node, data=True) if d["type"] == "cause"][0]
+            theme = \
+            [i for _, i, d in G.out_edges(node, data=True) if d["type"] == "theme"][0]
+            cause_bel = self.node_to_bel(cause, G)
+            theme_bel = self.node_to_bel(theme, G)
+            return f"{cause_bel} {type} {theme_bel}"
+
+        else:
+            args = ', '.join(self.node_to_bel(i, G) for _, i in G.out_edges(node))
+            return f"{type}({args})"
+
+    def _get_examples(self):
+        examples = []
+        for text, G_full in tqdm(list(self.text_to_graph.items())):
+            known_nodes = [i for i, d in G_full.nodes(data=True) if
+                           d["type"] == "entity"]
+            for node in self.node_order(G_full):
+                if G_full.nodes[node]["type"] != "entity":
+                    example = self._build_example(node, G_full=G_full,
+                                                  known_nodes=known_nodes,
+                                                  text1=text)
+                    known_nodes.append(node)
+                    examples.append(example)
+            example = self._build_example(None, G_full=G_full,
+                                          known_nodes=known_nodes,
+                                          text1=text)
+            known_nodes.append(node)
+            examples.append(example)
+
+        return examples
+
+    def node_order(self, G):
+        G_orig = G
+        G = G.copy()
+        order = []
+        zero_outdegree = [u for u, d in G.out_degree() if d == 0]
+
+        while zero_outdegree:
+            sort_tuple_to_events = defaultdict(list)
+            for node in zero_outdegree:
+                sort_tuple = []
+                if "span" in G.nodes[node]:
+                    sort_tuple += G.nodes[node]["span"]
+                else:
+                    sort_tuple.append((1000000, 1000000))
+                arg_starts = []
+                arg_order_indices = []
+                for _, arg in G_orig.out_edges(node):
+                    arg_data = G_orig.nodes[arg]
+                    if "span" in arg_data:
+                        arg_starts += arg_data["span"]
+                    try:
+                        arg_order_indices.append(order.index(arg))
+                    except ValueError:
+                        arg_order_indices.append(1000000)
+
+                if len(arg_starts) < 20:
+                    arg_starts += [1000000] * (20 - len(arg_starts))
+                if len(arg_order_indices) < 20:
+                    arg_order_indices += [1000000] * (20 - len(arg_order_indices))
+
+                sort_tuple += sorted(arg_starts)
+                sort_tuple += sorted(arg_order_indices)
+                sort_tuple.append(G.nodes[node]["type"])
+                sort_tuple_to_events[tuple(sort_tuple)].append(node)
+                G.remove_node(node)
+
+            for sort_tuple in sorted(sort_tuple_to_events):
+                order += sort_tuple_to_events[sort_tuple]
+
+            zero_outdegree = [u for u, d in G.out_degree() if d == 0]
+
+        return order
+
+    def shorten_bel_type(self, bel_type):
+        if bel_type in self.relation_to_simplified:
+            return bel_type
+        elif bel_type in self.function_type_to_shortened.values():
+            return bel_type
+        elif bel_type in self.function_type_to_shortened:
+            return self.function_type_to_shortened[bel_type]
+        elif bel_type == "entity":
+            return bel_type
+        else:
+            raise ValueError(bel_type)
+
+    def example_to_brat(self, example):
+        id_to_label = {v: k for k, v in self.label_to_id.items()}
+        tags = [id_to_label[i.item()] for i in example["labels"]]
+        tokens = self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
+                                                      skip_special_tokens=False)
+        tokens = [i for i in tokens if i != "[PAD]"]
+        sentence = Sentence()
+        for token, tag in zip(tokens, tags):
+            whitespace_before = False
+            if "##" in token:
+                token = token.replace("##", "")
+            else:
+                whitespace_before = True
+            start = len(sentence.to_original_text()) + 1
+            if not whitespace_before:
+                start -= 1
+            sentence.add_token(Token(token, start_position=start))
+            sentence.tokens[-1].add_label("Label", tag)
+        a1_lines = []
+        for i, span in enumerate(sentence.get_spans("Label")):
+            mention = sentence.to_original_text()[span.start_pos:span.end_pos]
+            a1_lines.append(
+                f"T{i}\t{span.tag} {span.start_pos} {span.end_pos}\t{mention}")
+
+        return sentence.to_original_text(), "\n".join(a1_lines)
+
+    def __getitem__(self, item):
+        return self.examples[item]
+
+    def __len__(self):
+        return len(self.examples)
 
 
 if __name__ == '__main__':
-    INDRADataset("foo.json",
-                 tokenizer="/vol/fob-vol1/mi15/weberple/glusterfs/data/scibert_scivocab_uncased")
+    ds = BELDataset("events/data/BioCreative_BEL_Track/train.bioc.xml",
+                    tokenizer="/vol/fob-vol1/mi15/weberple/glusterfs/data/scibert_scivocab_uncased")
+    # ds = BELDataset("foo.bioc.xml",
+    #              tokenizer="/vol/fob-vol1/mi15/weberple/glusterfs/data/scibert_scivocab_uncased")
+    print(len(ds))
+    for i, example in enumerate(ds[:100]):
+        txt, ann = ds.example_to_brat(example)
+        fname = str(i).zfill(6)
+        with open(f"tools/brat-v1.3_Crunchy_Frog/data/bel/{fname}.txt", "w") as f:
+            f.write(txt)
+        with open(f"tools/brat-v1.3_Crunchy_Frog/data/bel/{fname}.ann", "w") as f:
+            f.write(ann)

@@ -1,0 +1,30 @@
+<document>
+    <id>20000620</id>
+    <passage>
+        <infon key="Sentence id">10000408</infon>
+        <infon key="PMID">20502003</infon>
+        <offset/>
+        <text>Ceramide triggers the generation of ROS and increases oxidative stress in many mammalian cells and animal models.</text>
+        <annotation id="a431">
+            <infon key="CHEBI">ceramide</infon>
+            <infon key="type">abundance</infon>
+            <text>Ceramide</text>
+            <location start="0" offset="8"/></annotation>
+        <annotation id="a432">
+            <infon key="CHEBI">reactive oxygen species</infon>
+            <infon key="type">abundance</infon>
+            <text>Ceramide</text>
+            <location start="0" offset="8"/></annotation>
+        <annotation id="a433">
+            <infon key="relationship">increases</infon>
+            <infon key="type">relationship</infon>
+            <text/>
+        </annotation>
+        <relation id="r325">
+            <infon key="type">increases</infon>
+            <node refid="a431" role="cause"/>
+            <node refid="a432" role="theme"/>
+            <node refid="a433" role="relationship"/>
+        </relation>
+    </passage>
+</document>

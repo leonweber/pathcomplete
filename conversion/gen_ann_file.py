@@ -68,6 +68,7 @@ def load_annotations(lines):
         if is_text_line(line) or not line:
             continue
         pmid, _, _, mention, type_, id_ = line.split('\t')
+        print(line)
         anns[pmid].append(PubtatorAnnotation(type_, id_, mention))
         
     return anns

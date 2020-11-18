@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from . import util
+from . import utils
 
 import json
 
@@ -21,7 +21,7 @@ if __name__ == '__main__':
         data = json.load(f)
 
     for pw_name, geneset in data.items():
-        pw_name = util.slugify(pw_name)
+        pw_name = utils.slugify(pw_name)
 
         with (args.output/pw_name).open('w') as f:
             for gene in geneset:

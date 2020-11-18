@@ -6,7 +6,7 @@ from mygene import MyGeneInfo
 from tqdm import tqdm
 
 import pandas as pd
-from .util import geneid_to_uniprot
+from .utils import geneid_to_uniprot
 
 
 TYPE_MAPPING = {

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sklearn.metrics import average_precision_score
 
-from conversion.util import slugify
+from conversion.utils import slugify
 
 def f1_nodes(true_nodes, pred_nodes):
     true_nodes = set(true_nodes)

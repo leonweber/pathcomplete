@@ -1,0 +1,13 @@
+DEFINE NAMESPACE CHEBI          AS URL "https://raw.githubusercontent.com/OpenBEL/openbel-framework-resources/20150611/namespace/chebi.belns"
+DEFINE NAMESPACE GOBP           AS URL "https://raw.githubusercontent.com/OpenBEL/openbel-framework-resources/20150611/namespace/go-biological-process.belns"
+DEFINE NAMESPACE HGNC           AS URL "https://raw.githubusercontent.com/OpenBEL/openbel-framework-resources/20150611/namespace/hgnc-human-genes.belns"
+DEFINE NAMESPACE MESHD          AS URL "https://raw.githubusercontent.com/OpenBEL/openbel-framework-resources/20150611/namespace/mesh-diseases.belns"
+DEFINE NAMESPACE MGI            AS URL "https://raw.githubusercontent.com/OpenBEL/openbel-framework-resources/20150611/namespace/mgi-mouse-genes.belns"
+
+SET STATEMENT_GROUP = "Group 1"
+
+SET Citation = {"PubMed","Trends in molecular medicine","12928037","","de Nigris F|Lerman A|Ignarro LJ|Williams-Ignarro S|Sica V|Baker AH|Lerman LO|Geng YJ|Napoli C",""}
+SET Evidence = "Oxidation and nitration of macromolecules, such as proteins, DNA and lipids, are prominent"
+kin(p(MGI:Chek1)) decreases path(MESHD:Neoplasms)
+
+UNSET STATEMENT_GROUP

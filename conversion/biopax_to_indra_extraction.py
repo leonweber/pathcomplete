@@ -17,7 +17,7 @@ from fuzzywuzzy import process
 import yappi
 
 from conversion.indra_biopax_processor import BiopaxProcessor
-from conversion.util import find_matches_sent2vec
+from conversion.utils import find_matches_sent2vec
 
 
 def deduplicate_statements(stmts):
@@ -149,6 +149,8 @@ if __name__ == '__main__':
             chebi_synonyms["CHEBI:" + row["COMPOUND_ID"]].add(row["NAME"])
         synonyms_by_db["CHEBI"] = chebi_synonyms
 
+    # TODO
+
     model = model_from_owl_file("data/PathwayCommons12.reactome.BIOPAX.owl")
     bpp = BiopaxProcessor(model)
     bpp.process_all()
@@ -264,13 +266,15 @@ if __name__ == '__main__':
                     new_agent = filter_agent(agent, ids_to_retain=id_to_mentions.keys())
                 setattr(stmt, agent_name, new_agent)
 
-
+        added_statments = set()
         passage.put_infon("indra", [])
         for stmt in stmts:
-            if None not in stmt.agent_list():
+            if None not in stmt.agent_list() and stmt.matches_key() not in added_statments:
                 passage.infons["indra"].append(stmt.to_json())
+                added_statments.add(stmt.matches_key())
 
-        if stmts:
+
+        if 15 > len(stmts) > 0:
             collection.add_document(document)
 
     with open('foo.json', 'w') as f:

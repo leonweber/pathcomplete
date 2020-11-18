@@ -10,7 +10,7 @@ import itertools
 import numpy as np
 import re
 
-from conversion.util import hgnc_to_uniprot
+from conversion.utils import hgnc_to_uniprot
 
 INTERACTION_TYPES = {
     'controls-state-change-of',
