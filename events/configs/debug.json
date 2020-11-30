@@ -1,7 +1,7 @@
 {
   "linearize": true,
   "model": "bert",
-  "train": "events/data/BioCreative_BEL_Track/train.bioc.xml",
+  "train": "events/data/BioCreative_BEL_Track/train_no_overlap.bioc.xml",
   "dev": "events/data/BioCreative_BEL_Track/dev.bioc.xml",
   "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
   "event_order": "position",

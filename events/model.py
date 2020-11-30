@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import BertForTokenClassification, BertTokenizerFast, BertConfig
+import networkx as nx
 import numpy as np
 
 from events import consts
@@ -240,6 +241,55 @@ class EventExtractor(pl.LightningModule):
             #     result["fn"] += 1
 
         return result
+
+    def get_edges_from_labels(self, input_ids, labels, token_starts):
+        edge_types = {}
+
+        tags = [self.id_to_label_type[i.item()] for i in labels]
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids,
+                                                      skip_special_tokens=False)
+        sentence = Sentence()
+        for token, tag, start in zip(tokens, tags, token_starts):
+            if token == "[CLS]":
+                continue
+            token = Token(token.replace("##", ""), start_position=start)
+            sentence.add_token(token)
+            sentence.tokens[-1].add_label("Edge", tag)
+
+        i_sep = [tok.idx for tok in sentence if tok.text == "[SEP]"][0]
+        for span in sentence.get_spans("Edge"):
+            if span[0].idx < i_sep:
+                edge_types[(1, span.start_pos, span.end_pos)] = span.tag
+            else:
+                edge_types[(2, span.start_pos, span.end_pos)] = span.tag
+
+        return edge_types
+
+
+    def predict(self, text):
+        G_pred = nx.DiGraph()
+        for i in range(self.max_events_per_sentence):
+            example = self.train_dataset._build_example(node=None, G_full=G_pred, known_nodes=G_pred.nodes, text1=text)
+            example["input_ids"] = example["input_ids"].unsqueeze(0).to(self.device)
+            example["token_type_ids"] = example["token_type_ids"].unsqueeze(0).to(self.device)
+            # example["attention_mask"] = example["attention_mask].squeez
+            pad_start = torch.where(example["input_ids"] == 0)[1][0]
+            logits = self.forward(example).squeeze(0)[:pad_start]
+            pred_labels = logits.argmax(dim=1)
+            node_type = self.id_to_label_type[pred_labels[0].item()]
+            edges = self.get_edges_from_labels(
+                input_ids=example["input_ids"].squeeze(0)[:pad_start],
+                labels=pred_labels,
+                token_starts=example["offset_mapping"][:pad_start, 0].long().tolist()
+            )
+            if node_type != "O" and edges:
+                self.train_dataset.add_node(G=G_pred, node_type=node_type, edges=edges,
+                                            text=text)
+
+        return G_pred
+
+
+
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)

@@ -1813,7 +1813,7 @@ class BELDataset:
     def read_bioc(self, path):
         tree = etree.parse(str(path))
         text_to_graphs = defaultdict(list)
-        for document in tqdm(list(tree.xpath('//document'))):
+        for document in tqdm(list(tree.xpath('//document'))[:10]):
             for passage in document.xpath("./passage"):
                 G = nx.DiGraph()
                 text = passage.xpath("./text")[0].text
@@ -2062,6 +2062,32 @@ class BELDataset:
                 f"T{i}\t{span.tag} {span.start_pos} {span.end_pos}\t{mention}")
 
         return sentence.to_original_text(), "\n".join(a1_lines)
+
+    def add_node(self, G, node_type, edges, text):
+        if "abundance" in node_type.lower():
+            if "self" not in edges.values():
+                raise ValueError("No self-edge for abundance node")
+            new_id = len(G.nodes)
+            for edge_span, edge_type in edges.items():
+                if edge_type == "self":
+                    entity_text = text[edge_span[1]:edge_span[2]]
+                    G.add_node(new_id, type="entity", span=edge_span[1:], text=entity_text)
+                    break
+
+        span_to_node = {}
+        for node, d in G.nodes(data=True):
+            if "span" in d:
+                span_to_node[(1,) + d["span"]] = node
+            elif "span2" in d:
+                span_to_node[(2,) + d["span2"]] = node
+            else:
+                raise ValueError()
+
+        new_id = len(G.nodes)
+        G.add_node(new_id, type=node_type)
+
+        for edge_span, edge_type in edges.items():
+            G.add_edge(new_id, span_to_node[edge_span], type=edge_type)
 
     def __getitem__(self, item):
         return self.examples[item]

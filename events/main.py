@@ -72,10 +72,12 @@ if __name__ == '__main__':
         if args.resume:
             if not args.model:
                  args.model = sorted(args.output_dir.glob("*ckpt"), key=os.path.getctime)[::-1][0]
-            model = EventExtractor.load_from_checkpoint(args.model, config=config)
+            model = EventExtractor.load_from_checkpoint(str(args.model), config=config)
         else:
             model = EventExtractor(config=config)
-        trainer.fit(model)
+        model.eval()
+        model.predict("Heparin cofactor II (HCII) is a highly specific serine proteinase inhibitor, which complexes covalently with thrombin in a reaction catalyzed by heparin and other polyanions.")
+        # trainer.fit(model)
 
     if args.dev:
         with Tee(args.output_dir/"test.log", "w"):
