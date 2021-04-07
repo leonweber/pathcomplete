@@ -3,9 +3,11 @@
   "model": "bert",
   "train": "events/data/BioCreative_BEL_Track/train_no_overlap.bioc.xml",
   "dev": "events/data/BioCreative_BEL_Track/dev.bioc.xml",
-  "bert": "/glusterfs/dfs-gfs-dist/weberple/data/scibert_scivocab_uncased",
+  "bert": "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext",
   "event_order": "position",
   "use_dagger": false,
   "lr": 3e-5,
-  "small": false
+  "small": false,
+  "dataset_type": "BELDataset",
+  "num_epochs": 10
 }

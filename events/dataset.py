@@ -1,23 +1,24 @@
+
 import itertools
 import logging
 import math
 import re
 from bisect import bisect_right, bisect_left
 from collections import defaultdict, deque
-from operator import attrgetter, itemgetter
+from operator import attrgetter, index, itemgetter
 from pathlib import Path
+from typing import Counter
 
 import networkx as nx
-from bioc import BioCJSONReader, BioCXMLReader
+import pickle
 from flair.data import Sentence, Token
+import numpy as np
 import transformers
 import torch
-from flair.tokenization import SciSpacySentenceSplitter, SegtokSentenceSplitter
-from indra.statements import Statement, Agent, BoundCondition, ModCondition
-from indra import statements
-from indra.assemblers.english.assembler import _assemble_agent_str, EnglishAssembler
+from flair.tokenization import SciSpacySentenceSplitter, SegtokSentenceSplitter, SpaceTokenizer
 from tqdm import tqdm
 from lxml import etree
+from transformers import AutoTokenizer
 
 from events import consts
 from events.parse_standoff import StandoffAnnotation
@@ -26,7 +27,7 @@ from util.utils import overlaps, get_id
 
 N_CROSS_SENTENCE = 0
 
-MAX_LEN = 412
+MAX_LEN = 256
 
 
 def get_adjacency_matrix(event_graph, nodes_text, nodes_graph, event_to_trigger,
@@ -1390,12 +1391,20 @@ class INDRADataset:
                                d["type"] == "entity"]
                 for node in self.node_order(G_full):
                     if G_full.nodes[node]["type"] != "entity":
-                        example = self._build_example(node, G_full=G_full,
-                                                      known_nodes=known_nodes,
-                                                      text1=text1,
-                                                      node_to_pos1=node_to_pos)
+                        try:
+                            example = self._build_example(node, G_full=G_full,
+                                                        known_nodes=known_nodes,
+                                                        text1=text1,
+                                                        node_to_pos1=node_to_pos)
+                        except KeyError:
+                            break
                         known_nodes.append(node)
                         examples.append(example)
+                example = self._build_example(node, G_full=G_full,
+                                            known_nodes=known_nodes,
+                                            text1=text1,
+                                            node_to_pos1=node_to_pos)
+                examples.append(example)
 
         return examples
 
@@ -1715,10 +1724,11 @@ class BELDataset:
 
     def __init__(self, path, tokenizer, simplify_activations=True,
                  remove_graphs_with_unsupported_functions=True,
-                 simplify_relations=True):
+                 simplify_relations=True, small=False):
         self.simplify_activations = simplify_activations
         self.remove_graphs_with_unsupported_functions = remove_graphs_with_unsupported_functions
         self.simplify_relations = simplify_relations
+        self.small = small
         text_to_graphs = self.read_bioc(path)
         self.text_to_graph = {}
         for text, graphs in text_to_graphs.items():
@@ -1727,6 +1737,29 @@ class BELDataset:
                 G = self.merge_graphs(graphs)
                 self.text_to_graph[text] = G
         self.node_type_to_id, self.edge_type_to_id = self._get_dicts()
+        self.node_type_to_id = {
+            'O': 0,
+            'proteinAbundance': 1,
+            'entity': 2,
+            'increases': 3,
+            'molecularActivity': 4,
+            'abundance': 5,
+            'rnaAbundance': 6,
+            'biologicalProcess': 7,
+            'complexAbundance': 8,
+            'degradation': 9,
+            'pathology': 10,
+            'decreases': 11,
+            'translocation': 12
+        }
+        self.simple_node_types = {
+            'proteinAbundance',
+            'abundance',
+            'rnaAbundance',
+            'biologicalProcess',
+            'pathology',
+        }
+
         self.label_to_id = {'O': 0,
                             'B-self': 1,
                             'I-self': 2,
@@ -1749,7 +1782,8 @@ class BELDataset:
                             'decreases': 19,
                             'translocation': 20}
 
-        self.tokenizer = transformers.BertTokenizerFast.from_pretrained(tokenizer)
+        # self.tokenizer = transformers.BertTokenizerFast.from_pretrained(tokenizer)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer, use_fast=True)
         self.examples = self._get_examples()
 
     def _get_dicts(self):
@@ -1813,7 +1847,10 @@ class BELDataset:
     def read_bioc(self, path):
         tree = etree.parse(str(path))
         text_to_graphs = defaultdict(list)
-        for document in tqdm(list(tree.xpath('//document'))[:10]):
+        docs = list(tree.xpath('//document'))
+        if self.small:
+            docs = docs[:20]
+        for document in tqdm(docs):
             for passage in document.xpath("./passage"):
                 G = nx.DiGraph()
                 text = passage.xpath("./text")[0].text
@@ -1910,8 +1947,9 @@ class BELDataset:
         labels = torch.zeros_like(encoding["input_ids"])
 
         if node is not None:
-            labels[0] = self.label_to_id[
+            labels[0] = self.node_type_to_id[
                 G_full.nodes[node]["type"]]  # Predict node type with [CLS]
+
             for _, v, d in G_full.out_edges(node, data=True):
                 if "span2" in G_full.nodes[v]:
                     span = G_full.nodes[v]["span2"]
@@ -1928,6 +1966,56 @@ class BELDataset:
                     labels[i] = self.label_to_id["I-" + d["type"]]
 
         encoding["labels"] = labels
+
+        return encoding
+
+    def _build_example_edge_wise(self, node, edge, G_full, known_nodes, known_edges, text1):
+        G_known = G_full.subgraph(known_nodes)
+        text2 = self.linearize_graph(G_known)
+        encoding = self.tokenizer.encode_plus(text1, text2, padding="max_length",
+                                              truncation="only_first",
+                                              return_tensors="pt",
+                                              return_offsets_mapping=True,
+                                              max_length=MAX_LEN)
+        for k, v in encoding.items():
+            encoding[k] = v.squeeze()
+        seq2_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][1].item()
+        pad_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][2].item()
+        token_starts1 = encoding["offset_mapping"][:seq2_start, 0].tolist()
+        token_starts2 = encoding["offset_mapping"][seq2_start:pad_start, 0].tolist()
+        labels = torch.zeros_like(encoding["input_ids"])
+        token_class_ids = torch.zeros_like(encoding["input_ids"])
+
+        if node is not None and edge is not None:
+            if edge == node:
+                labels[0] = self.label_to_id[
+                    G_full.nodes[node]["type"]]  # Predict node type with [CLS]
+            elif node in known_edges:
+                token_class_ids[0] = self.label_to_id[
+                    G_full.nodes[node]["type"]]  # Predict node type with [CLS]
+
+            for _, v, d in G_full.out_edges(node, data=True):
+                if "span2" in G_full.nodes[v]:
+                    span = G_full.nodes[v]["span2"]
+                    token_starts = token_starts2
+                    offset = seq2_start
+                else:
+                    span = G_full.nodes[v]["span"]
+                    token_starts = token_starts1
+                    offset = 0
+
+                span = adapt_span(span[0], span[1], token_starts)
+                if (node, v) in known_edges:
+                    token_class_ids[span[0] + offset] = self.label_to_id["B-" + d["type"]]
+                    for i in range(span[0] + 1 + offset, span[1] + offset):
+                        token_class_ids[i] = self.label_to_id["I-" + d["type"]]
+                elif (node, v) == edge:
+                    labels[span[0] + offset] = self.label_to_id["B-" + d["type"]]
+                    for i in range(span[0] + 1 + offset, span[1] + offset):
+                        labels[i] = self.label_to_id["I-" + d["type"]]
+
+        encoding["labels"] = labels
+        encoding["token_class_ids"] = token_class_ids
 
         return encoding
 
@@ -1965,24 +2053,34 @@ class BELDataset:
     def _get_examples(self):
         examples = []
         for text, G_full in tqdm(list(self.text_to_graph.items())):
-            known_nodes = [i for i, d in G_full.nodes(data=True) if
-                           d["type"] == "entity"]
-            for node in self.node_order(G_full):
-                if G_full.nodes[node]["type"] != "entity":
-                    example = self._build_example(node, G_full=G_full,
-                                                  known_nodes=known_nodes,
-                                                  text1=text)
+            # known_nodes = [i for i, d in G_full.nodes(data=True) if
+            #                d["type"] == "entity"]
+            known_nodes = []
+            for node, data in G_full.nodes(data=True):
+                if data["type"] == "entity":
                     known_nodes.append(node)
+
+                    for u, _, edge_data in G_full.in_edges(node, data=True):
+                        if edge_data["type"] == "self":
+                            known_nodes.append(u)
+            # known_nodes = self.node_order(G_full)[:-1]
+            for node in self.node_order(G_full):
+                if node not in known_nodes:
+                    example = self._build_example(node, G_full=G_full,
+                                                known_nodes=known_nodes,
+                                                text1=text)
                     examples.append(example)
-            example = self._build_example(None, G_full=G_full,
-                                          known_nodes=known_nodes,
-                                          text1=text)
-            known_nodes.append(node)
+                    known_nodes.append(node)
+                    break
+            # example = self._build_example(node=None, G_full=G_full,
+            #                               known_nodes=known_nodes,
+            #                               text1=text)
             examples.append(example)
 
         return examples
 
-    def node_order(self, G):
+    @staticmethod
+    def node_order(G):
         G_orig = G
         G = G.copy()
         order = []
@@ -1995,7 +2093,7 @@ class BELDataset:
                 if "span" in G.nodes[node]:
                     sort_tuple += G.nodes[node]["span"]
                 else:
-                    sort_tuple.append((1000000, 1000000))
+                    sort_tuple += [1000000, 1000000]
                 arg_starts = []
                 arg_order_indices = []
                 for _, arg in G_orig.out_edges(node):
@@ -2039,8 +2137,13 @@ class BELDataset:
 
     def example_to_brat(self, example):
         id_to_label = {v: k for k, v in self.label_to_id.items()}
-        tags = [id_to_label[i.item()] for i in example["labels"]]
-        tokens = self.tokenizer.convert_ids_to_tokens(example["input_ids"].tolist(),
+        id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
+        tags = [id_to_node_type[example["labels"][0].item()]]
+        tags += [id_to_label[i.item()] for i in example["labels"][1:]]
+        input_ids = example["input_ids"].clone()
+        if len(input_ids.shape) > 1:
+            input_ids = input_ids[0]
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids.tolist(),
                                                       skip_special_tokens=False)
         tokens = [i for i in tokens if i != "[PAD]"]
         sentence = Sentence()
@@ -2064,9 +2167,9 @@ class BELDataset:
         return sentence.to_original_text(), "\n".join(a1_lines)
 
     def add_node(self, G, node_type, edges, text):
-        if "abundance" in node_type.lower():
+        if node_type in self.simple_node_types:
             if "self" not in edges.values():
-                raise ValueError("No self-edge for abundance node")
+                raise ValueError("No self-edge for simple node")
             new_id = len(G.nodes)
             for edge_span, edge_type in edges.items():
                 if edge_type == "self":
@@ -2087,7 +2190,19 @@ class BELDataset:
         G.add_node(new_id, type=node_type)
 
         for edge_span, edge_type in edges.items():
-            G.add_edge(new_id, span_to_node[edge_span], type=edge_type)
+            for node in self.find_overlaps(span_to_node, edge_span):
+                G.add_edge(new_id, node, type=edge_type)
+
+
+    @staticmethod
+    def find_overlaps(span_to_node, edge_span):
+        overlapping_nodes = []
+        for span, node in span_to_node.items():
+            if span[0] == edge_span[0] and overlaps(span[1:], edge_span[1:]):
+                overlapping_nodes.append(node)
+        
+        return overlapping_nodes
+        
 
     def __getitem__(self, item):
         return self.examples[item]
@@ -2095,17 +2210,627 @@ class BELDataset:
     def __len__(self):
         return len(self.examples)
 
+    @property
+    def num_node_types(self):
+        return len(self.node_type_to_id)
+
+    @property
+    def num_labels(self):
+        return len(self.label_to_id)
+
+    def graph_to_statements(self, G):
+        statements = []
+        for node in G.nodes:
+            if len(G.in_edges(node)) == 0:
+                statements.append(self.node_to_bel(node, G))
+        
+        return statements
+
+class NestedNERDataset:
+    type_to_bel = {
+        "None": "None",
+        "G#protein": "p",
+        "G#cell_type": "ct",
+        "G#DNA": "d",
+        "G#RNA": "r",
+        "G#cell_line": "cl",
+    }
+
+    label_to_id = {
+        "O": 0,
+        "B-self": 1,
+        "I-self": 2
+    }
+
+    node_type_to_id = {v: i for i, v in enumerate(sorted(type_to_bel.values()))}
+
+    def __init__(self, path, tokenizer, small=False):
+        self.small = small
+        self.node_order = BELDataset.node_order
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer, use_fast=True)
+        self.text_to_graph = self.read(path)
+        self.examples = self._get_examples()
+    
+
+    def linearize_graph(self, G):
+        linearization = ""
+        
+        for node in self.node_order(G):
+            if G.nodes[node]["type"] == "entity":
+                continue
+            _, v = list(G.out_edges(node))[0]
+            node_type = G.nodes[node]["type"]
+            node_text = G.nodes[v]["text"]
+            linearization += "| " + f"{node_type}({node_text})"
+        
+        return linearization
+
+    def graph_to_statements(self, G):
+        statements = []
+        
+        for node in self.node_order(G):
+            if G.nodes[node]["type"] == "entity":
+                continue
+            _, v = list(G.out_edges(node))[0]
+            node_type = G.nodes[node]["type"]
+            node_text = G.nodes[v]["text"]
+            statements.append(f"{node_type}({node_text})")
+        
+        return statements
+
+    def _build_example(self, node, G_full, known_nodes, text1):
+        G_known = G_full.subgraph(known_nodes)
+        text2 = self.linearize_graph(G_known)
+        encoding = self.tokenizer.encode_plus(text1, text2, padding="max_length",
+                                              truncation="only_first",
+                                              return_tensors="pt",
+                                              return_offsets_mapping=True,
+                                              max_length=MAX_LEN)
+        for k, v in encoding.items():
+            encoding[k] = v.squeeze()
+        seq2_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][1].item()
+        token_starts = encoding["offset_mapping"][:seq2_start, 0].tolist()
+        labels = torch.zeros_like(encoding["input_ids"])
+
+        if node is not None:
+            labels[0] = self.node_type_to_id[
+                G_full.nodes[node]["type"]]  # Predict node type with [CLS]
+
+            for _, v, d in G_full.out_edges(node, data=True):
+                span = G_full.nodes[v]["span"]
+                token_starts = token_starts
+                offset = 0
+
+                span = adapt_span(span[0], span[1], token_starts)
+                labels[span[0] + offset] = self.label_to_id["B-" + d["type"]]
+                for i in range(span[0] + 1 + offset, span[1] + offset):
+                    labels[i] = self.label_to_id["I-" + d["type"]]
+
+        encoding["labels"] = labels
+
+        return encoding
+
+    def _get_examples(self):
+
+        examples = []
+        for text, G_full in tqdm(list(self.text_to_graph.items())):
+            known_nodes = [i for i, d in G_full.nodes(data=True) if
+                           d["type"] == "entity"]
+            for node in self.node_order(G_full):
+                if G_full.nodes[node]["type"] != "entity":
+                    example = self._build_example(node, G_full=G_full,
+                                                known_nodes=known_nodes,
+                                                text1=text)
+                    examples.append(example)
+                    known_nodes.append(node)
+            example = self._build_example(node=None, G_full=G_full,
+                                          known_nodes=known_nodes,
+                                          text1=text)
+            examples.append(example)
+
+        return examples
+    
+    def read(self, path):
+        text_to_graph = {}
+        path = Path(path)
+
+        with path.open() as f:
+            lines = f.readlines()
+        
+        for i, line in enumerate(lines):
+            if self.small and i//3 > 100:
+                break
+            state = i % 3
+            line = line.strip()
+            if state == 0:
+                text = Sentence(line, use_tokenizer=SpaceTokenizer())
+            elif state == 1:
+                G = nx.DiGraph()
+                for i_ann, ann in enumerate(line.split("|")):
+                    if not ann:
+                        continue
+                    span, ann_type = ann.split()
+                    ann_type = self.type_to_bel[ann_type]
+                    span = span.split(",")
+                    start = text[int(span[0])].start_pos
+                    end = text[int(span[1])-1].end_pos
+                    entity_text = text.to_original_text()[start:end]
+                    G.add_node(str(i_ann), span=(start, end), type="entity",
+                               text=entity_text)
+                    G.add_node(f"type({i_ann})", type=ann_type)
+                    G.add_edge(f"type({i_ann})", str(i_ann), type="self")
+            elif state == 2:
+                text_to_graph[text.to_original_text()] = G
+                text = None
+                G = None
+        
+        return text_to_graph
+
+    def example_to_brat(self, example):
+        id_to_label = {v: k for k, v in self.label_to_id.items()}
+        id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
+        tags = [id_to_node_type[example["labels"][0].item()]]
+        tags += [id_to_label[i.item()] for i in example["labels"][1:]]
+        input_ids = example["input_ids"].clone()
+        if len(input_ids.shape) > 1:
+            input_ids = input_ids[0]
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids.tolist(),
+                                                      skip_special_tokens=False)
+        tokens = [i for i in tokens if i != "[PAD]"]
+        sentence = Sentence()
+        for token, tag in zip(tokens, tags):
+            whitespace_before = False
+            if "##" in token:
+                token = token.replace("##", "")
+            else:
+                whitespace_before = True
+            start = len(sentence.to_original_text()) + 1
+            if not whitespace_before:
+                start -= 1
+            sentence.add_token(Token(token, start_position=start))
+            sentence.tokens[-1].add_label("Label", tag)
+        a1_lines = []
+        for i, span in enumerate(sentence.get_spans("Label")):
+            mention = sentence.to_original_text()[span.start_pos:span.end_pos]
+            a1_lines.append(
+                f"T{i}\t{span.tag} {span.start_pos} {span.end_pos}\t{mention}")
+
+        return sentence.to_original_text(), "\n".join(a1_lines)
+
+    def add_node(self, G, node_type, edges, text):
+        if "self" not in edges.values():
+            raise ValueError("No self-edge for simple node")
+        new_id = len(G.nodes)
+        for edge_span, edge_type in edges.items():
+            if edge_type == "self":
+                entity_text = text[edge_span[1]:edge_span[2]]
+                G.add_node(new_id, type="entity", span=edge_span[1:], text=entity_text)
+                break
+
+        span_to_node = {}
+        for node, d in G.nodes(data=True):
+            if "span" in d:
+                span_to_node[(1,) + d["span"]] = node
+
+        new_id = len(G.nodes)
+        G.add_node(new_id, type=node_type)
+
+        for edge_span, edge_type in edges.items():
+            for node in BELDataset.find_overlaps(span_to_node, edge_span):
+                G.add_edge(new_id, node, type=edge_type)
+    
+    def __getitem__(self, item):
+        return self.examples[item]
+    
+    def __len__(self):
+        return len(self.examples)
+
+    @property
+    def num_node_types(self):
+        return len(self.node_type_to_id)
+
+    @property
+    def num_labels(self):
+        return len(self.label_to_id)
+
+class SceneGraphModificationDataset:
+
+    node_type_to_id = {
+        "None": 0,
+        "DELETE": 1,
+        "ADD": 2
+    }
+
+    def __init__(self, path, tokenizer, edge_type_to_id=None, small=False):
+        self.small = small
+        self.num_failed = 0
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer)
+        self.edge_type_to_id = edge_type_to_id
+        self.text_to_graph = self._read(str(path))
+        self.label_to_id = {"O": 0} 
+        for edge_type in self.edge_type_to_id:
+            self.label_to_id["B-" + edge_type] = len(self.label_to_id)
+            self.label_to_id["I-" + edge_type] = len(self.label_to_id)
+        self.examples = self._get_examples()
+    
+    def prepare_src_graph(self, G_src):
+        G = nx.DiGraph()
+        for node in G_src.nodes:
+            G.add_node(G_src.nodes[node]["feature"], type="entity", text=node)
+
+        for n, d in G_src.nodes(data=True):            
+            G.add_node(f"node({d['feature']})", type="node", text=d["feature"])
+            G.add_edge(f"node({d['feature']})", d["feature"], type="self")
+            for u, v, edge_data in G_src.edges(n, data=True):
+                name_u = f"node({G_src.nodes[u]['feature']})"
+                name_v = f"node({G_src.nodes[v]['feature']})"
+                if not (name_v, name_u) in G.edges:
+                    G.add_edge(name_u, name_v, type=edge_data["feature"])
+        
+        return G
+
+    def _read(self, path):
+        text_to_graph = {}
+        n_total = 0
+        n_impossible = 0
+        n_edge_mods = 0
+
+        def load_data(output_file):
+            with open(output_file, "rb") as fr:
+                while True:
+                    try:
+                        yield pickle.load(fr)
+                    except EOFError:
+                        break
+        src_path = path + "_src_graph.bin"
+        tgt_path = path + "_tgt_graph.bin"
+        txt_path = path + "_src_text.txt"
+        with open(txt_path) as f:
+            texts = f.readlines()
+        if self.small:
+            texts = texts[:100]
+
+        Gs_src = list(load_data(src_path))
+        Gs_tgt = list(load_data(tgt_path))
+
+        if self.edge_type_to_id is None:
+            self.edge_type_to_id = {"theme": 0}
+        for G in itertools.chain(Gs_src, Gs_tgt):
+            for _, _, d in G.edges(data=True):
+                if d["feature"] not in self.edge_type_to_id:
+                    self.edge_type_to_id[d["feature"]] = len(self.edge_type_to_id)
+
+        for G_src, G_tgt, text in zip(Gs_src, Gs_tgt, texts):
+            try:
+                src_nodes = set(d["feature"] for _, d in G_src.nodes(data=True))
+                tgt_nodes = set(d["feature"] for _, d in G_tgt.nodes(data=True))
+
+                added_nodes = tgt_nodes - src_nodes
+                deleted_nodes = src_nodes - tgt_nodes
+
+                src_edges = set((G_src.nodes[u]["feature"], G_src.nodes[v]["feature"]) for u, v in G_src.edges())
+                tgt_edges = set((G_tgt.nodes[u]["feature"], G_tgt.nodes[v]["feature"]) for u, v in G_tgt.edges())
+
+                added_edges = tgt_edges - src_edges
+                deleted_edges = src_edges - tgt_edges
+
+                for u, v in added_edges:
+                    if u not in added_nodes and v not in added_nodes:
+                        n_edge_mods += 1
+
+                for u, v in deleted_edges:
+                    if u not in deleted_nodes and v not in deleted_nodes:
+                        n_edge_mods += 1
+
+
+                G = self.prepare_src_graph(G_src)
+
+                for n, d in G_tgt.nodes(data=True):            
+                    n = d["feature"]
+                    G.add_node(n, type="entity")
+                    if n in text:
+                        start = text.index(n)
+                        end = start + len(n)
+                        G.nodes[n]["span"] = (start, end)
+
+                for deleted_node in deleted_nodes:
+                    node = f"del({deleted_node})"
+                    G.add_node(node, type="DELETE", text=node)
+                    G.add_edge(node, f"node({deleted_node})", type="theme")
+                
+                for added_node in added_nodes:
+                    n_total += 1
+                    added_node_ids = [i for i, d in G_tgt.nodes(data=True) if d["feature"] == added_node]
+                    if added_node.lower() not in text.lower():
+                        n_impossible += 1
+                    assert len(added_node_ids) == 1
+                    node = f"add({added_node})"
+                    G.add_node(node, type="ADD", text=node)
+                    for u, v, edge_data in G_tgt.edges(added_node_ids[0], data=True):
+                        v = G_tgt.nodes[v]["feature"]
+                        if v in added_nodes:
+                            v = f"add({v})"
+                        else:
+                            v = f"node({v})"
+                        if (v, node) not in G.edges:
+                            G.add_edge(node, v, type=edge_data["feature"])
+                    G.add_edge(node, added_node, type="theme")
+            except AssertionError:    
+                n_impossible += 1
+                continue
+
+            try:
+                nx.find_cycle(G)
+                n_impossible += 1
+                continue
+            except nx.NetworkXNoCycle:
+                text_to_graph[text] = G
+            
+        print("Impossible", f"{n_impossible} / {n_total}")
+        print("Edge mods", f"{n_edge_mods} / {n_total}")
+        return text_to_graph
+
+    def _get_examples(self):
+
+        examples = []
+        for text, G_full in tqdm(list(self.text_to_graph.items())):
+            known_nodes = [i for i, d in G_full.nodes(data=True) if
+                           d["type"] not in {"DELETE", "ADD"}]
+            try:
+                for node in self.node_order(G_full):
+                    if G_full.nodes[node]["type"] in {"DELETE", "ADD"}:
+                        example = self._build_example(node, G_full=G_full,
+                                                    known_nodes=known_nodes,
+                                                    text1=text)
+                        examples.append(example)
+                        known_nodes.append(node)
+                example = self._build_example(node=None, G_full=G_full,
+                                            known_nodes=known_nodes,
+                                            text1=text)
+                examples.append(example)
+            except KeyError:
+                self.num_failed += 1
+                continue
+
+        return examples
+
+    def _build_example(self, node, G_full, known_nodes, text1):
+        G_known = G_full.subgraph(known_nodes)
+        text2 = self.linearize_graph(G_known)
+        encoding = self.tokenizer.encode_plus(text1, text2, padding="max_length",
+                                              truncation="only_first",
+                                              return_tensors="pt",
+                                              return_offsets_mapping=True,
+                                              max_length=MAX_LEN)
+        for k, v in encoding.items():
+            encoding[k] = v.squeeze()
+        seq2_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][1].item()
+        pad_start = torch.where(encoding["offset_mapping"].sum(dim=1) == 0)[0][2].item()
+        labels = torch.zeros_like(encoding["input_ids"])
+        token_starts1 = encoding["offset_mapping"][:seq2_start, 0].tolist()
+        token_starts2 = encoding["offset_mapping"][seq2_start:pad_start, 0].tolist()
+
+        if node is not None:
+            labels[0] = self.node_type_to_id[
+                G_full.nodes[node]["type"]]  # Predict node type with [CLS]
+
+            for _, v, d in G_full.out_edges(node, data=True):
+                if "span2" in G_full.nodes[v]:
+                    span = G_full.nodes[v]["span2"]
+                    token_starts = token_starts2
+                    offset = seq2_start
+                else:
+                    span = G_full.nodes[v]["span"]
+                    token_starts = token_starts1
+                    offset = 0
+                span = adapt_span(span[0], span[1], token_starts)
+                labels[span[0] + offset] = self.label_to_id["B-" + d["type"]]
+                for i in range(span[0] + 1 + offset, span[1] + offset):
+                    labels[i] = self.label_to_id["I-" + d["type"]]
+
+        encoding["labels"] = labels
+
+        return encoding
+
+    def linearize_graph(self, G):
+        linearization = ""
+
+        for node in self.node_order(G):
+            if G.nodes[node]["type"] != "node":
+                continue
+            
+            linearization += "| "
+            start = len(linearization)
+            linearization += G.nodes[node]["text"]
+            end = len(linearization)
+            G.nodes[node]["span2"] = (start, end)
+        
+        for u, v in self.edge_order(G):
+            if G.get_edge_data(u,v)["type"] == "self":
+                continue
+            if G.nodes[u]["type"] in {"ADD", "DELETE"} or G.nodes[v]["type"] in {"ADD", "DELETE"}:
+                continue
+            rel = G.edges[u, v]["type"]
+            u = G.nodes[u]["text"]
+            v = G.nodes[v]["text"]
+            linearization += "| " + f"{u} {rel} {v}"
+
+        for node in self.node_order(G):
+            if G.nodes[node]["type"] not in {"ADD", "DELETE"}:
+                continue
+            
+            linearization += "| "
+            start = len(linearization)
+            linearization += G.nodes[node]["text"]
+            end = len(linearization)
+            G.nodes[node]["span2"] = (start, end)
+        
+        return linearization
+    
+    def edge_order(self, G):
+        nodes = self.node_order(G)
+        sort_tuples = []
+        for u, v in G.edges():
+            idx = max(nodes.index(u), nodes.index(v))
+            sort_tuples.append((idx, (u, v)))
+        sort_tuples = sorted(sort_tuples, key=itemgetter(0))
+
+        return [i[1] for i in sort_tuples]
+
+    @staticmethod
+    def node_order(G):
+        G_orig = G
+        G = G.copy()
+        order = []
+        zero_outdegree = [u for u, d in G.out_degree() if d == 0]
+
+        while zero_outdegree:
+            sort_tuple_to_events = defaultdict(list)
+            for node in zero_outdegree:
+                sort_tuple = []
+                sort_tuple.append(G.nodes[node]["type"])
+                sort_tuple_to_events[tuple(sort_tuple)].append(node)
+                G.remove_node(node)
+
+            for sort_tuple in sorted(sort_tuple_to_events, reverse=True):
+                order += sort_tuple_to_events[sort_tuple]
+
+            zero_outdegree = [u for u, d in G.out_degree() if d == 0]
+
+        return order
+
+    def example_to_brat(self, example):
+        id_to_label = {v: k for k, v in self.label_to_id.items()}
+        id_to_node_type = {v: k for k, v in self.node_type_to_id.items()}
+        tags = [id_to_node_type[example["labels"][0].item()]]
+        tags += [id_to_label[i.item()] for i in example["labels"][1:]]
+        input_ids = example["input_ids"].clone()
+        if len(input_ids.shape) > 1:
+            input_ids = input_ids[0]
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids.tolist(),
+                                                      skip_special_tokens=False)
+        tokens = [i for i in tokens if i != "[PAD]"]
+        sentence = Sentence()
+        for token, tag in zip(tokens, tags):
+            whitespace_before = False
+            if "##" in token:
+                token = token.replace("##", "")
+            else:
+                whitespace_before = True
+            start = len(sentence.to_original_text()) + 1
+            if not whitespace_before:
+                start -= 1
+            sentence.add_token(Token(token, start_position=start))
+            sentence.tokens[-1].add_label("Label", tag)
+        a1_lines = []
+        for i, span in enumerate(sentence.get_spans("Label")):
+            mention = sentence.to_original_text()[span.start_pos:span.end_pos]
+            a1_lines.append(
+                f"T{i}\t{span.tag} {span.start_pos} {span.end_pos}\t{mention}")
+
+        return sentence.to_original_text(), "\n".join(a1_lines)
+
+    def __getitem__(self, item):
+        return self.examples[item]
+    
+    def __len__(self):
+        return len(self.examples)
+
+    @property
+    def num_node_types(self):
+        return len(self.node_type_to_id)
+
+    def add_node(self, G, node_type, edges, text):
+        span_to_node = {}
+        for node, d in G.nodes(data=True):
+            if "span" in d:
+                span_to_node[(1,) + d["span"]] = node
+            elif "span2" in d:
+                span_to_node[(2,) + d["span2"]] = node
+
+        if node_type == "ADD":
+            theme_spans = [k for k, v in edges.items() if v == "theme"]
+            assert len(theme_spans) == 1
+            theme_span = theme_spans[0]
+            assert theme_span[0] == 1
+            name = text[theme_span[1]:theme_span[2]]
+            op_name = f"add({name})"
+            G.add_node(name, type="entity", text=name)
+            G.add_node(op_name, type="ADD", text=op_name)
+            G.add_edge(op_name, name, type="theme")
+            for span, edge_type in edges.items():
+                if edge_type == "theme":
+                    continue
+                assert span[0] == 2
+                for node in BELDataset.find_overlaps(span_to_node, span):
+                    G.add_edge(op_name, node, type=edge_type)
+        elif node_type == "DELETE":
+            theme_spans = [k for k, v in edges.items() if v == "theme"]
+            for span in theme_spans:
+                assert span[0] == 2
+                for node in BELDataset.find_overlaps(span_to_node, span):
+                    op_name = f"del({node})"
+                    G.add_node(op_name, type="DELETE", text=op_name)
+                    G.add_edge(op_name, node, type="theme")
+
+    def strip_node(self, node):
+        if "add(" in node:
+            node = node.replace("add(", "").replace(")", "")
+        if "node(" in node:
+            node = node.replace("node(", "").replace(")", "")
+    
+        return node
+
+    def get_nodes_and_edges(self, G: nx.DiGraph):
+        G_resulting = G.copy()
+        for node, data in [n for n in G.nodes(data=True)]:
+            if data["type"] == "DELETE":
+                for u, v, d in G.out_edges(node, data=True):
+                    if d["type"] == "theme":
+                        try:
+                            G_resulting.remove_node(v)
+                        except nx.NetworkXError:
+                            pass
+                G_resulting.remove_node(node)
+            
+            if data["type"] == "ADD":
+                new_name = node.replace("add(", "node(")
+                G_resulting = nx.relabel_nodes(G_resulting, {node: new_name})
+                
+            
+        nodes = set()
+        for node in G_resulting.nodes:
+            if "node" in node:
+                nodes.add(self.strip_node(node))
+        
+        edges = set()
+        for u, v, data in G_resulting.edges(data=True):
+            u = self.strip_node(u)
+            v = self.strip_node(v)
+
+            if data["type"] in {"self", "theme"}:
+                continue
+
+            edge = sorted([u, v])
+            edges.add((edge[0], data["type"], edge[1]))
+        
+        return nodes, edges
+
+    def graph_to_statements(self, G: nx.DiGraph):
+        nodes, edges = self.get_nodes_and_edges(G)
+        return nodes | edges
+
+
+
+
+
 
 if __name__ == '__main__':
-    ds = BELDataset("events/data/BioCreative_BEL_Track/train.bioc.xml",
-                    tokenizer="/vol/fob-vol1/mi15/weberple/glusterfs/data/scibert_scivocab_uncased")
-    # ds = BELDataset("foo.bioc.xml",
-    #              tokenizer="/vol/fob-vol1/mi15/weberple/glusterfs/data/scibert_scivocab_uncased")
-    print(len(ds))
+    ds = SceneGraphModificationDataset("events/data/scene/crowdsourced_data/dev", tokenizer="microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext")
     for i, example in enumerate(ds[:100]):
         txt, ann = ds.example_to_brat(example)
         fname = str(i).zfill(6)
-        with open(f"tools/brat-v1.3_Crunchy_Frog/data/bel/{fname}.txt", "w") as f:
+        with open(f"tools/brat-v1.3_Crunchy_Frog/data/scene/{fname}.txt", "w") as f:
             f.write(txt)
-        with open(f"tools/brat-v1.3_Crunchy_Frog/data/bel/{fname}.ann", "w") as f:
+        with open(f"tools/brat-v1.3_Crunchy_Frog/data/scene/{fname}.ann", "w") as f:
             f.write(ann)

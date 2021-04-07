@@ -13,5 +13,6 @@
   "event_order": "simple_first",
   "eval_cmd": "python2 events/3rd_party/evaluation-PC.py -r %s %s",
   "allow_entity": false,
-  "eval_train_every": 50
+  "eval_train_every": 50,
+  ""
 }
